@@ -5,3 +5,6 @@
 
 # itch.io package output
 dist/
+
+# local screen recordings
+docs/recordings/
