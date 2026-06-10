@@ -164,7 +164,26 @@ export function createRunScene(ctx, input, seed) {
     if (d >= min) return;
     const o = min - d, nx = dx / d, ny = dy / d;
     if (moveA) { shift(a, -nx * o * 0.5, -ny * o * 0.5); shift(b, nx * o * 0.5, ny * o * 0.5); }
-    else shift(b, nx * o, ny * o); // push only b (used hero-vs-enemy so the hero isn't shoved)
+    else shift(b, nx * o, ny * o); // push only b (b out of an immovable a)
+  }
+
+  // Hard block: the hero cannot move deeper into any body (living enemy or corpse),
+  // but may always move away from one (so it never gets permanently stuck).
+  function bodyDeeper(px, py) {
+    for (const e of enemies) {
+      const min = hero.r + e.r;
+      const nd = dist(hero.x, hero.y, e.x, e.y);
+      if (nd < min && nd < dist(px, py, e.x, e.y)) return true;
+    }
+    return false;
+  }
+  function heroMove(dx, dy) {
+    const ox = hero.x;
+    hero.x += dx;
+    if (boxBlocked(level, hero) || bodyDeeper(ox, hero.y)) hero.x = ox;
+    const oy = hero.y;
+    hero.y += dy;
+    if (boxBlocked(level, hero) || bodyDeeper(hero.x, oy)) hero.y = oy;
   }
 
   function update(dt) {
@@ -178,7 +197,7 @@ export function createRunScene(ctx, input, seed) {
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
 
     const intent = input.intent();
-    moveAndCollide(level, hero, intent.x * HERO.speed * dt, intent.y * HERO.speed * dt);
+    heroMove(intent.x * HERO.speed * dt, intent.y * HERO.speed * dt);
 
     // Slingshot: auto-fire at the nearest living enemy in range, every shotCD.
     if (hero.cd <= 0) {
@@ -229,10 +248,13 @@ export function createRunScene(ctx, input, seed) {
       if (dist(p.x, p.y, hero.x, hero.y) < hero.r + 5) { p.dead = true; hurtHero(p.dmg); }
     }
 
-    // Bodies take up space (living enemies + the hero). Hero isn't shoved.
+    // Bodies take up space. The hero hard-blocks against bodies in heroMove;
+    // here push living enemies out of one another, the hero, and solid corpses.
     const live = enemies.filter((e) => !e.dead);
+    const corpses = enemies.filter((e) => e.dead);
     for (let i = 0; i < live.length; i++) {
       separate(hero, live[i], false);
+      for (const c of corpses) separate(c, live[i], false);
       for (let j = i + 1; j < live.length; j++) separate(live[i], live[j], true);
     }
 
