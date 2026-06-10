@@ -1,0 +1,118 @@
+{
+  "sheet": "assets/sprites.png",
+  "frames": {
+    "marvin": {
+      "x": 0,
+      "y": 0,
+      "w": 48,
+      "h": 48
+    },
+    "melee": {
+      "x": 48,
+      "y": 0,
+      "w": 48,
+      "h": 48
+    },
+    "ranged": {
+      "x": 96,
+      "y": 0,
+      "w": 48,
+      "h": 48
+    },
+    "wanderer": {
+      "x": 144,
+      "y": 0,
+      "w": 48,
+      "h": 48
+    },
+    "tile_street": {
+      "x": 0,
+      "y": 48,
+      "w": 48,
+      "h": 48
+    },
+    "tile_sidewalk": {
+      "x": 48,
+      "y": 48,
+      "w": 48,
+      "h": 48
+    },
+    "tile_yard": {
+      "x": 96,
+      "y": 48,
+      "w": 48,
+      "h": 48
+    },
+    "tile_alley": {
+      "x": 144,
+      "y": 48,
+      "w": 48,
+      "h": 48
+    },
+    "tile_floor": {
+      "x": 0,
+      "y": 96,
+      "w": 48,
+      "h": 48
+    },
+    "tile_wall": {
+      "x": 48,
+      "y": 96,
+      "w": 48,
+      "h": 48
+    },
+    "tile_rubble": {
+      "x": 96,
+      "y": 96,
+      "w": 48,
+      "h": 48
+    }
+  },
+  "anims": {
+    "marvin": {
+      "idle": {
+        "frames": [
+          "marvin"
+        ],
+        "fps": 1,
+        "loop": true
+      }
+    },
+    "melee": {
+      "idle": {
+        "frames": [
+          "melee"
+        ],
+        "fps": 1,
+        "loop": true
+      }
+    },
+    "ranged": {
+      "idle": {
+        "frames": [
+          "ranged"
+        ],
+        "fps": 1,
+        "loop": true
+      }
+    },
+    "wanderer": {
+      "idle": {
+        "frames": [
+          "wanderer"
+        ],
+        "fps": 1,
+        "loop": true
+      }
+    }
+  },
+  "tiles": {
+    "0": "tile_street",
+    "1": "tile_sidewalk",
+    "2": "tile_yard",
+    "3": "tile_alley",
+    "4": "tile_floor",
+    "5": "tile_wall",
+    "6": "tile_rubble"
+  }
+}
