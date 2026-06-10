@@ -26,7 +26,7 @@ function homeEdge(bearing) {
   return "S";
 }
 
-export function generate(seed, { w = 48, h = 48, bearing = 0 } = {}) {
+export function generate(seed, { w = 48, h = 48, bearing = 0, tileSize = 24 } = {}) {
   const rng = makeRng(subSeed(seed, "gen"));
   const tiles = new Uint8Array(w * h).fill(TILE.YARD);
 
@@ -130,7 +130,7 @@ export function generate(seed, { w = 48, h = 48, bearing = 0 } = {}) {
     }
   }
 
-  return { w, h, tileSize: 24, tiles, walkable, bearing, start, homeBand, homeEdge: edge, regions: [] };
+  return { w, h, tileSize, tiles, walkable, bearing, start, homeBand, homeEdge: edge, regions: [] };
 }
 
 function reaches(w, h, walkable, start, homeBand) {
