@@ -92,6 +92,15 @@ runs) give the player someone to root for and a reason to come back.
   (greed-vs-safety); make the run-summary *celebrate* progress (failure-as-payout);
   guard readability as content grows (trust).
 
+## Realized: exclusive & synergistic powerups
+The decision-depth lever is designed concretely in `docs/17-powerup-synergies.md`.
+Because 3pm is real-time action with a single hero and weapons (not a turn-based
+deck-builder), exclusivity comes from four levers — limited **weapon-mod slots**,
+one-or-the-other **forks**, **Faustian trade-offs**, and **conditional value**
+(a generic mod is great for one hero, dead weight for another) — and synergy
+comes from **tags** that combine plus mods that **pivot** a hero's signature.
+Spec 17 gives each of the five heroes a Fork / Trade / Pivot / Combo set.
+
 ## Sources
 - [Reverse-engineering Slay the Spire's decisions — Cloudfall Studios](https://www.cloudfallstudios.com/blog/2020/11/2/game-design-tips-reverse-engineering-slay-the-spires-decisions)
 - [In-Depth Analysis of Game Design in 'Slay the Spire' — Oreate AI](https://www.oreateai.com/blog/indepth-analysis-of-game-design-in-slay-the-spire/31e5a1880268eaa391d06856f239fbf6)

@@ -1,7 +1,8 @@
 // Vertical-slice RUN scene: a forced southward descent. The camera window
-// auto-scrolls down (background slides up), holding Marvin inside it; home is
-// the south band, four times the map away. Enemies use BFS pathfinding (ported
-// from BrainMaze) and stop to attack: melee strikes and ranged potshots.
+// auto-scrolls down, holding Marvin inside it; home is the south band, four
+// times the map away. Enemies use BFS pathfinding (ported from BrainMaze), take
+// up space (soft body collision), and stop to attack. Marvin fights back with
+// an auto-aiming slingshot that freezes — two freezes kill.
 import { generate, TILE, isWalkable } from "./levelgen.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
@@ -13,8 +14,9 @@ const TS = 24 * SCALE; // 2x grid
 const SCROLL = 55; // px/s the window descends — forces the player down
 const MARGIN = TS; // keep the hero this far inside the window edges
 const MAP_H = 192; // 4x the descent length to get home
+const FREEZE_DUR = 2.5; // how long a slingshot hit immobilizes an enemy
 
-const HERO = { speed: 135, maxHp: 50, atkDamage: 9, atkCooldown: 0.45, atkRadius: 80, iframeDur: 0.8, r: 13 };
+const HERO = { speed: 135, maxHp: 50, iframeDur: 0.8, r: 13, shotCD: 3, shotSpeed: 360, shotRange: 470, shotR: 6 };
 
 // Enemies are slower than the hero (dodgeable) and stop to attack.
 const KIND = {
@@ -43,7 +45,7 @@ export function createRunScene(ctx, input, seed) {
 
   const hero = {
     x: level.start.x * TS + TS / 2, y: level.start.y * TS + TS / 2,
-    w: HERO.r * 2, h: HERO.r * 2, hp: HERO.maxHp, cd: 0, iframes: 0,
+    w: HERO.r * 2, h: HERO.r * 2, r: HERO.r, hp: HERO.maxHp, cd: 0, iframes: 0,
   };
 
   const enemies = [];
@@ -53,14 +55,15 @@ export function createRunScene(ctx, input, seed) {
       do { [tx, ty] = randomWalkableTile(level, rng); } while (ty < 9);
       const k = KIND[kind];
       enemies.push({
-        kind, x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: k.r * 2, h: k.r * 2,
+        kind, x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: k.r * 2, h: k.r * 2, r: k.r,
         hp: k.maxHp, path: null, pi: 0, repathT: 0, state: null, timer: 0,
+        frozenT: 0, freezeCount: 0, dead: false,
       });
     }
 
-  const projectiles = [];
+  const projectiles = []; // enemy shots
+  const shots = [];        // hero slingshot pebbles
   const cam = { x: 0, y: 0 };
-  let swingT = 0;
   let outcome = null;
   const state = { restart: false };
 
@@ -102,7 +105,7 @@ export function createRunScene(ctx, input, seed) {
         e.pi = 0;
       }
       followPath(e, k.speed, dt);
-      if (d < HERO.r + k.r) hurtHero(k.contact);
+      if (d < hero.r + e.r) hurtHero(k.contact);
       return;
     }
 
@@ -113,12 +116,12 @@ export function createRunScene(ctx, input, seed) {
         if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
         followPath(e, k.speed, dt);
       } else if (e.state === "windup") {
-        e.timer -= dt; // plant feet, telegraph the swing
+        e.timer -= dt;
         if (e.timer <= 0) {
           if (d < k.range + 14) hurtHero(k.dmg);
           e.state = "recover"; e.timer = k.recover;
         }
-      } else { // recover
+      } else {
         e.timer -= dt;
         if (e.timer <= 0) e.state = "seek";
       }
@@ -132,13 +135,13 @@ export function createRunScene(ctx, input, seed) {
       if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
       followPath(e, k.speed, dt);
     } else if (e.state === "aim") {
-      e.timer -= dt; // stop and draw a bead, telegraphed
+      e.timer -= dt;
       if (e.timer <= 0) {
         const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
         projectiles.push({ x: e.x, y: e.y, vx: (dx / m) * k.shot, vy: (dy / m) * k.shot, life: 2.5, dmg: k.dmg, dead: false });
         e.state = "cooldown"; e.timer = k.cooldown;
       }
-    } else { // cooldown — back off if the hero crowds in
+    } else {
       e.timer -= dt;
       if (d < k.prefRange * 0.55) {
         const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
@@ -148,6 +151,22 @@ export function createRunScene(ctx, input, seed) {
     }
   }
 
+  // Soft body collision: shift `e` (and optionally `o`) so circles stop overlapping,
+  // never into a wall.
+  function shift(e, dx, dy) {
+    e.x += dx; e.y += dy;
+    if (boxBlocked(level, e)) { e.x -= dx; e.y -= dy; }
+  }
+  function separate(a, b, moveA) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    let d = Math.hypot(dx, dy) || 0.001;
+    const min = a.r + b.r;
+    if (d >= min) return;
+    const o = min - d, nx = dx / d, ny = dy / d;
+    if (moveA) { shift(a, -nx * o * 0.5, -ny * o * 0.5); shift(b, nx * o * 0.5, ny * o * 0.5); }
+    else shift(b, nx * o, ny * o); // push only b (used hero-vs-enemy so the hero isn't shoved)
+  }
+
   function update(dt) {
     if (outcome) {
       if (input.down("Space") || input.down("Enter")) state.restart = true;
@@ -155,37 +174,50 @@ export function createRunScene(ctx, input, seed) {
     }
     hero.cd = Math.max(0, hero.cd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
-    swingT = Math.max(0, swingT - dt);
 
-    cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H); // window descends
+    cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
 
     const intent = input.intent();
     moveAndCollide(level, hero, intent.x * HERO.speed * dt, intent.y * HERO.speed * dt);
 
-    const m = input.mouse();
-    const ax = m.x + cam.x - hero.x, ay = m.y + cam.y - hero.y;
-    const am = Math.hypot(ax, ay) || 1;
-    const aim = { x: ax / am, y: ay / am };
-
-    if (input.firing && hero.cd <= 0) {
-      hero.cd = HERO.atkCooldown;
-      swingT = 0.12;
+    // Slingshot: auto-fire at the nearest living enemy in range, every shotCD.
+    if (hero.cd <= 0) {
+      let best = null, bd = HERO.shotRange;
       for (const e of enemies) {
-        if (e.hp <= 0) continue;
-        const dx = e.x - hero.x, dy = e.y - hero.y, d = Math.hypot(dx, dy) || 1;
-        if (d < HERO.atkRadius && (dx / d) * aim.x + (dy / d) * aim.y > 0) {
-          e.hp -= HERO.atkDamage;
-          e.x += (dx / d) * 18;
-          e.y += (dy / d) * 18;
+        if (e.dead) continue;
+        const d = dist(e.x, e.y, hero.x, hero.y);
+        if (d < bd) { bd = d; best = e; }
+      }
+      if (best) {
+        const dx = best.x - hero.x, dy = best.y - hero.y, m = Math.hypot(dx, dy) || 1;
+        shots.push({ x: hero.x, y: hero.y, vx: (dx / m) * HERO.shotSpeed, vy: (dy / m) * HERO.shotSpeed, life: 2, dead: false });
+        hero.cd = HERO.shotCD;
+      }
+    }
+
+    // Hero pebbles: freeze on hit; a second freeze kills.
+    for (const s of shots) {
+      if (s.dead) continue;
+      s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+      if (s.life <= 0 || !isWalkable(level, Math.floor(s.x / TS), Math.floor(s.y / TS))) { s.dead = true; continue; }
+      for (const e of enemies) {
+        if (e.dead) continue;
+        if (dist(s.x, s.y, e.x, e.y) < HERO.shotR + e.r) {
+          e.freezeCount++;
+          e.frozenT = FREEZE_DUR;
+          if (e.freezeCount >= 2) { e.dead = true; e.hp = 0; }
+          s.dead = true;
+          break;
         }
       }
     }
 
-    // Enemy brains (only those near the window stay active, for perf on the long map)
+    // Enemy brains (skip dead/frozen; cull far enemies on the long map)
     const heroTile = tileOf(hero);
     const activeY = cam.y + VIEW_H / 2;
     for (const e of enemies) {
-      if (e.hp <= 0) continue;
+      if (e.dead) continue;
+      if (e.frozenT > 0) { e.frozenT -= dt; continue; }
       if (Math.abs(e.y - activeY) < VIEW_H) stepEnemy(e, dt, heroTile);
     }
 
@@ -194,12 +226,20 @@ export function createRunScene(ctx, input, seed) {
       if (p.dead) continue;
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life <= 0 || !isWalkable(level, Math.floor(p.x / TS), Math.floor(p.y / TS))) { p.dead = true; continue; }
-      if (dist(p.x, p.y, hero.x, hero.y) < HERO.r + 5) { p.dead = true; hurtHero(p.dmg); }
+      if (dist(p.x, p.y, hero.x, hero.y) < hero.r + 5) { p.dead = true; hurtHero(p.dmg); }
     }
+
+    // Bodies take up space (living enemies + the hero). Hero isn't shoved.
+    const live = enemies.filter((e) => !e.dead);
+    for (let i = 0; i < live.length; i++) {
+      separate(hero, live[i], false);
+      for (let j = i + 1; j < live.length; j++) separate(live[i], live[j], true);
+    }
+
+    for (let i = shots.length - 1; i >= 0; i--) if (shots[i].dead) shots.splice(i, 1);
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
 
-    // Stay inside the moving window; the advancing top edge can crush the hero
-    // against a wall, which is fatal.
+    // Stay inside the moving window; being crushed against a wall is fatal.
     hero.x = clamp(hero.x, MARGIN, mapW - MARGIN);
     const minY = cam.y + MARGIN;
     if (hero.y < minY) {
@@ -220,49 +260,54 @@ export function createRunScene(ctx, input, seed) {
     for (let ty = y0; ty <= y1; ty++)
       for (let tx = x0; tx <= x1; tx++) {
         const i = ty * level.w + tx;
-        const sx = tx * TS - cam.x, sy = ty * TS - cam.y;
+        // Floor + 1px overscan so fractional camera scroll leaves no seams.
+        const sx = Math.floor(tx * TS - cam.x), sy = Math.floor(ty * TS - cam.y);
         ctx.fillStyle = TILE_COLOR[level.tiles[i]];
-        ctx.fillRect(sx, sy, TS, TS);
-        // Make non-walkable tiles read as solid obstacles so collision is legible.
-        if (!level.walkable[i]) {
-          ctx.fillStyle = "rgba(0,0,0,0.38)";
-          ctx.fillRect(sx, sy, TS, TS);
-          ctx.strokeStyle = "rgba(255,255,255,0.16)";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(sx + 1, sy + 1, TS - 2, TS - 2);
+        ctx.fillRect(sx, sy, TS + 1, TS + 1);
+        if (!level.walkable[i]) { // darken obstacles so collision is legible
+          ctx.fillStyle = "rgba(0,0,0,0.4)";
+          ctx.fillRect(sx, sy, TS + 1, TS + 1);
         }
       }
     ctx.fillStyle = "rgba(255,215,0,0.35)";
     for (const [hx, hy] of level.homeBand)
       if (hx >= x0 && hx <= x1 && hy >= y0 && hy <= y1)
-        ctx.fillRect(hx * TS - cam.x, hy * TS - cam.y, TS, TS);
+        ctx.fillRect(Math.floor(hx * TS - cam.x), Math.floor(hy * TS - cam.y), TS + 1, TS + 1);
 
-    // Enemy projectiles
+    // Corpses (drawn under everything live)
+    for (const e of enemies)
+      if (e.dead) disc(ctx, e.x - cam.x, e.y - cam.y, e.r, "#2b2622");
+
     for (const p of projectiles) disc(ctx, p.x - cam.x, p.y - cam.y, 5, "#145a32");
+    for (const s of shots) disc(ctx, s.x - cam.x, s.y - cam.y, HERO.shotR, "#d8d4c8");
 
     for (const e of enemies) {
-      if (e.hp <= 0) continue;
+      if (e.dead) continue;
       const sx = e.x - cam.x, sy = e.y - cam.y, k = KIND[e.kind];
-      disc(ctx, sx, sy, k.r, k.color);
-      // Telegraphs so attacks are readable/reactable
-      if (e.kind === "melee" && e.state === "windup") ring(ctx, sx, sy, k.range, "rgba(231,76,60,0.7)");
-      if (e.kind === "ranged" && e.state === "aim") {
-        ring(ctx, sx, sy, k.r + 5, "rgba(39,174,96,0.9)");
-        ctx.strokeStyle = "rgba(39,174,96,0.5)";
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(hero.x - cam.x, hero.y - cam.y);
-        ctx.stroke();
+      disc(ctx, sx, sy, e.r, k.color);
+      if (e.frozenT > 0) {
+        disc(ctx, sx, sy, e.r, "rgba(150,205,255,0.55)");
+        ring(ctx, sx, sy, e.r + 2, "rgba(190,230,255,0.9)");
+      } else { // telegraphs only when active
+        if (e.kind === "melee" && e.state === "windup") ring(ctx, sx, sy, k.range, "rgba(231,76,60,0.7)");
+        if (e.kind === "ranged" && e.state === "aim") {
+          ring(ctx, sx, sy, e.r + 5, "rgba(39,174,96,0.9)");
+          ctx.strokeStyle = "rgba(39,174,96,0.5)";
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(hero.x - cam.x, hero.y - cam.y);
+          ctx.stroke();
+        }
       }
     }
 
-    disc(ctx, hero.x - cam.x, hero.y - cam.y, HERO.r, hero.iframes > 0 ? "#7fb3ff" : "#2d6cdf");
-    if (swingT > 0) ring(ctx, hero.x - cam.x, hero.y - cam.y, HERO.atkRadius, "rgba(255,255,255,0.85)");
+    disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? "#7fb3ff" : "#2d6cdf");
 
     ctx.fillStyle = "#111";
     ctx.font = "14px system-ui, sans-serif";
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
-    ctx.fillText(`HP ${Math.max(0, hero.hp)}/${HERO.maxHp}   home in ${100 - depth}%`, 12, 20);
+    const sling = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
+    ctx.fillText(`HP ${Math.max(0, hero.hp)}/${HERO.maxHp}   home in ${100 - depth}%   slingshot ${sling}`, 12, 20);
     if (outcome) {
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(0, VIEW_H / 2 - 50, VIEW_W, 100);
