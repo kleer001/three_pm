@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>three_pm — dual-grid tiles</title>
+  <style>
+    body { margin: 0; padding: 24px; background: #fafafa; color: #1a1a1a;
+           font: 14px/1.4 system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    p.sub { margin: 0 0 16px; color: #555; }
+    a { color: #2a6; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
+         color: #555; margin: 22px 0 10px; }
+    #paint { border: 1px solid #ccc; image-rendering: pixelated; display: block;
+             cursor: crosshair; touch-action: none; }
+    #palette { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+    .swatch { padding: 6px 12px; border: 2px solid #ccc; border-radius: 6px;
+              background: #fff; cursor: pointer; font-size: 13px; }
+    .swatch.active { border-color: #1a1a1a; font-weight: 600; }
+    .controls { margin: 8px 0 0; color: #666; font-size: 13px; }
+    kbd { background: #eee; border: 1px solid #ccc; border-radius: 3px;
+          padding: 1px 5px; font-family: monospace; }
+    #atlas { display: flex; flex-direction: column; gap: 6px; }
+    .matrow { display: flex; align-items: center; gap: 10px; }
+    .matrow b { width: 64px; font-size: 12px; }
+    .matrow canvas { image-rendering: pixelated; border: 1px solid #ddd;
+        background: repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 0 / 12px 12px; }
+  </style>
+</head>
+<body>
+  <h1>three_pm — dual-grid directional tiles</h1>
+  <p class="sub">Paint to watch edges &amp; corners resolve. Standalone — loads only
+    <code>assets/tiles.png</code>. <a href="index.html">← sprite sandbox</a></p>
+
+  <div id="palette"></div>
+  <canvas id="paint" width="768" height="528"></canvas>
+  <p class="controls">
+    Click / drag to paint · <kbd>1</kbd>–<kbd>4</kbd> pick material · <kbd>0</kbd> or
+    right-drag erase · <kbd>C</kbd> clear · <kbd>G</kbd> toggle grid lines
+  </p>
+
+  <h2>The 16 dual-grid tiles per material</h2>
+  <p class="sub">Each tile is keyed by which of its 4 corners (TL·TR·BR·BL) are that material.</p>
+  <div id="atlas"></div>
+
+  <script type="module" src="tiles.js"></script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>three_pm — art sandbox</title>
+  <style>
+    /* Standalone art viewer. Imports nothing from the game; reads only the atlas. */
+    body { margin: 0; padding: 24px; background: #fafafa; color: #1a1a1a;
+           font: 14px/1.4 system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    p.sub { margin: 0 0 20px; color: #555; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .05em;
+         color: #555; margin: 24px 0 10px; }
+    #review { display: flex; flex-wrap: wrap; gap: 14px; }
+    .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .cell canvas { background:
+        repeating-conic-gradient(#e8e8e8 0% 25%, #ffffff 0% 50%) 0 / 16px 16px;
+        border: 1px solid #ddd; image-rendering: pixelated; }
+    .cell span { font-size: 11px; color: #444; }
+    #field { border: 1px solid #ccc; image-rendering: pixelated; display: block; }
+    .controls { margin: 10px 0; color: #555; }
+    kbd { background: #eee; border: 1px solid #ccc; border-radius: 3px;
+          padding: 1px 5px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>three_pm — art sandbox</h1>
+  <p class="sub">Standalone viewer for <code>assets/sprites.png</code>. Does not load or modify any game code.
+    · <a href="tiles.html">dual-grid tile demo →</a></p>
+
+  <h2>Atlas review</h2>
+  <div id="review"></div>
+
+  <h2>Battlefield</h2>
+  <div class="controls">
+    Actors wander over generated ground so you can see sprites in context.
+    <kbd>R</kbd> reshuffle ground · <kbd>Space</kbd> pause
+  </div>
+  <canvas id="field" width="768" height="512"></canvas>
+
+  <script type="module" src="battlefield.js"></script>
+</body>
+</html>
