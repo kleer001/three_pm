@@ -13,8 +13,9 @@ this doc points at the owning spec; it never redefines it.
   darkly comic Saturday-morning energy. Menace is real; gore is not.
 - **Death fiction = "groundhog day":** each run is a fresh **day** (spec 01: run
   = one in-game day). Dying resets the teen to the start of another 3pm.
-- **The daily-changing compass bearing is the in-fiction proof** that each run is
-  a new day — the loop and the watch are the same fact told twice (below).
+- **The regenerated neighborhood is the in-fiction proof** that each run is
+  a new day — the loop and the morning's new streets are the same fact told
+  twice (below).
 - **Narrative depth is light:** premise + brief per-hero flavor only. **No** plot
   arcs, **no** cutscenes, **no** dialogue trees, **no** story progression gates.
   Heroes unlock on `unlockAtRuns` (spec 05), never on story.
@@ -27,31 +28,33 @@ with things that should not be on a Tuesday. Nobody explains it. There is no
 lore dump, no villain monologue, no rescue. There is only the walk home before
 dark, and the dark is full of teeth.
 
-**"Home"** is literal: the kid's own house, somewhere out past the ruins. Win =
-reach the edge of the map in the watch's bearing direction (spec 02 home band).
-There is no reunion scene and no twist — getting to your own front door, alive,
-is the whole victory.
+**"Home"** is literal: the kid's own house, downhill past the ruins. Every run
+descends; home is always the way down, the fixed south edge (spec 02 home band).
+Win = reach that edge. There is no reunion scene and no twist — getting to your
+own front door, alive, is the whole victory.
 
 ## The watch (the one constant)
 Every hero carries the same cheap smart-watch — the one device that still works.
-Its single app is a compass that points **home**, rendered in-game as the
-edge-arrow on the HUD (spec 09).
+Its single app reads the way home, rendered in-game as the depth indicator on
+the HUD (spec 09).
 
 - **What it is:** a kids' GPS smart-watch, the kind a parent buys so they can
   find their kid. It still phones home. Nothing else does.
-- **Why it points home:** it's locked to the wearer's house, not to true north.
-  It doesn't navigate; it just *yearns* in one direction. The hero trusts it
+- **Why it gives the way home:** it's locked to the wearer's house, not to true
+  north. Home is always downhill — the fixed south edge — so the watch always
+  says the same thing: keep descending. It doesn't navigate; it just *yearns*
+  one way, and reads as a depth / distance-to-home gauge. The hero trusts it
   because it is the only thing left that knows where home is.
-- **Why the bearing changes daily:** every morning the watch re-acquires home
-  from scratch, and home is never quite where it was yesterday — the ruined
-  suburb has shifted overnight. The bearing is a pure function of the day's seed
-  (spec 01 `compass` sub-stream); a new day is a new seed is a new arrow.
+- **Why every day is new:** the suburb regenerates overnight. The streets,
+  lawns, and split-levels rearrange into a fresh map each morning (a new day's
+  seed, spec 01); the watch's day count ticks up. Same descent, never the same
+  walk.
 - **Why that justifies the loop:** the kids don't remember dying. To them each
   3pm is the first 3pm. The only evidence that it has happened before is the
-  watch: the arrow points somewhere new today, which means today is new, which
-  means yesterday *was* — even though no one recalls it. **The compass is the
-  groundhog-day clock.** Players read it as RNG; the fiction reads it as proof
-  the day reset.
+  neighborhood itself: the streets are different today, which means today is new,
+  which means yesterday *was* — even though no one recalls it. **The regenerated
+  suburb is the groundhog-day clock.** Players read it as a new seed; the fiction
+  reads it as proof the day reset.
 
 ## Tone bible — cartoon-terror
 The target feeling: a haunted-house ride that is actually frightening but cannot
@@ -145,7 +148,8 @@ Reference only — these specs own the mechanics; this doc fixes their *feel*.
 - **Death / reset beat (spec 01 DEATH, spec 09):** a comic faint (stars, flop,
   sad-trombone stinger), not a corpse — then the day resets. Fictionally the kid
   wakes to another 3pm with no memory; mechanically the run drops and a new seed
-  rolls a new bearing (spec 01), which *is* the in-world proof a new day began.
+  regenerates the neighborhood (spec 01), which *is* the in-world proof a new day
+  began.
 
 ## Interfaces this spec freezes
 - **None.** This is a content/tone reference. It introduces no schema, no API,

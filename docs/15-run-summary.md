@@ -29,7 +29,7 @@ before the run tier is discarded. The contract fields are exactly the spec 08
 ```
 RunResult {
   // --- spec 08 recordRun contract (the only fields that touch meta) ---
-  distanceFraction,   // 0..1, progress toward homeBand along bearing (spec 02)
+  distanceFraction,   // 0..1, southward descent progress toward homeBand (spec 02)
   kills,              // enemy death count this run (death listener, spec 07)
   won,                // bool: reached homeBand
 

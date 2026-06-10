@@ -168,9 +168,9 @@ the loader registers the def's `attack` under that id for the entity.
 One algorithm, no fallbacks. The director reads player distance and budgets
 spawns; it owns no level geometry.
 
-**Distance fraction.** `f = projection of (player − start) onto the bearing axis,
-divided by the start→home-band span`, clamped to `[0, 1]`. 0 at the start edge,
-1 at the home band.
+**Distance fraction.** `f = (player.y − start.y) / (home-band.y − start.y)`
+along the southward descent axis, clamped to `[0, 1]`. 0 at the north start
+edge, 1 at the south home band.
 
 **Budget.** Target live-threat budget scales with `f`:
 ```

@@ -1,7 +1,7 @@
 # Spec 09 — Presentation: rendering, camera, HUD, audio
 
 Defines how the live game is drawn and heard: the canvas 2D render pipeline, the
-sprite/animation abstraction, the follow camera, the HUD kit, and the WebAudio
+sprite/animation abstraction, the auto-scroll camera, the HUD kit, and the WebAudio
 layer. Presentation is **read-only over sim state** — it interpolates, draws, and
 plays sound; it never advances or mutates game logic. The fixed-timestep loop
 (spec 01) drives it via `render(alpha)`; entities carry the `sprite` component
@@ -11,10 +11,11 @@ plays sound; it never advances or mutates game logic. The fixed-timestep loop
 - **Pre-drawn bitmap sprites** on a tile atlas, drawn to a single canvas 2D
   context. A `sprite`/animation abstraction is backed by sheet + frame data
   (`sprites.json`); heroes, enemies, and pickups all render through it.
-- **Full HUD kit:** HP bar, mana bar, signature-cooldown indicator, edge-arrow
-  compass to home, scrap counter, and a minimap.
-- **Compass = edge arrow:** an arrow pinned to the screen edge, pointing toward
-  home along the run bearing (spec 01).
+- **Full HUD kit:** HP bar, mana bar, signature-cooldown indicator, watch
+  depth/progress indicator, scrap counter, and a minimap.
+- **Watch = depth indicator:** the shared hero watch item reads remaining
+  descent — distance from the hero down to the south home band. Home is always
+  due south (downhill); there is no rotating bearing.
 - **Audio = SFX + music** via WebAudio: one-shot effects (hits, pickups,
   abilities) and a looping music track per scene/state. SFX are **event-driven**
   — subscribed to `events` (spec 01), never polled.
@@ -101,17 +102,26 @@ movement, →attack on `useAttack`, →hit on `applyDamage`) resets `frame`/`t`;
 this is a sim-side state change, not a render concern.
 
 ## Camera (`render/camera.js`)
-Follows the player, clamped to map bounds (spec 02 fixed the scroll + the
-coordinate convention: tile (col,row); world px = tile*tileSize).
+A southward auto-scroll window. The viewport advances down the map at a slow
+fixed rate; X follows the hero; the window never shows past the map edge (spec 02
+fixed the scroll + the coordinate convention: tile (col,row); world px =
+tile*tileSize). The hero is held inside the window — the advancing top edge is
+what forces downward progress.
 ```
-camera { x, y, vw, vh }     // top-left world px of the viewport; viewport px size
+camera { x, y, vw, vh, scrollSpeed }   // top-left world px of the viewport; viewport px size; px/sec descent
 
-follow(player):
+advance(dt):                           // ticks in update(dt); no vertical follow
+  y = clamp(y + scrollSpeed * dt, 0, h*tileSize - vh)
+
+follow(player):                        // X follows the hero, clamped to map bounds
   x = clamp(player.drawX - vw/2, 0, w*tileSize - vw)
-  y = clamp(player.drawY - vh/2, 0, h*tileSize - vh)
 ```
-Centers on the player's interpolated position, clamped so the viewport never
-shows past the map edge (the spec 02 clamp range `[0, w*tileSize - viewport]`).
+`y` advances monotonically by `scrollSpeed`, clamped at the map bottom; it never
+tracks the hero. `x` centers on the hero's interpolated position, clamped so the
+viewport never shows past the map edge (the spec 02 clamp range
+`[0, w*tileSize - viewport]`). The hero is clamped inside the moving window
+`[camera.y, camera.y + vh]` in Y (and the map bounds in X); the descending top
+edge pushes the hero south.
 
 **World→screen:** `screenX = drawX - camera.x`, `screenY = drawY - camera.y`.
 The mouse→world `aim` derivation (spec 04) is the inverse and stays owned by
@@ -135,7 +145,7 @@ nothing back.
 | HP bar | `hero.health` `{hp,maxHp}` (spec 03) | filled fraction `hp/maxHp` |
 | Mana bar | `hero.mana` `{mana,maxMana}` (spec 03) | filled fraction `mana/maxMana` |
 | Signature cooldown | `hero.cooldowns['signature']` + def `cooldown` (spec 04) | radial fill = `1 - timer/cooldown`; ready when `timer<=0` |
-| Compass | `Level.bearing` (spec 01) + `hero.transform` + `camera` | edge-pinned arrow (math below) |
+| Watch (depth) | `hero.transform.y` + `Level.homeBand` y + map height (spec 02) | remaining descent to the south home band (math below) |
 | Scrap counter | `runState.scrap` (spec 07) | icon + integer |
 | Minimap | `Level` (tiles/walkable, homeBand) + `hero.transform` | explored tiles, player dot, home band |
 
@@ -145,27 +155,22 @@ and the `homeBand` edge (spec 02) highlighted as a colored band so the goal is
 always locatable. It shows geometry only — no enemies — keeping it a navigation
 aid, not a radar.
 
-### Edge-arrow compass math
-Given the player world position, the home bearing, and the viewport, the arrow is
-pinned to the screen edge and rotated to point home. Home lies along the run
-bearing; the arrow shows the constant direction, not a moving target, so it is a
-pure function of `bearing` (spec 01) — no per-frame target tracking.
+### Watch depth/progress math
+Home is the south home band (spec 02); the descent runs from the hero's start at
+the north edge down to it. The watch reads remaining descent — distance from the
+hero straight down to the band — as a scalar, no direction. It is a pure function
+of the hero's world `y` against the band's `y`; screen-space and world y both grow
+downward (spec 02).
 ```
-dir   = { cos(bearing), sin(bearing) }        // unit vector toward home (world)
-angle = bearing                               // arrow rotation = bearing
-// project from screen center to the viewport edge along dir, with margin m:
-cx, cy = vw/2, vh/2
-// scale dir to the nearest edge of the [m, vw-m] × [m, vh-m] box:
-tx = (dir.x > 0 ? (vw-m - cx) : (cx - m)) / |dir.x|     // ∞ if dir.x == 0
-ty = (dir.y > 0 ? (vh-m - cy) : (cy - m)) / |dir.y|     // ∞ if dir.y == 0
-t  = min(tx, ty)
-arrowX = cx + dir.x * t
-arrowY = cy + dir.y * t                        // clamped onto the edge box
-// draw the arrow sprite at (arrowX, arrowY) rotated by `angle`.
+homeY     = Level.homeBand.y                   // world px of the south home band
+remaining = max(0, homeY - hero.transform.y)   // px of descent still to go (0 at home)
+total     = homeY - Level.startY               // px from north start to home band
+progress  = clamp(1 - remaining / total, 0, 1) // 0 at start, 1 at home
+// draw the watch readout: remaining (depth) and/or progress fill.
 ```
-The arrow rides the viewport edge in the bearing direction and rotates to match,
-so it always reads as "home is this way." Screen-space y grows downward, matching
-the world px convention (spec 02); `bearing`'s sin/cos use the same axis sense.
+`remaining` is the depth value; `progress` is the same quantity normalized for a
+bar or dial. The readout only shrinks as the hero descends — there is no rotating
+target, so it reads as "this far down to home."
 
 ## Audio (`audio/audio.js`, `assets/audio.json`)
 A small module over one WebAudio graph. SFX are one-shots; music is a single
@@ -228,11 +233,13 @@ Handlers only call `playSfx`; they read the event payload, never sim internals.
   lists + fps + loop) and the `sprite` component anim-state fields
   (`visualId, anim, frame, t, flipX`); `advanceSprite` ticks in `update(dt)`,
   resolve-to-rect in `render`.
-- Camera `follow`/clamp to `[0, w*tileSize - viewport]`, world→screen transform,
-  and the visible-tile cull range (consumes the spec 02 `Level` + coordinate
-  convention).
-- HUD element → data-source table (health, mana, cooldowns, `Level.bearing`,
-  `runState.scrap`, `Level`) and the edge-arrow compass math.
+- Camera southward auto-scroll: `advance(dt)` ticks `y` by `scrollSpeed` clamped
+  to `[0, h*tileSize - vh]` (no vertical follow), `follow` centers `x` on the hero
+  clamped to `[0, w*tileSize - vw]`, the hero clamped inside the window
+  `[camera.y, camera.y + vh]`; world→screen transform and the visible-tile cull
+  range (consumes the spec 02 `Level` + coordinate convention).
+- HUD element → data-source table (health, mana, cooldowns, hero/home `y` vs map
+  height, `runState.scrap`, `Level`) and the watch depth/progress math.
 - `audio` module API (`init`, `playSfx`, `playMusic`, `stopMusic`, gain setters),
   the master/sfx/music bus graph, `audio.json` registry shape, the per-scene
   music map, and the `events`-driven SFX subscriptions.

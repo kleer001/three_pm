@@ -36,16 +36,16 @@ TITLE → RUN → (DEATH | VICTORY) → META → RUN ...
 `mulberry32` (or equivalent) — small, fast, seedable, reproducible.
 
 - `makeRng(seed) -> { next(): float[0,1), int(n), pick(arr), chance(p) }`.
-- A run's seed is chosen at `RUN.enter()`. Same seed → identical day (gen, spawns,
-  and the watch compass). Enables debugging and daily-seed sharing.
+- A run's seed is chosen at `RUN.enter()`. Same seed → identical day (gen,
+  spawns, loot). Enables debugging and daily-seed sharing.
 - **Sub-streams:** derive independent generators per system
   (`gen`, `spawns`, `loot`) from the run seed so consuming one doesn't desync
   another.
 
-## The "day" and the smart-watch compass
-- The compass bearing home is a pure function of the run seed:
-  `bearing = rng('compass').next() * 360`. Constant within a run, changes each
-  new day. Consumed later by world-gen (home placement) and the HUD.
+## The "day"
+- The run seed *is* the day: it regenerates the neighborhood (gen/spawns/loot)
+  so each day differs. A day count + the regenerated map ground the
+  groundhog-day fiction. Home is fixed due south; there is no per-day bearing.
 
 ## State tiers
 | Tier | Module | Lifetime | Holds |
