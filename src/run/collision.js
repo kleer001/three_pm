@@ -1,11 +1,13 @@
 // Per-axis AABB vs walkable tiles (docs/03-entity-stats.md movement contract).
-// box is {x, y, w, h} in world px; mutated in place.
+// box is {x, y, w, h} in world px where (x, y) is the box CENTER (matching how
+// entities are positioned and drawn); mutated in place.
 import { isWalkable } from "./levelgen.js";
 
-function overlapsSolid(level, x, y, w, h) {
+function overlapsSolid(level, cx, cy, w, h) {
   const ts = level.tileSize;
-  const x0 = Math.floor(x / ts), x1 = Math.floor((x + w - 1e-6) / ts);
-  const y0 = Math.floor(y / ts), y1 = Math.floor((y + h - 1e-6) / ts);
+  const hw = w / 2, hh = h / 2;
+  const x0 = Math.floor((cx - hw) / ts), x1 = Math.floor((cx + hw - 1e-6) / ts);
+  const y0 = Math.floor((cy - hh) / ts), y1 = Math.floor((cy + hh - 1e-6) / ts);
   for (let ty = y0; ty <= y1; ty++)
     for (let tx = x0; tx <= x1; tx++)
       if (!isWalkable(level, tx, ty)) return true;

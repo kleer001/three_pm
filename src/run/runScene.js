@@ -14,7 +14,7 @@ const SCROLL = 55; // px/s the window descends — forces the player down
 const MARGIN = TS; // keep the hero this far inside the window edges
 const MAP_H = 192; // 4x the descent length to get home
 
-const HERO = { speed: 270, maxHp: 50, atkDamage: 9, atkCooldown: 0.45, atkRadius: 80, iframeDur: 0.8, r: 13 };
+const HERO = { speed: 135, maxHp: 50, atkDamage: 9, atkCooldown: 0.45, atkRadius: 80, iframeDur: 0.8, r: 13 };
 
 // Enemies are slower than the hero (dodgeable) and stop to attack.
 const KIND = {
@@ -219,8 +219,18 @@ export function createRunScene(ctx, input, seed) {
     const y0 = Math.max(0, Math.floor(cam.y / TS)), y1 = Math.min(level.h - 1, Math.ceil((cam.y + VIEW_H) / TS));
     for (let ty = y0; ty <= y1; ty++)
       for (let tx = x0; tx <= x1; tx++) {
-        ctx.fillStyle = TILE_COLOR[level.tiles[ty * level.w + tx]];
-        ctx.fillRect(tx * TS - cam.x, ty * TS - cam.y, TS, TS);
+        const i = ty * level.w + tx;
+        const sx = tx * TS - cam.x, sy = ty * TS - cam.y;
+        ctx.fillStyle = TILE_COLOR[level.tiles[i]];
+        ctx.fillRect(sx, sy, TS, TS);
+        // Make non-walkable tiles read as solid obstacles so collision is legible.
+        if (!level.walkable[i]) {
+          ctx.fillStyle = "rgba(0,0,0,0.38)";
+          ctx.fillRect(sx, sy, TS, TS);
+          ctx.strokeStyle = "rgba(255,255,255,0.16)";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(sx + 1, sy + 1, TS - 2, TS - 2);
+        }
       }
     ctx.fillStyle = "rgba(255,215,0,0.35)";
     for (const [hx, hy] of level.homeBand)
