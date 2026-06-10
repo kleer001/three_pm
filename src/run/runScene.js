@@ -46,7 +46,6 @@ export function createRunScene(ctx, input, seed) {
   const hero = {
     x: level.start.x * TS + TS / 2, y: level.start.y * TS + TS / 2,
     w: HERO.r * 2, h: HERO.r * 2, r: HERO.r, hp: HERO.maxHp, cd: 0, iframes: 0,
-    animT: 0, facing: Math.PI / 2, moving: false,
   };
 
   const enemies = [];
@@ -200,9 +199,6 @@ export function createRunScene(ctx, input, seed) {
 
     const intent = input.intent();
     heroMove(intent.x * HERO.speed * dt, intent.y * HERO.speed * dt);
-    hero.animT += dt;
-    hero.moving = intent.x !== 0 || intent.y !== 0;
-    if (hero.moving) hero.facing = Math.atan2(intent.y, intent.x);
 
     // Slingshot: SPACE fires at the nearest living enemy in range, on a shotCD.
     if (hero.cd <= 0 && input.down("Space")) {
@@ -268,7 +264,7 @@ export function createRunScene(ctx, input, seed) {
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
 
     // Stay inside the moving window; being crushed against a wall is fatal.
-    hero.x = clamp(hero.x, MARGIN, mapW - MARGIN);
+    // (heroMove already keeps x within the map and out of walls — no x clamp.)
     const minY = cam.y + MARGIN;
     if (hero.y < minY) {
       hero.y = minY;
@@ -329,23 +325,16 @@ export function createRunScene(ctx, input, seed) {
       }
     }
 
-    // Hero: always-on idle/walk bob + facing nub + grounding shadow.
-    {
-      const hx = hero.x - cam.x, hy = hero.y - cam.y;
-      const bob = Math.sin(hero.animT * (hero.moving ? 14 : 4)) * (hero.moving ? 3 : 1.5);
-      ctx.fillStyle = "rgba(0,0,0,0.2)";
-      ctx.beginPath();
-      ctx.ellipse(hx, hy + hero.r * 0.7, hero.r * 0.85, hero.r * 0.35, 0, 0, Math.PI * 2);
-      ctx.fill();
-      disc(ctx, hx, hy - bob, hero.r, hero.iframes > 0 ? "#7fb3ff" : "#2d6cdf");
-      disc(ctx, hx + Math.cos(hero.facing) * hero.r * 0.55, hy - bob + Math.sin(hero.facing) * hero.r * 0.55, 3, "#fff");
-    }
+    disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? "#7fb3ff" : "#2d6cdf");
 
-    ctx.fillStyle = "#111";
     ctx.font = "14px system-ui, sans-serif";
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
     const sling = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
-    ctx.fillText(`HP ${Math.max(0, hero.hp)}/${HERO.maxHp}   home in ${100 - depth}%   slingshot ${sling} [SPACE]`, 12, 20);
+    const hud = `HP ${Math.max(0, hero.hp)}/${HERO.maxHp}   home in ${100 - depth}%   slingshot ${sling} [SPACE]`;
+    ctx.fillStyle = "rgba(255,255,255,0.75)"; // backing box for legibility over any tile
+    ctx.fillRect(6, 6, ctx.measureText(hud).width + 12, 22);
+    ctx.fillStyle = "#111";
+    ctx.fillText(hud, 12, 21);
     if (outcome) {
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(0, VIEW_H / 2 - 50, VIEW_W, 100);
