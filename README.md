@@ -1,23 +1,32 @@
 # three_pm
 
-TODO: describe three_pm
+TODO: describe three_pm — a browser game.
 
-## Setup
+Vanilla HTML/CSS/JS, no build step. The one rule that keeps it portable across
+all three targets below: **`index.html` lives at the repo root and every path
+is relative** (no leading `/`).
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-```
+## Run locally
 
-## Run
+ES modules need HTTP, not `file://`:
 
 ```bash
-python main.py
+python3 -m http.server 8000
 ```
 
-## Test
+Open <http://localhost:8000>.
+
+## Play on the web (GitHub Pages)
+
+Pushed to `main`, the game is live at <https://kleer001.github.io/three_pm/>.
+No build — Pages serves the repo root as-is.
+
+## Publish to itch.io
 
 ```bash
-pytest
+./package.sh
 ```
+
+Produces `dist/three_pm.zip` with `index.html` at the archive root (itch.io's
+requirement). Upload it as a new HTML5 project and tick **"This file will be
+played in the browser."**

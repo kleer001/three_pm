@@ -1,0 +1,23 @@
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #fafafa;
+  color: #1a1a1a;
+  font-family: system-ui, sans-serif;
+}
+
+#app {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+}
+
+#game {
+  background: #ffffff;
+  border: 1px solid #ddd;
+  image-rendering: pixelated;
+}
