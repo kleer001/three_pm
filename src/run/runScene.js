@@ -46,6 +46,7 @@ export function createRunScene(ctx, input, seed) {
   const hero = {
     x: level.start.x * TS + TS / 2, y: level.start.y * TS + TS / 2,
     w: HERO.r * 2, h: HERO.r * 2, r: HERO.r, hp: HERO.maxHp, cd: 0, iframes: 0,
+    animT: 0, facing: Math.PI / 2, moving: false,
   };
 
   const enemies = [];
@@ -171,6 +172,7 @@ export function createRunScene(ctx, input, seed) {
   // but may always move away from one (so it never gets permanently stuck).
   function bodyDeeper(px, py) {
     for (const e of enemies) {
+      if (e.dead) continue; // corpses are pushable, only living enemies hard-block
       const min = hero.r + e.r;
       const nd = dist(hero.x, hero.y, e.x, e.y);
       if (nd < min && nd < dist(px, py, e.x, e.y)) return true;
@@ -198,9 +200,12 @@ export function createRunScene(ctx, input, seed) {
 
     const intent = input.intent();
     heroMove(intent.x * HERO.speed * dt, intent.y * HERO.speed * dt);
+    hero.animT += dt;
+    hero.moving = intent.x !== 0 || intent.y !== 0;
+    if (hero.moving) hero.facing = Math.atan2(intent.y, intent.x);
 
-    // Slingshot: auto-fire at the nearest living enemy in range, every shotCD.
-    if (hero.cd <= 0) {
+    // Slingshot: SPACE fires at the nearest living enemy in range, on a shotCD.
+    if (hero.cd <= 0 && input.down("Space")) {
       let best = null, bd = HERO.shotRange;
       for (const e of enemies) {
         if (e.dead) continue;
@@ -257,6 +262,7 @@ export function createRunScene(ctx, input, seed) {
       for (const c of corpses) separate(c, live[i], false);
       for (let j = i + 1; j < live.length; j++) separate(live[i], live[j], true);
     }
+    for (const c of corpses) separate(hero, c, false); // the hero shoves (heavy) corpses aside
 
     for (let i = shots.length - 1; i >= 0; i--) if (shots[i].dead) shots.splice(i, 1);
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
@@ -323,13 +329,23 @@ export function createRunScene(ctx, input, seed) {
       }
     }
 
-    disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? "#7fb3ff" : "#2d6cdf");
+    // Hero: always-on idle/walk bob + facing nub + grounding shadow.
+    {
+      const hx = hero.x - cam.x, hy = hero.y - cam.y;
+      const bob = Math.sin(hero.animT * (hero.moving ? 14 : 4)) * (hero.moving ? 3 : 1.5);
+      ctx.fillStyle = "rgba(0,0,0,0.2)";
+      ctx.beginPath();
+      ctx.ellipse(hx, hy + hero.r * 0.7, hero.r * 0.85, hero.r * 0.35, 0, 0, Math.PI * 2);
+      ctx.fill();
+      disc(ctx, hx, hy - bob, hero.r, hero.iframes > 0 ? "#7fb3ff" : "#2d6cdf");
+      disc(ctx, hx + Math.cos(hero.facing) * hero.r * 0.55, hy - bob + Math.sin(hero.facing) * hero.r * 0.55, 3, "#fff");
+    }
 
     ctx.fillStyle = "#111";
     ctx.font = "14px system-ui, sans-serif";
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
     const sling = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
-    ctx.fillText(`HP ${Math.max(0, hero.hp)}/${HERO.maxHp}   home in ${100 - depth}%   slingshot ${sling}`, 12, 20);
+    ctx.fillText(`HP ${Math.max(0, hero.hp)}/${HERO.maxHp}   home in ${100 - depth}%   slingshot ${sling} [SPACE]`, 12, 20);
     if (outcome) {
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(0, VIEW_H / 2 - 50, VIEW_W, 100);
