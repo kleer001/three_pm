@@ -2,7 +2,8 @@
 // Run: node tests/smoke.mjs
 import { generate, isWalkable, TILE } from "../src/run/levelgen.js";
 import { moveAndCollide } from "../src/run/collision.js";
-import { findPath } from "../src/ai/ai.js";
+import { findPath, localWalkableTile } from "../src/ai/ai.js";
+import { makeRng } from "../src/core/rng.js";
 
 let failures = 0;
 const ok = (cond, msg) => {
@@ -64,6 +65,24 @@ ok(a.tiles.every((v, i) => v === b.tiles[i]), "same seed reproduces map");
     ok(prev[0] === hx && prev[1] === hy, "path ends at the target");
   }
   ok(findPath(level, 5, 5, 5, 5).length === 0, "findPath same-tile returns empty");
+}
+
+// Clear start approach: the first 6 tiles forward (south) from start are walkable.
+for (let seed = 1; seed <= 50; seed++) {
+  const level = generate(seed, { w: 48, h: 64, bearing: (3 * Math.PI) / 2 });
+  let clear = true;
+  for (let i = 0; i <= 6; i++) if (!isWalkable(level, level.start.x, level.start.y + i)) clear = false;
+  ok(clear, `seed ${seed}: 6-tile forward lane is clear`);
+}
+
+// localWalkableTile stays within radius and returns a walkable tile.
+{
+  const level = generate(3, { w: 48, h: 64, bearing: (3 * Math.PI) / 2 });
+  const rng = makeRng(123);
+  const [sx, sy] = [level.start.x, level.start.y + 3];
+  const [lx, ly] = localWalkableTile(level, rng, sx, sy, 10);
+  ok(isWalkable(level, lx, ly), "localWalkableTile returns walkable");
+  ok(Math.abs(lx - sx) <= 10 && Math.abs(ly - sy) <= 10, "localWalkableTile within radius");
 }
 
 // Collision: a box may not move into a wall, and may move through open space.

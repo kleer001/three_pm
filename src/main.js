@@ -6,7 +6,15 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const input = createInput(canvas);
 
-// Slice: drop straight into a run with a fixed seed (the "day").
-const seed = 7;
-const scene = createRunScene(ctx, input, seed);
-startLoop(scene);
+// Slice: drop straight into a run. A new run (restart, or a new day) regenerates
+// the neighborhood from the next seed.
+let scene = createRunScene(ctx, input, 7);
+startLoop({
+  update(dt) {
+    scene.update(dt);
+    if (scene.restart) scene = createRunScene(ctx, input, scene.nextSeed);
+  },
+  render(alpha) {
+    scene.render(alpha);
+  },
+});

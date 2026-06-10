@@ -114,6 +114,17 @@ export function generate(seed, { w = 48, h = 48, bearing = 0, tileSize = 24 } = 
     : { x: w >> 1, y: 1 };
   tiles[idx(w, start.x, start.y)] = TILE.STREET;
 
+  // Guaranteed clear approach: a 3-wide walkable lane running forward (toward
+  // home) from the start, so the player isn't immediately forced into a wall.
+  const fwd = edge === "S" ? [0, 1] : edge === "N" ? [0, -1] : edge === "E" ? [1, 0] : [-1, 0];
+  for (let i = 0; i <= 6; i++) {
+    const lx = start.x + fwd[0] * i, ly = start.y + fwd[1] * i;
+    for (let s = -1; s <= 1; s++) {
+      const xx = lx + (fwd[0] ? 0 : s), yy = ly + (fwd[1] ? 0 : s);
+      if (inBounds(w, h, xx, yy)) tiles[idx(w, xx, yy)] = TILE.STREET;
+    }
+  }
+
   // 5. Connectivity repair: BFS from start over walkable; if no home-band tile
   // is reached, carve a straight corridor toward the home edge. One guarantee,
   // no fallback path.

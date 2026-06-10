@@ -12,6 +12,11 @@ function overlapsSolid(level, x, y, w, h) {
   return false;
 }
 
+// True if the box currently overlaps any non-walkable tile (used for crush checks).
+export function boxBlocked(level, box) {
+  return overlapsSolid(level, box.x, box.y, box.w, box.h);
+}
+
 export function moveAndCollide(level, box, dx, dy) {
   box.x += dx;
   if (overlapsSolid(level, box.x, box.y, box.w, box.h)) box.x -= dx;

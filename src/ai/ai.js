@@ -46,6 +46,16 @@ export function randomWalkableTile(level, rng) {
   return [level.start.x, level.start.y];
 }
 
+// A walkable tile near (cx,cy) within `radius` tiles — keeps wanderer BFS cheap
+// on large maps by not picking far-flung waypoints.
+export function localWalkableTile(level, rng, cx, cy, radius) {
+  for (let i = 0; i < 40; i++) {
+    const x = cx + rng.range(-radius, radius), y = cy + rng.range(-radius, radius);
+    if (x >= 0 && y >= 0 && x < level.w && y < level.h && isWalkable(level, x, y)) return [x, y];
+  }
+  return [cx, cy];
+}
+
 // Nearest walkable tile to a point (BFS expand) — for placing patrol waypoints.
 export function nearestWalkable(level, tx, ty) {
   if (isWalkable(level, tx, ty)) return [tx, ty];
