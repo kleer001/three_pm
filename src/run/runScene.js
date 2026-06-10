@@ -16,6 +16,10 @@ const MARGIN = TS; // keep the hero this far inside the window edges
 const MAP_H = 192; // 4x the descent length to get home
 const FREEZE_DUR = 2.5; // how long a slingshot hit immobilizes an enemy
 
+// Brown-wall-feature knobs (difficulty / level shape). Scale stretches feature
+// shape (X×Y); density scales how much obstacle there is overall.
+const WALL_SCALE_X = 1, WALL_SCALE_Y = 2, WALL_DENSITY = 0.5;
+
 const HERO = { speed: 135, maxHp: 50, iframeDur: 0.8, r: 13, shotCD: 3, shotSpeed: 360, shotRange: 470, shotR: 6 };
 
 // Enemies are slower than the hero (dodgeable) and stop to attack.
@@ -38,7 +42,10 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 export function createRunScene(ctx, input, seed) {
-  const level = generate(seed, { w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS });
+  const level = generate(seed, {
+    w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS,
+    wallScaleX: WALL_SCALE_X, wallScaleY: WALL_SCALE_Y, wallDensity: WALL_DENSITY,
+  });
   const mapW = level.w * TS, mapH = level.h * TS;
   const homeSet = new Set(level.homeBand.map(([x, y]) => y * level.w + x));
   const rng = makeRng(subSeed(seed, "spawns"));

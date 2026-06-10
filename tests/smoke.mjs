@@ -85,6 +85,20 @@ for (let seed = 1; seed <= 50; seed++) {
   ok(Math.abs(lx - sx) <= 10 && Math.abs(ly - sy) <= 10, "localWalkableTile within radius");
 }
 
+// Wall-density knob scales obstacle coverage roughly linearly (no percolation collapse).
+{
+  const obst = (d) => {
+    let o = 0;
+    for (let s = 1; s <= 15; s++) {
+      const l = generate(s, { w: 48, h: 96, bearing: (3 * Math.PI) / 2, wallDensity: d });
+      o += l.walkable.reduce((a, v) => a + (v === 0 ? 1 : 0), 0);
+    }
+    return o / 15;
+  };
+  const half = obst(0.5), full = obst(1.0);
+  ok(half < full * 0.7 && half > full * 0.3, `density 0.5 ~= half of 1.0 obstacles (${half | 0} vs ${full | 0})`);
+}
+
 // Collision: box (x,y) is its CENTER (must match how entities are drawn).
 const lvl = { w: 3, h: 1, tileSize: 24, walkable: Uint8Array.from([1, 0, 1]) };
 const box = { x: 12, y: 12, w: 8, h: 8 };

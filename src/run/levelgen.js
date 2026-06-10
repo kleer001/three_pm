@@ -26,7 +26,14 @@ function homeEdge(bearing) {
   return "S";
 }
 
-export function generate(seed, { w = 48, h = 48, bearing = 0, tileSize = 24 } = {}) {
+export function generate(seed, {
+  w = 48, h = 48, bearing = 0, tileSize = 24,
+  // Obstacle ("brown wall feature") knobs:
+  //  wallScaleX/Y stretch feature shapes (1 = baseline; 2 = features 2x wider/taller,
+  //  0.5 = 2x smaller) while preserving coverage.
+  //  wallDensity scales how much obstacle there is overall (1 = baseline).
+  wallScaleX = 1, wallScaleY = 1, wallDensity = 1,
+} = {}) {
   const rng = makeRng(subSeed(seed, "gen"));
   const tiles = new Uint8Array(w * h).fill(TILE.YARD);
 
@@ -59,7 +66,7 @@ export function generate(seed, { w = 48, h = 48, bearing = 0, tileSize = 24 } = 
   // 2. Houses: drop footprints onto yard blocks, walls with one door gap.
   for (let y = 2; y < h - 6; y += 1) {
     for (let x = 2; x < w - 6; x += 1) {
-      if (!rng.chance(0.012)) continue;
+      if (!rng.chance(0.012 * wallDensity)) continue;
       const hw = rng.range(4, 6), hh = rng.range(4, 6);
       let clear = true;
       for (let yy = y - 1; yy <= y + hh && clear; yy++)
@@ -75,26 +82,40 @@ export function generate(seed, { w = 48, h = 48, bearing = 0, tileSize = 24 } = 
     }
   }
 
-  // 3. Decay pass (cellular automata) -> coherent rubble fields.
-  let damage = new Uint8Array(w * h);
-  for (let i = 0; i < damage.length; i++)
-    if (WALKABLE.has(tiles[i]) && tiles[i] !== TILE.FLOOR) damage[i] = rng.chance(0.42) ? 1 : 0;
-  for (let pass = 0; pass < 3; pass++) {
-    const nxt = new Uint8Array(w * h);
-    for (let y = 0; y < h; y++)
-      for (let x = 0; x < w; x++) {
-        let n = 0;
+  // 3. Decay pass -> coherent rubble fields, with two independent knobs.
+  //    Smoothed noise on a grid scaled by 1/wallScale (so features stretch
+  //    anisotropically when upsampled), then thresholded at the wallDensity
+  //    quantile so obstacle coverage is exactly proportional to density.
+  const sw = Math.max(1, Math.round(w / wallScaleX));
+  const sh = Math.max(1, Math.round(h / wallScaleY));
+  const N = sw * sh;
+  let field = new Float32Array(N);
+  for (let i = 0; i < N; i++) field[i] = rng.next();
+  for (let pass = 0; pass < 3; pass++) { // box-blur into coherent blobs
+    const nf = new Float32Array(N);
+    for (let y = 0; y < sh; y++)
+      for (let x = 0; x < sw; x++) {
+        let s = 0, c = 0;
         for (let dy = -1; dy <= 1; dy++)
           for (let dx = -1; dx <= 1; dx++) {
-            if (!dx && !dy) continue;
-            if (inBounds(w, h, x + dx, y + dy) && damage[idx(w, x + dx, y + dy)]) n++;
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && ny >= 0 && nx < sw && ny < sh) { s += field[ny * sw + nx]; c++; }
           }
-        nxt[idx(w, x, y)] = n >= 5 ? 1 : n <= 2 ? 0 : damage[idx(w, x, y)];
+        nf[y * sw + x] = s / c;
       }
-    damage = nxt;
+    field = nf;
   }
-  for (let i = 0; i < tiles.length; i++)
-    if (damage[i] && WALKABLE.has(tiles[i]) && tiles[i] !== TILE.FLOOR) tiles[i] = TILE.RUBBLE;
+  const cover = Math.min(0.95, Math.max(0, 0.42 * wallDensity)); // baseline 42% at density 1
+  const sorted = Float32Array.from(field).sort();
+  const thr = sorted[Math.min(N - 1, Math.floor((1 - cover) * N))];
+  for (let y = 0; y < h; y++) // upsample (nearest) + apply over decayable tiles
+    for (let x = 0; x < w; x++) {
+      const sx2 = Math.min(sw - 1, Math.floor((x * sw) / w));
+      const sy2 = Math.min(sh - 1, Math.floor((y * sh) / h));
+      if (field[sy2 * sw + sx2] <= thr) continue;
+      const ti = idx(w, x, y);
+      if (WALKABLE.has(tiles[ti]) && tiles[ti] !== TILE.FLOOR) tiles[ti] = TILE.RUBBLE;
+    }
 
   // 4. Bearing -> home band (far edge strip) and start (opposite edge center).
   const edge = homeEdge(bearing);
