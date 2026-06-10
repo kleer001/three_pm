@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3pm — recorder</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #fafafa; color: #1a1a1a; padding: 24px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    p { margin: 0 0 16px; color: #555; }
+    button { font: inherit; padding: 8px 16px; margin-right: 8px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; }
+    button:disabled { opacity: .4; cursor: default; }
+    #status { margin: 12px 0; font-variant-numeric: tabular-nums; }
+    video { width: 100%; max-width: 720px; background: #000; border: 1px solid #ddd; border-radius: 6px; display: block; }
+    a { color: #1558d6; }
+  </style>
+</head>
+<body>
+  <h1>3pm — screen recorder</h1>
+  <p>Fully local. Click Record, pick the game tab/window, play. Stop auto-downloads a <code>.webm</code>.</p>
+  <button id="rec">● Record</button>
+  <button id="stop" disabled>■ Stop</button>
+  <div id="status">idle</div>
+  <video id="preview" controls muted></video>
+
+  <script>
+    const recBtn = document.getElementById("rec");
+    const stopBtn = document.getElementById("stop");
+    const status = document.getElementById("status");
+    const preview = document.getElementById("preview");
+    let recorder, chunks, stream, t0, ticker;
+
+    const pad = (n) => String(n).padStart(2, "0");
+    function stamp() {
+      const d = new Date();
+      return `3pm-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    }
+
+    recBtn.onclick = async () => {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 60 },
+        audio: false,
+      });
+      chunks = [];
+      recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+      recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      recorder.onstop = () => {
+        clearInterval(ticker);
+        const blob = new Blob(chunks, { type: "video/webm" });
+        const url = URL.createObjectURL(blob);
+        preview.src = url;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${stamp()}.webm`;
+        a.click();
+        status.textContent = `saved ${a.download} (${(blob.size / 1e6).toFixed(1)} MB)`;
+      };
+      // Stop if the user ends the share from the browser's own UI.
+      stream.getVideoTracks()[0].onended = () => recorder.state !== "inactive" && recorder.stop();
+
+      recorder.start();
+      t0 = Date.now();
+      ticker = setInterval(() => {
+        status.textContent = `recording ${((Date.now() - t0) / 1000).toFixed(0)}s`;
+      }, 250);
+      recBtn.disabled = true;
+      stopBtn.disabled = false;
+    };
+
+    stopBtn.onclick = () => {
+      recorder.stop();
+      stream.getTracks().forEach((t) => t.stop());
+      recBtn.disabled = false;
+      stopBtn.disabled = true;
+    };
+  </script>
+</body>
+</html>
