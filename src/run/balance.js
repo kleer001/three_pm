@@ -17,7 +17,19 @@ export const BALANCE = {
   // shape (X×Y); density scales how much obstacle there is overall.
   wall: { scaleX: 1, scaleY: 2, density: 0.5 },
 
-  hero: { speed: 135, maxHp: 50, iframeDur: 0.8, r: 13, shotCD: 3, shotSpeed: 360, shotRange: 470, shotR: 6, shotDmg: 10 },
+  hero: { speed: 135, maxHp: 50, iframeDur: 0.8, r: 13, maxMana: 40, manaRegen: 8 },
+
+  // Player arsenal — one is chosen per run on the select screen, fired on SPACE.
+  // Each is a declarative offense (the spec's basic/signature, slice-shaped): a
+  // `damage` descriptor (flat + fraction of the target's max/current HP, resolved
+  // by combat.weaponDamage), an optional `manaCost` spent from the hero's pool
+  // (same mana code the enemy casters use), and `freeze` for the slingshot's CC.
+  weapons: {
+    slingshot: { name: "Slingshot", cd: 3,   speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  damage: { flat: 0, pctMax: 0.5, pctCur: 0   }, desc: "50% max HP · freezes" },
+    // 40% of current HP front-loads the chunk; the small flat floor lets it
+    // actually finish (a pure %-current weapon asymptotes and never kills).
+    hex:       { name: "Hex",       cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, damage: { flat: 4, pctMax: 0,   pctCur: 0.4 }, desc: "40% current HP +4 · costs mana" },
+  },
 
   // Enemy roster — spec 06's four families × tiers. One `behavior` per family
   // (chaser | swarmer | shooter | charger); tiers differ only in numbers, never
@@ -60,7 +72,6 @@ export const BALANCE = {
   waypointArrive: 5, // px tolerance for "reached the path node"
   softBodyPush: 0.5, // share of overlap each of two living bodies yields when separating
   enemyShotLife: 2.5, // s an enemy projectile lives before fizzling
-  heroShotLife: 2, // s a slingshot pebble lives before fizzling
   enemyShotHitPad: 5, // px added to hero radius for enemy-projectile hits
 };
 
@@ -88,7 +99,7 @@ export const THEME = {
   homeBand: "rgba(255,215,0,0.35)",
   corpse: "#2b2622",
   enemyShot: { r: 5, color: "#145a32" },
-  heroShot: "#d8d4c8",
+  weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6" }, // hero pebble color, keyed by weapon id
   freeze: { fill: "rgba(150,205,255,0.55)", ring: "rgba(190,230,255,0.9)", ringPad: 2 },
   rangedTelegraph: { ring: "rgba(39,174,96,0.9)", line: "rgba(39,174,96,0.5)", ringPad: 5 },
   chargerTelegraph: { ring: "rgba(231,76,60,0.85)", line: "rgba(231,76,60,0.6)", lunge: "rgba(255,120,90,0.9)", ringPad: 6 },
@@ -96,4 +107,6 @@ export const THEME = {
   bar: { back: "rgba(0,0,0,0.5)", hp: "#e74c3c", mana: "#3498db", tapped: "rgba(52,152,219,0.25)", w: 26, h: 3, gap: 2 },
   hud: { font: "14px system-ui, sans-serif", box: "rgba(255,255,255,0.75)", text: "#111" },
   overlay: { bg: "rgba(0,0,0,0.6)", fg: "#fff", titleFont: "32px system-ui, sans-serif", subFont: "16px system-ui, sans-serif" },
+  select: { bg: "#161616", title: "#fff", card: "#262626", cardActive: "#3a3a3a", border: "#6aa9ff", name: "#fff", desc: "#bbb", hint: "#999",
+    titleFont: "28px system-ui, sans-serif", nameFont: "20px system-ui, sans-serif", descFont: "14px system-ui, sans-serif", hintFont: "14px system-ui, sans-serif" },
 };

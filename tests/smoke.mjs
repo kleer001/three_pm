@@ -5,6 +5,7 @@ import { moveAndCollide, boxBlocked } from "../src/run/collision.js";
 import { findPath, localWalkableTile } from "../src/ai/ai.js";
 import { makeRng } from "../src/core/rng.js";
 import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
+import { weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
 import { BALANCE } from "../src/run/balance.js";
 
 let failures = 0;
@@ -163,6 +164,33 @@ for (const [id, d] of Object.entries(BALANCE.enemies)) {
     ok(d.maxMana >= d.manaCost, `${id}: pool affords a cast`);
     ok(d.manaRegen > 0, `${id}: mana regenerates`);
   }
+}
+
+// Combat core: the one resolver shared by hero and enemies.
+{
+  // Percent-of-HP damage model.
+  ok(weaponDamage({ flat: 0, pctMax: 0.5, pctCur: 0 }, 52, 52) === 26, "50% of max HP");
+  ok(weaponDamage({ flat: 7, pctMax: 0, pctCur: 0 }, 52, 52) === 7, "pure flat damage");
+  ok(weaponDamage({ flat: 2, pctMax: 0.1, pctCur: 0.25 }, 40, 20) === 2 + 4 + 5, "blended flat+max+current");
+  // A pure %-current weapon leaves 60% each hit and never reaches 0 (the reason
+  // Hex carries a flat floor): walk it down many times, stays positive.
+  let hp = 100;
+  for (let n = 0; n < 50; n++) hp -= weaponDamage({ flat: 0, pctMax: 0, pctCur: 0.4 }, 100, hp);
+  ok(hp > 0, "pure %-current damage asymptotes, never kills");
+
+  // applyDamage: i-frame gate, death flag, and enemies (no iframeDur) take every hit.
+  const hero = { hp: 20, maxHp: 20, iframes: 0, iframeDur: 0.8, dead: false };
+  applyDamage(hero, 5); ok(hero.hp === 15 && hero.iframes === 0.8, "hero takes a hit, gains i-frames");
+  applyDamage(hero, 5); ok(hero.hp === 15, "i-frame window blocks the next hit");
+  const foe = { hp: 8, dead: false };
+  applyDamage(foe, 5); applyDamage(foe, 5); ok(foe.hp === 0 && foe.dead, "no-iframe entity takes every hit and dies");
+
+  // Mana: regen clamps to the pool, canCast gates, spend deducts. No-op without a pool.
+  const caster = { mana: 6, maxMana: 16, manaRegen: 10 };
+  regenMana(caster, 1); ok(caster.mana === 16, "regenMana clamps to maxMana");
+  ok(canCast(caster, 16) && !canCast(caster, 17), "canCast boundary");
+  spendMana(caster, 10); ok(caster.mana === 6, "spendMana deducts");
+  const noPool = { hp: 5 }; regenMana(noPool, 1); ok(noPool.mana === undefined, "regenMana no-op without a pool");
 }
 
 console.log(failures === 0

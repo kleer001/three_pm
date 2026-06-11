@@ -1,13 +1,15 @@
 // Vertical-slice RUN scene: a forced southward descent. The camera window
 // auto-scrolls down, holding Marvin inside it; home is the south band, four
 // times the map away. Enemies use BFS pathfinding (ported from BrainMaze), take
-// up space (soft body collision), and stop to attack. Marvin fights back with
-// an auto-aiming slingshot that freezes — two freezes kill.
+// up space (soft body collision), and stop to attack. Marvin fights back with an
+// auto-aiming weapon (chosen on the select screen) whose damage and mana cost run
+// through the same combat resolver the enemies use.
 import { generate, isWalkable } from "./levelgen.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
 import { findPath } from "../ai/ai.js";
 import { makeDirector } from "./director.js";
+import { weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
 import { BALANCE, THEME } from "./balance.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -23,7 +25,7 @@ const TILE_COLOR = THEME.tile; // indexed by tile id (see TILE in levelgen.js)
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
-export function createRunScene(ctx, input, seed) {
+export function createRunScene(ctx, input, seed, weaponId) {
   const level = generate(seed, {
     w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS,
     wallScaleX: BALANCE.wall.scaleX, wallScaleY: BALANCE.wall.scaleY, wallDensity: BALANCE.wall.density,
@@ -31,10 +33,14 @@ export function createRunScene(ctx, input, seed) {
   const mapW = level.w * TS, mapH = level.h * TS;
   const homeSet = new Set(level.homeBand.map(([x, y]) => y * level.w + x));
   const rng = makeRng(subSeed(seed, "spawns"));
+  const weapon = { id: weaponId, ...BALANCE.weapons[weaponId] };
 
+  // Hero shares the combat.js health/mana component shape with every enemy.
   const hero = {
     x: level.start.x * TS + TS / 2, y: level.start.y * TS + TS / 2,
-    w: HERO.r * 2, h: HERO.r * 2, r: HERO.r, hp: HERO.maxHp, cd: 0, iframes: 0,
+    w: HERO.r * 2, h: HERO.r * 2, r: HERO.r, hp: HERO.maxHp, maxHp: HERO.maxHp,
+    iframes: 0, iframeDur: HERO.iframeDur, mana: HERO.maxMana, maxMana: HERO.maxMana,
+    manaRegen: HERO.manaRegen, dead: false, cd: 0,
   };
 
   const cam = { x: 0, y: 0 };
@@ -52,7 +58,7 @@ export function createRunScene(ctx, input, seed) {
     enemies.push({
       def, behavior: def.behavior,
       x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: def.r * 2, h: def.r * 2, r: def.r,
-      hp: def.maxHp, mana: def.maxMana || 0,
+      hp: def.maxHp, maxHp: def.maxHp, mana: def.maxMana || 0, maxMana: def.maxMana || 0, manaRegen: def.manaRegen || 0,
       freezesToKill: def.freezesToKill, freezeCount: 0, frozenT: 0, dead: false,
       path: null, pi: 0, repathT: 0, state: null, timer: 0, lockAim: null,
     });
@@ -81,11 +87,11 @@ export function createRunScene(ctx, input, seed) {
     e.repathT = k.repath;
   }
 
+  // Hero damage flows through the shared resolver (i-frames + death) like any
+  // entity; the run-loss is the hero-specific consequence layered on top.
   function hurtHero(amount) {
-    if (hero.iframes > 0) return;
-    hero.hp -= amount;
-    hero.iframes = HERO.iframeDur;
-    if (hero.hp <= 0) outcome = "lose";
+    applyDamage(hero, amount);
+    if (hero.dead) outcome = "lose";
   }
 
   // Spec 06's four behavior archetypes, one function per family — the frozen
@@ -119,7 +125,7 @@ export function createRunScene(ctx, input, seed) {
     // until the pool refills — positioning lets you wait one out.
     shooter(e, dt, heroTile) {
       const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
-      e.mana = Math.min(k.maxMana, e.mana + k.manaRegen * dt);
+      regenMana(e, dt); // same mana code the hero's weapons use
       const kite = () => {
         if (d < k.prefRange * k.retreatFrac) {
           const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
@@ -129,7 +135,7 @@ export function createRunScene(ctx, input, seed) {
       e.state = e.state || "approach";
       if (e.state === "approach") {
         if (d <= k.prefRange) {
-          if (e.mana >= k.manaCost) { e.state = "aim"; e.timer = k.aim; return; }
+          if (canCast(e, k.manaCost)) { e.state = "aim"; e.timer = k.aim; return; }
           kite(); // in range but dry — hold and regen
           return;
         }
@@ -140,7 +146,7 @@ export function createRunScene(ctx, input, seed) {
         if (e.timer <= 0) {
           const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
           projectiles.push({ x: e.x, y: e.y, vx: (dx / m) * k.shot, vy: (dy / m) * k.shot, life: BALANCE.enemyShotLife, dmg: k.dmg, dead: false });
-          e.mana -= k.manaCost;
+          spendMana(e, k.manaCost);
           e.state = "cooldown"; e.timer = k.cooldown;
         }
       } else {
@@ -232,6 +238,7 @@ export function createRunScene(ctx, input, seed) {
     }
     hero.cd = Math.max(0, hero.cd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
+    regenMana(hero, dt); // same mana code the enemy casters use
 
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
 
@@ -241,9 +248,10 @@ export function createRunScene(ctx, input, seed) {
     const intent = input.intent();
     heroMove(intent.x * HERO.speed * dt, intent.y * HERO.speed * dt);
 
-    // Slingshot: SPACE fires at the nearest living enemy in range, on a shotCD.
-    if (hero.cd <= 0 && input.down("Space")) {
-      let best = null, bd = HERO.shotRange;
+    // Selected weapon: SPACE auto-aims the nearest enemy in range, on cooldown and
+    // affordable mana. The shot carries its weapon so the hit resolves its damage.
+    if (hero.cd <= 0 && canCast(hero, weapon.manaCost) && input.down("Space")) {
+      let best = null, bd = weapon.range;
       for (const e of enemies) {
         if (e.dead) continue;
         const d = dist(e.x, e.y, hero.x, hero.y);
@@ -251,23 +259,27 @@ export function createRunScene(ctx, input, seed) {
       }
       if (best) {
         const dx = best.x - hero.x, dy = best.y - hero.y, m = Math.hypot(dx, dy) || 1;
-        shots.push({ x: hero.x, y: hero.y, vx: (dx / m) * HERO.shotSpeed, vy: (dy / m) * HERO.shotSpeed, life: BALANCE.heroShotLife, dead: false });
-        hero.cd = HERO.shotCD;
+        shots.push({ x: hero.x, y: hero.y, vx: (dx / m) * weapon.speed, vy: (dy / m) * weapon.speed, life: weapon.life, dead: false, w: weapon });
+        hero.cd = weapon.cd;
+        spendMana(hero, weapon.manaCost);
       }
     }
 
-    // Hero pebbles: freeze on hit; a second freeze kills.
+    // Hero shots: deal the weapon's percent-HP damage; the slingshot also freezes
+    // (freeze-to-kill stays its lethal counter), other weapons kill via HP.
     for (const s of shots) {
       if (s.dead) continue;
       s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
       if (s.life <= 0 || !isWalkable(level, Math.floor(s.x / TS), Math.floor(s.y / TS))) { s.dead = true; continue; }
       for (const e of enemies) {
         if (e.dead) continue;
-        if (dist(s.x, s.y, e.x, e.y) < HERO.shotR + e.r) {
-          e.freezeCount++;
-          e.frozenT = FREEZE_DUR;
-          e.hp -= HERO.shotDmg; // chips the secondary pool; freeze is still the kill
-          if (e.freezeCount >= e.freezesToKill || e.hp <= 0) e.dead = true;
+        if (dist(s.x, s.y, e.x, e.y) < s.w.shotR + e.r) {
+          applyDamage(e, weaponDamage(s.w.damage, e.maxHp, e.hp));
+          if (s.w.freeze) {
+            e.freezeCount++;
+            e.frozenT = FREEZE_DUR;
+            if (e.freezeCount >= e.freezesToKill) e.dead = true;
+          }
           s.dead = true;
           break;
         }
@@ -345,7 +357,7 @@ export function createRunScene(ctx, input, seed) {
       if (e.dead) disc(ctx, e.x - cam.x, e.y - cam.y, e.r, THEME.corpse);
 
     for (const p of projectiles) disc(ctx, p.x - cam.x, p.y - cam.y, THEME.enemyShot.r, THEME.enemyShot.color);
-    for (const s of shots) disc(ctx, s.x - cam.x, s.y - cam.y, HERO.shotR, THEME.heroShot);
+    for (const s of shots) disc(ctx, s.x - cam.x, s.y - cam.y, s.w.shotR, THEME.weaponShot[s.w.id]);
 
     for (const e of enemies) {
       if (e.dead) continue;
@@ -385,8 +397,9 @@ export function createRunScene(ctx, input, seed) {
 
     ctx.font = THEME.hud.font;
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
-    const sling = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
-    const hud = `HP ${Math.max(0, hero.hp)}/${HERO.maxHp}   home in ${100 - depth}%   slingshot ${sling} [SPACE]`;
+    const ready = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
+    const mana = weapon.manaCost > 0 ? `   MP ${Math.round(hero.mana)}/${hero.maxMana}` : "";
+    const hud = `HP ${Math.max(0, Math.round(hero.hp))}/${hero.maxHp}${mana}   home in ${100 - depth}%   ${weapon.name} ${ready} [SPACE]`;
     ctx.fillStyle = THEME.hud.box; // backing box for legibility over any tile
     ctx.fillRect(6, 6, ctx.measureText(hud).width + 12, 22);
     ctx.fillStyle = THEME.hud.text;
