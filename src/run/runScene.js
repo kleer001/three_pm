@@ -3,40 +3,21 @@
 // times the map away. Enemies use BFS pathfinding (ported from BrainMaze), take
 // up space (soft body collision), and stop to attack. Marvin fights back with
 // an auto-aiming slingshot that freezes — two freezes kill.
-import { generate, TILE, isWalkable } from "./levelgen.js";
+import { generate, isWalkable } from "./levelgen.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
 import { findPath, randomWalkableTile, localWalkableTile } from "../ai/ai.js";
+import { BALANCE, THEME } from "./balance.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 const SCALE = 2;
 const TS = 24 * SCALE; // 2x grid
-const SCROLL = 55; // px/s the window descends — forces the player down
 const MARGIN = TS; // keep the hero this far inside the window edges
-const MAP_H = 192; // 4x the descent length to get home
-const FREEZE_DUR = 2.5; // how long a slingshot hit immobilizes an enemy
 
-// Brown-wall-feature knobs (difficulty / level shape). Scale stretches feature
-// shape (X×Y); density scales how much obstacle there is overall.
-const WALL_SCALE_X = 1, WALL_SCALE_Y = 2, WALL_DENSITY = 0.5;
-
-const HERO = { speed: 135, maxHp: 50, iframeDur: 0.8, r: 13, shotCD: 3, shotSpeed: 360, shotRange: 470, shotR: 6 };
-
-// Enemies are slower than the hero (dodgeable) and stop to attack.
-const KIND = {
-  // Stops and hits with a stick: chase, then windup -> strike -> recover.
-  melee:    { speed: 110, maxHp: 30, r: 15, color: "#d35400", dmg: 10, range: 64, windup: 0.45, recover: 0.6, repath: 0.4 },
-  // Stops to take potshots: approach to range, aim, fire a projectile, cool down.
-  ranged:   { speed: 95,  maxHp: 18, r: 13, color: "#27ae60", dmg: 7, prefRange: 320, aim: 0.55, cooldown: 1.7, shot: 300, repath: 0.4 },
-  // Ambient roamer; light contact damage.
-  wanderer: { speed: 120, maxHp: 12, r: 11, color: "#8e44ad", contact: 4 },
-};
-const SPAWN = { melee: 10, ranged: 7, wanderer: 8 };
-
-const TILE_COLOR = {
-  [TILE.STREET]: "#5a5a5a", [TILE.SIDEWALK]: "#9a9a9a", [TILE.YARD]: "#6f9a55",
-  [TILE.ALLEY]: "#4a4a4a", [TILE.FLOOR]: "#caa37a", [TILE.WALL]: "#2e2e2e", [TILE.RUBBLE]: "#7c6a55",
-};
+// Gameplay tuning lives in balance.js; alias the hot ones to keep the body terse.
+const { hero: HERO, kind: KIND, spawn: SPAWN } = BALANCE;
+const { scroll: SCROLL, mapH: MAP_H, freezeDur: FREEZE_DUR } = BALANCE;
+const TILE_COLOR = THEME.tile; // indexed by tile id (see TILE in levelgen.js)
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -44,7 +25,7 @@ const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 export function createRunScene(ctx, input, seed) {
   const level = generate(seed, {
     w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS,
-    wallScaleX: WALL_SCALE_X, wallScaleY: WALL_SCALE_Y, wallDensity: WALL_DENSITY,
+    wallScaleX: BALANCE.wall.scaleX, wallScaleY: BALANCE.wall.scaleY, wallDensity: BALANCE.wall.density,
   });
   const mapW = level.w * TS, mapH = level.h * TS;
   const homeSet = new Set(level.homeBand.map(([x, y]) => y * level.w + x));
@@ -59,7 +40,7 @@ export function createRunScene(ctx, input, seed) {
   for (const [kind, n] of Object.entries(SPAWN))
     for (let i = 0; i < n; i++) {
       let tx, ty;
-      do { [tx, ty] = randomWalkableTile(level, rng); } while (ty < 9);
+      do { [tx, ty] = randomWalkableTile(level, rng); } while (ty < BALANCE.spawnMinTileY);
       const k = KIND[kind];
       enemies.push({
         kind, x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: k.r * 2, h: k.r * 2, r: k.r,
@@ -81,7 +62,7 @@ export function createRunScene(ctx, input, seed) {
     const [tx, ty] = e.path[e.pi];
     const cx = tx * TS + TS / 2, cy = ty * TS + TS / 2;
     const dx = cx - e.x, dy = cy - e.y, d = Math.hypot(dx, dy) || 1;
-    if (d < 5) { e.pi++; return e.pi >= e.path.length; }
+    if (d < BALANCE.waypointArrive) { e.pi++; return e.pi >= e.path.length; }
     moveAndCollide(level, e, (dx / d) * speed * dt, (dy / d) * speed * dt);
     return false;
   }
@@ -107,7 +88,7 @@ export function createRunScene(ctx, input, seed) {
     if (e.kind === "wanderer") {
       if (!e.path || e.pi >= e.path.length) {
         const [ex, ey] = tileOf(e);
-        const [wx, wy] = localWalkableTile(level, rng, ex, ey, 12);
+        const [wx, wy] = localWalkableTile(level, rng, ex, ey, BALANCE.wandererRoam);
         e.path = findPath(level, ex, ey, wx, wy) || [];
         e.pi = 0;
       }
@@ -125,7 +106,7 @@ export function createRunScene(ctx, input, seed) {
       } else if (e.state === "windup") {
         e.timer -= dt;
         if (e.timer <= 0) {
-          if (d < k.range + 14) hurtHero(k.dmg);
+          if (d < k.range + BALANCE.meleeHitPad) hurtHero(k.dmg);
           e.state = "recover"; e.timer = k.recover;
         }
       } else {
@@ -145,12 +126,12 @@ export function createRunScene(ctx, input, seed) {
       e.timer -= dt;
       if (e.timer <= 0) {
         const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
-        projectiles.push({ x: e.x, y: e.y, vx: (dx / m) * k.shot, vy: (dy / m) * k.shot, life: 2.5, dmg: k.dmg, dead: false });
+        projectiles.push({ x: e.x, y: e.y, vx: (dx / m) * k.shot, vy: (dy / m) * k.shot, life: BALANCE.enemyShotLife, dmg: k.dmg, dead: false });
         e.state = "cooldown"; e.timer = k.cooldown;
       }
     } else {
       e.timer -= dt;
-      if (d < k.prefRange * 0.55) {
+      if (d < k.prefRange * BALANCE.rangedRetreatFrac) {
         const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
         moveAndCollide(level, e, (dx / m) * k.speed * dt, (dy / m) * k.speed * dt);
       }
@@ -170,7 +151,7 @@ export function createRunScene(ctx, input, seed) {
     const min = a.r + b.r;
     if (d >= min) return;
     const o = min - d, nx = dx / d, ny = dy / d;
-    if (moveA) { shift(a, -nx * o * 0.5, -ny * o * 0.5); shift(b, nx * o * 0.5, ny * o * 0.5); }
+    if (moveA) { const p = BALANCE.softBodyPush; shift(a, -nx * o * p, -ny * o * p); shift(b, nx * o * p, ny * o * p); }
     else shift(b, nx * o, ny * o); // push only b (b out of an immovable a)
   }
 
@@ -217,7 +198,7 @@ export function createRunScene(ctx, input, seed) {
       }
       if (best) {
         const dx = best.x - hero.x, dy = best.y - hero.y, m = Math.hypot(dx, dy) || 1;
-        shots.push({ x: hero.x, y: hero.y, vx: (dx / m) * HERO.shotSpeed, vy: (dy / m) * HERO.shotSpeed, life: 2, dead: false });
+        shots.push({ x: hero.x, y: hero.y, vx: (dx / m) * HERO.shotSpeed, vy: (dy / m) * HERO.shotSpeed, life: BALANCE.heroShotLife, dead: false });
         hero.cd = HERO.shotCD;
       }
     }
@@ -232,7 +213,7 @@ export function createRunScene(ctx, input, seed) {
         if (dist(s.x, s.y, e.x, e.y) < HERO.shotR + e.r) {
           e.freezeCount++;
           e.frozenT = FREEZE_DUR;
-          if (e.freezeCount >= 2) { e.dead = true; e.hp = 0; }
+          if (e.freezeCount >= BALANCE.freezesToKill) { e.dead = true; e.hp = 0; }
           s.dead = true;
           break;
         }
@@ -253,7 +234,7 @@ export function createRunScene(ctx, input, seed) {
       if (p.dead) continue;
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life <= 0 || !isWalkable(level, Math.floor(p.x / TS), Math.floor(p.y / TS))) { p.dead = true; continue; }
-      if (dist(p.x, p.y, hero.x, hero.y) < hero.r + 5) { p.dead = true; hurtHero(p.dmg); }
+      if (dist(p.x, p.y, hero.x, hero.y) < hero.r + BALANCE.enemyShotHitPad) { p.dead = true; hurtHero(p.dmg); }
     }
 
     // Bodies take up space. The hero hard-blocks against bodies in heroMove;
@@ -296,34 +277,34 @@ export function createRunScene(ctx, input, seed) {
         ctx.fillStyle = TILE_COLOR[level.tiles[i]];
         ctx.fillRect(sx, sy, TS + 1, TS + 1);
         if (!level.walkable[i]) { // darken obstacles so collision is legible
-          ctx.fillStyle = "rgba(0,0,0,0.4)";
+          ctx.fillStyle = THEME.obstacleDarken;
           ctx.fillRect(sx, sy, TS + 1, TS + 1);
         }
       }
-    ctx.fillStyle = "rgba(255,215,0,0.35)";
+    ctx.fillStyle = THEME.homeBand;
     for (const [hx, hy] of level.homeBand)
       if (hx >= x0 && hx <= x1 && hy >= y0 && hy <= y1)
         ctx.fillRect(Math.floor(hx * TS - cam.x), Math.floor(hy * TS - cam.y), TS + 1, TS + 1);
 
     // Corpses (drawn under everything live)
     for (const e of enemies)
-      if (e.dead) disc(ctx, e.x - cam.x, e.y - cam.y, e.r, "#2b2622");
+      if (e.dead) disc(ctx, e.x - cam.x, e.y - cam.y, e.r, THEME.corpse);
 
-    for (const p of projectiles) disc(ctx, p.x - cam.x, p.y - cam.y, 5, "#145a32");
-    for (const s of shots) disc(ctx, s.x - cam.x, s.y - cam.y, HERO.shotR, "#d8d4c8");
+    for (const p of projectiles) disc(ctx, p.x - cam.x, p.y - cam.y, THEME.enemyShot.r, THEME.enemyShot.color);
+    for (const s of shots) disc(ctx, s.x - cam.x, s.y - cam.y, HERO.shotR, THEME.heroShot);
 
     for (const e of enemies) {
       if (e.dead) continue;
       const sx = e.x - cam.x, sy = e.y - cam.y, k = KIND[e.kind];
       disc(ctx, sx, sy, e.r, k.color);
       if (e.frozenT > 0) {
-        disc(ctx, sx, sy, e.r, "rgba(150,205,255,0.55)");
-        ring(ctx, sx, sy, e.r + 2, "rgba(190,230,255,0.9)");
+        disc(ctx, sx, sy, e.r, THEME.freeze.fill);
+        ring(ctx, sx, sy, e.r + THEME.freeze.ringPad, THEME.freeze.ring);
       } else { // telegraphs only when active
-        if (e.kind === "melee" && e.state === "windup") ring(ctx, sx, sy, k.range, "rgba(231,76,60,0.7)");
+        if (e.kind === "melee" && e.state === "windup") ring(ctx, sx, sy, k.range, THEME.meleeTelegraph);
         if (e.kind === "ranged" && e.state === "aim") {
-          ring(ctx, sx, sy, e.r + 5, "rgba(39,174,96,0.9)");
-          ctx.strokeStyle = "rgba(39,174,96,0.5)";
+          ring(ctx, sx, sy, e.r + THEME.rangedTelegraph.ringPad, THEME.rangedTelegraph.ring);
+          ctx.strokeStyle = THEME.rangedTelegraph.line;
           ctx.beginPath();
           ctx.moveTo(sx, sy);
           ctx.lineTo(hero.x - cam.x, hero.y - cam.y);
@@ -332,24 +313,24 @@ export function createRunScene(ctx, input, seed) {
       }
     }
 
-    disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? "#7fb3ff" : "#2d6cdf");
+    disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : THEME.hero.normal);
 
-    ctx.font = "14px system-ui, sans-serif";
+    ctx.font = THEME.hud.font;
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
     const sling = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
     const hud = `HP ${Math.max(0, hero.hp)}/${HERO.maxHp}   home in ${100 - depth}%   slingshot ${sling} [SPACE]`;
-    ctx.fillStyle = "rgba(255,255,255,0.75)"; // backing box for legibility over any tile
+    ctx.fillStyle = THEME.hud.box; // backing box for legibility over any tile
     ctx.fillRect(6, 6, ctx.measureText(hud).width + 12, 22);
-    ctx.fillStyle = "#111";
+    ctx.fillStyle = THEME.hud.text;
     ctx.fillText(hud, 12, 21);
     if (outcome) {
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillStyle = THEME.overlay.bg;
       ctx.fillRect(0, VIEW_H / 2 - 50, VIEW_W, 100);
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = THEME.overlay.fg;
       ctx.textAlign = "center";
-      ctx.font = "32px system-ui, sans-serif";
+      ctx.font = THEME.overlay.titleFont;
       ctx.fillText(outcome === "win" ? "MADE IT HOME" : "ANOTHER 3PM…", VIEW_W / 2, VIEW_H / 2 - 4);
-      ctx.font = "16px system-ui, sans-serif";
+      ctx.font = THEME.overlay.subFont;
       ctx.fillText("press SPACE to try another day", VIEW_W / 2, VIEW_H / 2 + 26);
       ctx.textAlign = "left";
     }
