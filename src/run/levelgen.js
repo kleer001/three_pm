@@ -2,6 +2,7 @@
 // jittered street grid -> houses -> decay pass -> connectivity repair -> home band.
 // Emits geometry only; entities are spawned elsewhere.
 import { makeRng, subSeed } from "../core/rng.js";
+import { LEVELGEN } from "./balance.js";
 
 export const TILE = {
   STREET: 0,
@@ -38,7 +39,7 @@ export function generate(seed, {
   const tiles = new Uint8Array(w * h).fill(TILE.YARD);
 
   // 1. Jittered street grid (period ~10, width 2) + sidewalk borders.
-  const period = 10;
+  const period = LEVELGEN.streetPeriod;
   const carveStreet = (cells) => {
     for (const [x, y] of cells) {
       if (!inBounds(w, h, x, y)) continue;
@@ -51,23 +52,24 @@ export function generate(seed, {
     }
   };
   for (let gx = period; gx < w - 2; gx += period) {
-    const jx = gx + rng.range(-2, 2);
+    const jx = gx + rng.range(-LEVELGEN.streetJitter, LEVELGEN.streetJitter);
     const cells = [];
     for (let y = 0; y < h; y++) cells.push([jx, y], [jx + 1, y]);
     carveStreet(cells);
   }
   for (let gy = period; gy < h - 2; gy += period) {
-    const jy = gy + rng.range(-2, 2);
+    const jy = gy + rng.range(-LEVELGEN.streetJitter, LEVELGEN.streetJitter);
     const cells = [];
     for (let x = 0; x < w; x++) cells.push([x, jy], [x, jy + 1]);
     carveStreet(cells);
   }
 
   // 2. Houses: drop footprints onto yard blocks, walls with one door gap.
-  for (let y = 2; y < h - 6; y += 1) {
-    for (let x = 2; x < w - 6; x += 1) {
-      if (!rng.chance(0.012 * wallDensity)) continue;
-      const hw = rng.range(4, 6), hh = rng.range(4, 6);
+  const { houseMargin: hm, houseSize: hs } = LEVELGEN;
+  for (let y = hm; y < h - hs.max; y += 1) {
+    for (let x = hm; x < w - hs.max; x += 1) {
+      if (!rng.chance(LEVELGEN.houseChanceBase * wallDensity)) continue;
+      const hw = rng.range(hs.min, hs.max), hh = rng.range(hs.min, hs.max);
       let clear = true;
       for (let yy = y - 1; yy <= y + hh && clear; yy++)
         for (let xx = x - 1; xx <= x + hw; xx++)
@@ -91,7 +93,7 @@ export function generate(seed, {
   const N = sw * sh;
   let field = new Float32Array(N);
   for (let i = 0; i < N; i++) field[i] = rng.next();
-  for (let pass = 0; pass < 3; pass++) { // box-blur into coherent blobs
+  for (let pass = 0; pass < LEVELGEN.decayPasses; pass++) { // box-blur into coherent blobs
     const nf = new Float32Array(N);
     for (let y = 0; y < sh; y++)
       for (let x = 0; x < sw; x++) {
@@ -105,7 +107,7 @@ export function generate(seed, {
       }
     field = nf;
   }
-  const cover = Math.min(0.95, Math.max(0, 0.42 * wallDensity)); // baseline 42% at density 1
+  const cover = Math.min(LEVELGEN.coverCap, Math.max(0, LEVELGEN.coverBase * wallDensity)); // baseline 42% at density 1
   const sorted = Float32Array.from(field).sort();
   const thr = sorted[Math.min(N - 1, Math.floor((1 - cover) * N))];
   for (let y = 0; y < h; y++) // upsample (nearest) + apply over decayable tiles
@@ -138,9 +140,9 @@ export function generate(seed, {
   // Guaranteed clear approach: a 3-wide walkable lane running forward (toward
   // home) from the start, so the player isn't immediately forced into a wall.
   const fwd = edge === "S" ? [0, 1] : edge === "N" ? [0, -1] : edge === "E" ? [1, 0] : [-1, 0];
-  for (let i = 0; i <= 6; i++) {
+  for (let i = 0; i <= LEVELGEN.clearLaneLen; i++) {
     const lx = start.x + fwd[0] * i, ly = start.y + fwd[1] * i;
-    for (let s = -1; s <= 1; s++) {
+    for (let s = -LEVELGEN.clearLaneHalfWidth; s <= LEVELGEN.clearLaneHalfWidth; s++) {
       const xx = lx + (fwd[0] ? 0 : s), yy = ly + (fwd[1] ? 0 : s);
       if (inBounds(w, h, xx, yy)) tiles[idx(w, xx, yy)] = TILE.STREET;
     }
