@@ -168,12 +168,13 @@ for (const [id, d] of Object.entries(BALANCE.enemies)) {
 // Weapon roster: every weapon has a known shape, the fields that shape needs, a
 // stat-scaled damage descriptor, and a select-screen swatch color.
 for (const [id, w] of Object.entries(BALANCE.weapons)) {
-  ok(["projectile", "nova", "bomb", "field"].includes(w.shape), `${id}: known shape`);
+  ok(["projectile", "nova", "bomb", "field", "melee-arc"].includes(w.shape), `${id}: known shape`);
   ok(w.damage && (w.damage.scaling === "strength" || w.damage.scaling === "magic"), `${id}: stat-scaled damage`);
   ok(THEME.weaponShot[id], `${id}: has a swatch color`);
   if (w.shape === "projectile") ok(w.speed > 0 && w.range > 0, `${id}: projectile has speed+range`);
-  if (w.shape === "nova" || w.shape === "bomb" || w.shape === "field") ok(w.radius > 0, `${id}: area shape has radius`);
+  if (["nova", "bomb", "field", "melee-arc"].includes(w.shape)) ok(w.radius > 0, `${id}: area shape has radius`);
   if (w.shape === "field") ok(w.lifespan > 0 && w.tickInterval > 0, `${id}: field lingers and ticks`);
+  if (w.shape === "melee-arc") ok(w.arc > 0, `${id}: melee has an arc`);
   if (w.pierce) ok(w.shape === "projectile", `${id}: pierce only on projectiles`);
 }
 

@@ -55,6 +55,13 @@ export const BALANCE = {
     bomb:      { name: "Bomb",       shape: "bomb", cd: 2.5, speed: 320, range: 460, shotR: 7, life: 1.6, radius: 95, freeze: false, manaCost: 14, knockback: 1, damage: { scaling: "magic", base: 5, ratio: 0.8, pctMax: 0.15, pctCur: 0 }, desc: "lobbed area blast" },
     // Field: a lingering zone dropped on the hero — ticks damage, denies ground.
     field:     { name: "Hex Field",  shape: "field", cd: 5, range: 420, radius: 90, lifespan: 4, tickInterval: 0.4, freeze: false, manaCost: 20, knockback: 0, damage: { scaling: "magic", base: 2, ratio: 0.3, pctMax: 0.04, pctCur: 0 }, desc: "lingering damage zone" },
+    // Melee — `arc` degrees of swing at short `radius` reach, auto-aimed at the
+    // nearest enemy (360 = full circle). Free, strength-scaled, knockback-heavy:
+    // you trade reach (into contact range) for raw burst. Reuse the AoE blast path.
+    bat:    { name: "Bat",    shape: "melee-arc", cd: 0.4,  radius: 56, arc: 110, freeze: false, manaCost: 0, knockback: 1,   damage: { scaling: "strength", base: 8,  ratio: 1.4, pctMax: 0.08, pctCur: 0 }, desc: "fast wide swing" },
+    cleave: { name: "Cleave", shape: "melee-arc", cd: 0.9,  radius: 64, arc: 130, freeze: false, manaCost: 0, knockback: 2.5, damage: { scaling: "strength", base: 14, ratio: 1.8, pctMax: 0.10, pctCur: 0 }, desc: "heavy hit + big knockback" },
+    spear:  { name: "Spear",  shape: "melee-arc", cd: 0.45, radius: 84, arc: 45,  freeze: false, manaCost: 0, knockback: 1,   damage: { scaling: "strength", base: 7,  ratio: 1.2, pctMax: 0.06, pctCur: 0 }, desc: "long narrow thrust" },
+    whirl:  { name: "Whirl",  shape: "melee-arc", cd: 0.8,  radius: 60, arc: 360, freeze: false, manaCost: 0, knockback: 1.5, damage: { scaling: "strength", base: 9,  ratio: 1.3, pctMax: 0.09, pctCur: 0 }, desc: "360° spin around you" },
   },
 
   // Enemy roster — spec 06's four families × tiers, now on the spec-03 stat model:
@@ -121,8 +128,10 @@ export const THEME = {
   homeBand: "rgba(255,215,0,0.35)",
   corpse: "#2b2622",
   enemyShot: { r: 5, color: "#145a32" },
-  weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6", beam: "#1abc9c", bomb: "#e67e22", nova: "#f5d76e", field: "#8e44ad" }, // weapon color (shot + select swatch), keyed by id
+  weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6", beam: "#1abc9c", bomb: "#e67e22", nova: "#f5d76e", field: "#8e44ad",
+    bat: "#bdc3c7", cleave: "#e74c3c", spear: "#95a5a6", whirl: "#f39c12" }, // weapon color (shot + select swatch), keyed by id
   blast: { ring: "rgba(255,240,200,0.85)", dur: 0.28 }, // expanding ring for nova/bomb detonations
+  melee: { swing: "rgba(255,255,255,0.7)", dur: 0.15 }, // quick wedge flash for melee swings
   field: { fill: "rgba(155,89,182,0.16)", ring: "rgba(155,89,182,0.45)" }, // lingering zone disc
   freeze: { fill: "rgba(150,205,255,0.55)", ring: "rgba(190,230,255,0.9)", ringPad: 2 },
   rangedTelegraph: { ring: "rgba(39,174,96,0.9)", line: "rgba(39,174,96,0.5)", ringPad: 5 },

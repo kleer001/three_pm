@@ -51,6 +51,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
   const enemies = [];
   const projectiles = []; // all in-flight shots, hero + enemy, tagged by faction
   const blasts = [];      // transient AoE rings (nova/bomb detonations), visual only
+  const swings = [];      // transient melee swing wedges, visual only
   const fields = [];      // lingering damage zones (field weapon)
   const heroTargets = [hero]; // the player-faction target list enemy shots resolve against
   let outcome = null;
@@ -126,11 +127,16 @@ export function createRunScene(ctx, input, seed, weaponId) {
   }
 
   // Area blast at (cx,cy): hit every enemy overlapping the radius, knocked outward
-  // from the center. Shared by nova, bomb detonation, and field ticks.
-  function blast(cx, cy, radius, attacker, damage, kbMult, freeze) {
+  // from the center. Shared by nova, bomb detonation, field ticks, and melee. An
+  // optional `aim` ({x,y,cosHalf}) restricts hits to an arc (melee swings); omit it
+  // for a full circle.
+  function blast(cx, cy, radius, attacker, damage, kbMult, freeze, aim) {
     for (const e of enemies) {
       if (e.dead) continue;
-      if (dist(cx, cy, e.x, e.y) <= radius + e.r) applyHit(attacker, e, damage, kbMult, e.x - cx, e.y - cy, freeze);
+      const dx = e.x - cx, dy = e.y - cy, d = Math.hypot(dx, dy);
+      if (d > radius + e.r) continue;
+      if (aim && (dx * aim.x + dy * aim.y) / (d || 1) < aim.cosHalf) continue; // outside the swing arc
+      applyHit(attacker, e, damage, kbMult, dx, dy, freeze);
     }
   }
 
@@ -336,6 +342,14 @@ export function createRunScene(ctx, input, seed, weaponId) {
           fields.push({ x: hero.x, y: hero.y, r: weapon.radius, life: weapon.lifespan, tick: 0, weapon });
           fired = true;
         }
+      } else if (weapon.shape === "melee-arc") {
+        if (near && near.d <= weapon.radius + near.e.r) { // in reach
+          const dx = near.e.x - hero.x, dy = near.e.y - hero.y, m = Math.hypot(dx, dy) || 1;
+          const aim = weapon.arc >= 360 ? null : { x: dx / m, y: dy / m, cosHalf: Math.cos(weapon.arc * Math.PI / 360) };
+          blast(hero.x, hero.y, weapon.radius, hero, weapon.damage, weapon.knockback, weapon.freeze, aim);
+          swings.push({ x: hero.x, y: hero.y, r: weapon.radius, ax: dx / m, ay: dy / m, arc: weapon.arc, t: 0 });
+          fired = true;
+        }
       } else if (near && near.d <= weapon.range) { // projectile / beam / bomb — aimed
         const dx = near.e.x - hero.x, dy = near.e.y - hero.y, m = Math.hypot(dx, dy) || 1;
         fireShot(hero, (dx / m) * weapon.speed, (dy / m) * weapon.speed, {
@@ -388,6 +402,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
       if (f.tick <= 0) { blast(f.x, f.y, f.r, hero, f.weapon.damage, f.weapon.knockback, f.weapon.freeze); f.tick = f.weapon.tickInterval; }
     }
     for (const b of blasts) b.t += dt; // visual rings expand then expire
+    for (const s of swings) s.t += dt; // melee wedges flash then expire
 
     // Bodies take up space. The hero hard-blocks against bodies in heroMove;
     // here push living enemies out of one another, the hero, and solid corpses.
@@ -404,6 +419,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
     for (let i = fields.length - 1; i >= 0; i--) if (fields[i].life <= 0) fields.splice(i, 1);
     for (let i = blasts.length - 1; i >= 0; i--) if (blasts[i].t >= THEME.blast.dur) blasts.splice(i, 1);
+    for (let i = swings.length - 1; i >= 0; i--) if (swings[i].t >= THEME.melee.dur) swings.splice(i, 1);
 
     // Stay inside the moving window; being crushed against a wall is fatal.
     // (heroMove already keeps x within the map and out of walls — no x clamp.)
@@ -489,6 +505,19 @@ export function createRunScene(ctx, input, seed, weaponId) {
     // Nova/bomb detonation rings: a quick expanding flash to the blast radius.
     for (const b of blasts)
       ring(ctx, b.x - cam.x, b.y - cam.y, b.r * (0.4 + 0.6 * b.t / THEME.blast.dur), THEME.blast.ring);
+
+    // Melee swing wedges: a quick filled arc toward the struck enemy (full disc for whirl).
+    for (const s of swings) {
+      const a = Math.atan2(s.ay, s.ax), half = s.arc * Math.PI / 360;
+      ctx.globalAlpha = 1 - s.t / THEME.melee.dur;
+      ctx.fillStyle = THEME.melee.swing;
+      ctx.beginPath();
+      ctx.moveTo(s.x - cam.x, s.y - cam.y);
+      ctx.arc(s.x - cam.x, s.y - cam.y, s.r, a - half, a + half);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
 
     disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : THEME.hero.normal);
 
