@@ -4,6 +4,9 @@ import { generate, isWalkable, TILE } from "../src/run/levelgen.js";
 import { moveAndCollide, boxBlocked } from "../src/run/collision.js";
 import { findPath, localWalkableTile } from "../src/ai/ai.js";
 import { makeRng } from "../src/core/rng.js";
+import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
+import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
+import { BALANCE, THEME } from "../src/run/balance.js";
 
 let failures = 0;
 const ok = (cond, msg) => {
@@ -113,6 +116,122 @@ ok(box2.x === 18, `collision allows free movement (x=${box2.x})`);
 ok(!boxBlocked(lvl, { x: 12, y: 12, w: 20, h: 20 }), "centered on walkable tile: clear");
 ok(boxBlocked(lvl, { x: 36, y: 12, w: 20, h: 20 }), "centered on wall tile: blocked");
 ok(boxBlocked(lvl, { x: 12, y: 12, w: 34, h: 20 }), "box overlapping into wall: blocked");
+
+// Director: depth-scaled budget, distanceBand eligibility, and a spawn run.
+{
+  const cfg = BALANCE.director;
+  ok(budget(1, cfg) > budget(0, cfg), "budget rises with distance");
+  ok(budget(0, cfg) === cfg.baseThreat, "budget at the start is baseThreat");
+
+  const defs = Object.values(BALANCE.enemies);
+  ok(eligible(defs, 0).every((d) => d.distanceBand === 0), "f=0 unlocks only band-0 defs");
+  ok(eligible(defs, 0).length >= 1, "at least one def spawns from the start");
+  ok(eligible(defs, 1).length === defs.length, "f=1 unlocks the full roster");
+
+  const ts = 96;
+  const level = generate(7, { w: 48, h: 192, bearing: (3 * Math.PI) / 2, tileSize: ts });
+  ok(distanceFraction({ y: -1e9 }, level, ts) === 0, "distanceFraction clamps below 0");
+  ok(distanceFraction({ y: 1e9 }, level, ts) === 1, "distanceFraction clamps above 1");
+
+  const cam = { x: 0, y: 0 }, viewH = 600;
+  const hero = { x: level.start.x * ts + ts / 2, y: level.start.y * ts + ts / 2 };
+  const enemies = [];
+  const spawnEnemy = (def, tx, ty) => enemies.push({ def, tx, ty, dead: false });
+  const dir = makeDirector({ level, rng: makeRng(7), defs, cam, viewH, cfg, ts });
+
+  dir.update(cfg.tickInterval, hero, enemies, spawnEnemy); // one tick at f≈0
+  ok(enemies.length > 0, "director spawns under budget at the start");
+  ok(enemies.length <= cfg.maxLive, "director respects maxLive");
+  ok(enemies.every((e) => e.def.distanceBand <= 0), "start spawns are band-0 eligible");
+  ok(enemies.every((e) => isWalkable(level, e.tx, e.ty)), "spawn tiles are walkable");
+  const bandTop = Math.floor((cam.y + viewH) / ts);
+  ok(enemies.every((e) => e.ty >= bandTop), "spawns land in the off-screen south band");
+  ok(enemies.reduce((a, e) => a + e.def.threatValue, 0) <= budget(0, cfg), "spend stays within budget");
+
+  const before = enemies.length;
+  dir.update(cfg.tickInterval, hero, enemies, spawnEnemy);
+  ok(enemies.length === before, "no spawns while live threat already meets budget");
+}
+
+// Roster stat invariants: every enemy carries four 1–10 base stats and a kill
+// counter; casters (and only casters) carry a mana-costing attack.
+for (const [id, d] of Object.entries(BALANCE.enemies)) {
+  const s = d.stats, levels = s && [s.speed, s.constitution, s.strength, s.magic];
+  ok(s && levels.every((v) => v >= 1 && v <= 10), `${id}: four stats in 1..10`);
+  ok(d.freezesToKill >= 1, `${id}: freezesToKill >= 1`);
+  const casts = d.behavior === "shooter";
+  ok(casts === !!(d.attack && d.attack.manaCost), `${id}: mana-costing attack iff caster`);
+  if (casts) ok(d.manaRegen > 0, `${id}: caster regenerates mana`);
+  if (d.behavior === "charger") ok(d.attack && !d.attack.manaCost, `${id}: charger lunge is a free attack`);
+}
+
+// Weapon roster: every weapon has a known shape, the fields that shape needs, a
+// stat-scaled damage descriptor, and a select-screen swatch color.
+for (const [id, w] of Object.entries(BALANCE.weapons)) {
+  ok(["projectile", "nova", "bomb", "field", "melee-arc"].includes(w.shape), `${id}: known shape`);
+  ok(w.damage && (w.damage.scaling === "strength" || w.damage.scaling === "magic"), `${id}: stat-scaled damage`);
+  ok(THEME.weaponShot[id], `${id}: has a swatch color`);
+  if (w.shape === "projectile") ok(w.speed > 0 && w.range > 0, `${id}: projectile has speed+range`);
+  if (["nova", "bomb", "field", "melee-arc"].includes(w.shape)) ok(w.radius > 0, `${id}: area shape has radius`);
+  if (w.shape === "field") ok(w.lifespan > 0 && w.tickInterval > 0, `${id}: field lingers and ticks`);
+  if (w.shape === "melee-arc") ok(w.arc > 0, `${id}: melee has an arc`);
+  if (w.pierce) ok(w.shape === "projectile", `${id}: pierce only on projectiles`);
+}
+
+// Stat → derived model: recomputeDerived maps base stats to gameplay values.
+{
+  const C = BALANCE.derive;
+  const e = { stats: { speed: 5, constitution: 5, strength: 5, magic: 5 } };
+  recomputeDerived(e, C);
+  ok(e.derived.maxHp === C.BASE_HP + 5 * C.HP_PER_CON, "maxHp from constitution");
+  ok(e.derived.maxMana === C.BASE_MANA + 5 * C.MANA_PER_MAG, "maxMana from magic");
+  ok(e.derived.abilityPower === C.BASE_AP + 5 * C.AP_PER_MAG, "abilityPower from magic");
+  ok(e.derived.knockback === 5 * C.KB_PER_STR, "knockback from strength");
+  ok(e.derived.moveSpeed > 0, "moveSpeed from speed");
+  const tank = { stats: { speed: 1, constitution: 10, strength: 1, magic: 1 } };
+  recomputeDerived(tank, C);
+  ok(tank.derived.dmgResist === Math.min(C.RESIST_CAP, 10 * C.RESIST_PER_CON), "dmgResist from constitution");
+  ok(tank.derived.dmgResist > e.derived.dmgResist, "more constitution → more resist");
+  const over = { stats: { speed: 1, constitution: 99, strength: 1, magic: 1 } };
+  recomputeDerived(over, C);
+  ok(over.derived.dmgResist === C.RESIST_CAP, "dmgResist clamps to the cap");
+  // Every caster's full pool affords its bolt (derived maxMana vs attack manaCost).
+  for (const d of Object.values(BALANCE.enemies)) {
+    if (d.behavior !== "shooter") continue;
+    const c = { stats: d.stats }; recomputeDerived(c, C);
+    ok(c.derived.maxMana >= d.attack.manaCost, `${d.name}: pool affords a cast`);
+  }
+}
+
+// Combat core: the one resolver shared by hero and enemies.
+{
+  const atkS = { stats: { strength: 5, magic: 5 }, derived: { abilityPower: 1 } };
+  // weaponDamage = (base + stat*ratio)[*AP if magic] + maxHp*pctMax + curHp*pctCur.
+  ok(weaponDamage({ scaling: "strength", base: 0, ratio: 0, pctMax: 0.5, pctCur: 0 }, atkS, 52, 52) === 26, "50% of max HP");
+  ok(weaponDamage({ scaling: "strength", base: 2, ratio: 1, pctMax: 0, pctCur: 0 }, atkS, 1, 1) === 7, "strength-scaled flat (base + str*ratio)");
+  const atkM = { stats: { strength: 5, magic: 5 }, derived: { abilityPower: 1.2 } };
+  ok(weaponDamage({ scaling: "magic", base: 2, ratio: 0.4, pctMax: 0, pctCur: 0 }, atkM, 1, 1) === (2 + 5 * 0.4) * 1.2, "magic flat × abilityPower");
+  ok(weaponDamage({ scaling: "strength", base: 0, ratio: 0, pctMax: 0.1, pctCur: 0.25 }, atkS, 40, 20) === 4 + 5, "blended max+current");
+  let hp = 100; // pure %-current asymptotes (why Hex needs a flat floor)
+  for (let n = 0; n < 50; n++) hp -= weaponDamage({ scaling: "strength", base: 0, ratio: 0, pctMax: 0, pctCur: 0.4 }, atkS, 100, hp);
+  ok(hp > 0, "pure %-current damage asymptotes, never kills");
+
+  // applyDamage: i-frame gate, dmgResist, death flag, and no-iframe entities take every hit.
+  const hero = { hp: 20, iframes: 0, iframeDur: 0.8, dead: false, derived: { dmgResist: 0 } };
+  applyDamage(hero, 5); ok(hero.hp === 15 && hero.iframes === 0.8, "hero takes a hit, gains i-frames");
+  applyDamage(hero, 5); ok(hero.hp === 15, "i-frame window blocks the next hit");
+  const armored = { hp: 100, dead: false, derived: { dmgResist: 0.5 } };
+  applyDamage(armored, 10); ok(armored.hp === 95, "dmgResist halves incoming damage");
+  const foe = { hp: 8, dead: false, derived: { dmgResist: 0 } };
+  applyDamage(foe, 5); applyDamage(foe, 5); ok(foe.hp === 0 && foe.dead, "no-iframe entity takes every hit and dies");
+
+  // Mana: regen clamps to the derived pool, canCast gates, spend deducts. No-op without regen.
+  const caster = { mana: 6, manaRegen: 10, derived: { maxMana: 16 } };
+  regenMana(caster, 1); ok(caster.mana === 16, "regenMana clamps to derived maxMana");
+  ok(canCast(caster, 16) && !canCast(caster, 17), "canCast boundary");
+  spendMana(caster, 10); ok(caster.mana === 6, "spendMana deducts");
+  const noRegen = { mana: 5, derived: { maxMana: 20 } }; regenMana(noRegen, 1); ok(noRegen.mana === 5, "regenMana no-op without a regen rate");
+}
 
 console.log(failures === 0
   ? `PASS — 200 maps generated, all connected; min walkable ratio ${walkRatioMin.toFixed(2)}`
