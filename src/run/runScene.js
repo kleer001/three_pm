@@ -50,16 +50,17 @@ export function createRunScene(ctx, input, seed, weaponId) {
   let outcome = null;
   const state = { restart: false };
 
-  // Build an enemy from its def at a tile and push it live. The lethal rule is
-  // freeze-to-kill (`freezesToKill`); `hp` is a secondary pool the pebble chips.
-  // Casters carry a mana pool (`maxMana`); melee families have none.
+  // Build an enemy from its def at a tile and push it live. The entity holds only
+  // live state plus the mana fields the shared combat.js resolver reads off a
+  // target (mana/maxMana/manaRegen); immutable config stays on `def` and is read
+  // through `e.def.*` (behavior, maxHp, freezesToKill), so there's one source of truth.
   function spawnEnemy(def, tx, ty) {
     if (ty < BALANCE.spawnMinTileY) return; // never in the player's opening rows
     enemies.push({
-      def, behavior: def.behavior,
+      def,
       x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: def.r * 2, h: def.r * 2, r: def.r,
-      hp: def.maxHp, maxHp: def.maxHp, mana: def.maxMana || 0, maxMana: def.maxMana || 0, manaRegen: def.manaRegen || 0,
-      freezesToKill: def.freezesToKill, freezeCount: 0, frozenT: 0, dead: false,
+      hp: def.maxHp, mana: def.maxMana || 0, maxMana: def.maxMana || 0, manaRegen: def.manaRegen || 0,
+      freezeCount: 0, frozenT: 0, dead: false,
       path: null, pi: 0, repathT: 0, state: null, timer: 0, lockAim: null,
     });
   }
@@ -192,7 +193,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
   // one repath clock (spec 06: behavior is selected by def.behavior).
   function stepEnemy(e, dt, heroTile) {
     e.repathT -= dt;
-    BEHAVIORS[e.behavior](e, dt, heroTile);
+    BEHAVIORS[e.def.behavior](e, dt, heroTile);
   }
 
   // Soft body collision: shift `e` (and optionally `o`) so circles stop overlapping,
@@ -274,11 +275,11 @@ export function createRunScene(ctx, input, seed, weaponId) {
       for (const e of enemies) {
         if (e.dead) continue;
         if (dist(s.x, s.y, e.x, e.y) < s.w.shotR + e.r) {
-          applyDamage(e, weaponDamage(s.w.damage, e.maxHp, e.hp));
+          applyDamage(e, weaponDamage(s.w.damage, e.def.maxHp, e.hp));
           if (s.w.freeze) {
             e.freezeCount++;
             e.frozenT = FREEZE_DUR;
-            if (e.freezeCount >= e.freezesToKill) e.dead = true;
+            if (e.freezeCount >= e.def.freezesToKill) e.dead = true;
           }
           s.dead = true;
           break;
@@ -305,8 +306,9 @@ export function createRunScene(ctx, input, seed, weaponId) {
 
     // Bodies take up space. The hero hard-blocks against bodies in heroMove;
     // here push living enemies out of one another, the hero, and solid corpses.
-    const live = enemies.filter((e) => !e.dead);
-    const corpses = enemies.filter((e) => e.dead);
+    // Single pass into the two buckets — avoids two filter allocations per frame.
+    const live = [], corpses = [];
+    for (const e of enemies) (e.dead ? corpses : live).push(e);
     for (let i = 0; i < live.length; i++) {
       separate(hero, live[i], false);
       for (const c of corpses) separate(c, live[i], false);
@@ -367,7 +369,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
         disc(ctx, sx, sy, e.r, THEME.freeze.fill);
         ring(ctx, sx, sy, e.r + THEME.freeze.ringPad, THEME.freeze.ring);
       } else { // telegraphs only when an attack is winding up
-        if (e.behavior === "shooter" && e.state === "aim") {
+        if (e.def.behavior === "shooter" && e.state === "aim") {
           ring(ctx, sx, sy, e.r + THEME.rangedTelegraph.ringPad, THEME.rangedTelegraph.ring);
           ctx.strokeStyle = THEME.rangedTelegraph.line;
           ctx.beginPath();
@@ -375,7 +377,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
           ctx.lineTo(hero.x - cam.x, hero.y - cam.y);
           ctx.stroke();
         }
-        if (e.behavior === "charger" && (e.state === "telegraph" || e.state === "lunge")) {
+        if (e.def.behavior === "charger" && (e.state === "telegraph" || e.state === "lunge")) {
           const tg = THEME.chargerTelegraph;
           ring(ctx, sx, sy, e.r + tg.ringPad, e.state === "lunge" ? tg.lunge : tg.ring);
           ctx.strokeStyle = e.state === "lunge" ? tg.lunge : tg.line; // line points along the locked aim
