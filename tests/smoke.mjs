@@ -4,6 +4,8 @@ import { generate, isWalkable, TILE } from "../src/run/levelgen.js";
 import { moveAndCollide, boxBlocked } from "../src/run/collision.js";
 import { findPath, localWalkableTile } from "../src/ai/ai.js";
 import { makeRng } from "../src/core/rng.js";
+import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
+import { BALANCE } from "../src/run/balance.js";
 
 let failures = 0;
 const ok = (cond, msg) => {
@@ -113,6 +115,42 @@ ok(box2.x === 18, `collision allows free movement (x=${box2.x})`);
 ok(!boxBlocked(lvl, { x: 12, y: 12, w: 20, h: 20 }), "centered on walkable tile: clear");
 ok(boxBlocked(lvl, { x: 36, y: 12, w: 20, h: 20 }), "centered on wall tile: blocked");
 ok(boxBlocked(lvl, { x: 12, y: 12, w: 34, h: 20 }), "box overlapping into wall: blocked");
+
+// Director: depth-scaled budget, distanceBand eligibility, and a spawn run.
+{
+  const cfg = BALANCE.director;
+  ok(budget(1, cfg) > budget(0, cfg), "budget rises with distance");
+  ok(budget(0, cfg) === cfg.baseThreat, "budget at the start is baseThreat");
+
+  const defs = Object.values(BALANCE.enemies);
+  ok(eligible(defs, 0).every((d) => d.distanceBand === 0), "f=0 unlocks only band-0 defs");
+  ok(eligible(defs, 0).length >= 1, "at least one def spawns from the start");
+  ok(eligible(defs, 1).length === defs.length, "f=1 unlocks the full roster");
+
+  const ts = 96;
+  const level = generate(7, { w: 48, h: 192, bearing: (3 * Math.PI) / 2, tileSize: ts });
+  ok(distanceFraction({ y: -1e9 }, level, ts) === 0, "distanceFraction clamps below 0");
+  ok(distanceFraction({ y: 1e9 }, level, ts) === 1, "distanceFraction clamps above 1");
+
+  const cam = { x: 0, y: 0 }, viewH = 600;
+  const hero = { x: level.start.x * ts + ts / 2, y: level.start.y * ts + ts / 2 };
+  const enemies = [];
+  const spawnEnemy = (def, tx, ty) => enemies.push({ def, tx, ty, dead: false });
+  const dir = makeDirector({ level, rng: makeRng(7), defs, cam, viewH, cfg, ts });
+
+  dir.update(cfg.tickInterval, hero, enemies, spawnEnemy); // one tick at f≈0
+  ok(enemies.length > 0, "director spawns under budget at the start");
+  ok(enemies.length <= cfg.maxLive, "director respects maxLive");
+  ok(enemies.every((e) => e.def.distanceBand <= 0), "start spawns are band-0 eligible");
+  ok(enemies.every((e) => isWalkable(level, e.tx, e.ty)), "spawn tiles are walkable");
+  const bandTop = Math.floor((cam.y + viewH) / ts);
+  ok(enemies.every((e) => e.ty >= bandTop), "spawns land in the off-screen south band");
+  ok(enemies.reduce((a, e) => a + e.def.threatValue, 0) <= budget(0, cfg), "spend stays within budget");
+
+  const before = enemies.length;
+  dir.update(cfg.tickInterval, hero, enemies, spawnEnemy);
+  ok(enemies.length === before, "no spawns while live threat already meets budget");
+}
 
 console.log(failures === 0
   ? `PASS — 200 maps generated, all connected; min walkable ratio ${walkRatioMin.toFixed(2)}`

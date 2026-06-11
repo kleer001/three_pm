@@ -44,9 +44,11 @@ win. Plain HTML, CSS, and ES modules — no build system, bundler, or dependenci
   obstacles → connectivity repair. Exposes `wallScaleX/Y` + `wallDensity` knobs
 - `src/run/collision.js` — center-based AABB vs walkable tiles
 - `src/run/runScene.js` — the playable RUN scene (descent, slingshot, enemies,
-  bodies, render). **Tunable knobs live as named constants at the top**
-  (`SCROLL`, `MAP_H`, `FREEZE_DUR`, `WALL_SCALE_X/Y`, `WALL_DENSITY`, `HERO`,
-  `KIND`, `SPAWN`)
+  bodies, render). Hosts the `BEHAVIORS` registry (spec 06's `chaser`/`swarmer`/
+  `shooter`/`charger`). Gameplay knobs live in `balance.js` (`HERO`, `ENEMIES`
+  roster, `director`, `SCROLL`, `MAP_H`, `FREEZE_DUR`, wall scale/density)
+- `src/run/director.js` — spec 06 spawn director: distance-scaled threat budget +
+  `distanceBand` eligibility, placing enemies off-screen home-ward
 - `src/ai/ai.js` — BFS pathfinding + waypoint pickers (ported from BrainMaze)
 - `src/input/input.js` — movement on WASD, arrows, and vim `hjkl`; `SPACE` fires
 - `tests/smoke.mjs` — node logic tests

@@ -19,26 +19,44 @@ export const BALANCE = {
 
   hero: { speed: 135, maxHp: 50, iframeDur: 0.8, r: 13, shotCD: 3, shotSpeed: 360, shotRange: 470, shotR: 6 },
 
-  // Enemies are slower than the hero (dodgeable) and stop to attack.
-  kind: {
-    // Stops and hits with a stick: chase, then windup -> strike -> recover.
-    melee:    { speed: 110, maxHp: 30, r: 15, color: "#d35400", dmg: 10, range: 64, windup: 0.45, recover: 0.6, repath: 0.4 },
-    // Stops to take potshots: approach to range, aim, fire a projectile, cool down.
-    ranged:   { speed: 95,  maxHp: 18, r: 13, color: "#27ae60", dmg: 7, prefRange: 320, aim: 0.55, cooldown: 1.7, shot: 300, repath: 0.4 },
-    // Ambient roamer; light contact damage.
-    wanderer: { speed: 120, maxHp: 12, r: 11, color: "#8e44ad", contact: 4 },
+  // Enemy roster — spec 06's four families × tiers. One `behavior` per family
+  // (chaser | swarmer | shooter | charger); tiers differ only in numbers, never
+  // behavior. The slice kills by freezing (two slingshot hits), not HP, so the
+  // spec's tier-rising `constitution` lands here as `freezesToKill`. `distanceBand`
+  // gates how deep into the descent (fraction 0..1) a def becomes spawnable;
+  // `threatValue` is its cost against the director's depth-scaled budget. Enemies
+  // are slower than the hero (dodgeable) except mid-lunge.
+  enemies: {
+    // Shamblers — chaser: steer straight at the hero, contact damage on overlap.
+    shambler: { name: "Shambler", family: "shamblers", tier: 1, behavior: "chaser", speed: 100, r: 15, color: "#d35400", contactDamage: 6, repath: 0.4, freezesToKill: 2, threatValue: 1, distanceBand: 0.0 },
+    ghoul:    { name: "Ghoul",    family: "shamblers", tier: 2, behavior: "chaser", speed: 108, r: 16, color: "#b34700", contactDamage: 9, repath: 0.4, freezesToKill: 3, threatValue: 2, distanceBand: 0.35 },
+    revenant: { name: "Revenant", family: "shamblers", tier: 3, behavior: "chaser", speed: 116, r: 17, color: "#8c3500", contactDamage: 12, repath: 0.35, freezesToKill: 4, threatValue: 4, distanceBand: 0.6 },
+
+    // Imps — swarmer: faster chaser with heading jitter so packs spread, not stack.
+    imp:     { name: "Imp",     family: "imps", tier: 1, behavior: "swarmer", speed: 150, r: 11, color: "#8e44ad", contactDamage: 3, jitter: 0.5, repath: 0.5, freezesToKill: 1, threatValue: 1, distanceBand: 0.1 },
+    hellpup: { name: "Hellpup", family: "imps", tier: 2, behavior: "swarmer", speed: 165, r: 12, color: "#6c3483", contactDamage: 5, jitter: 0.5, repath: 0.5, freezesToKill: 2, threatValue: 2, distanceBand: 0.45 },
+
+    // Cultists — shooter: hold a preferred range, aim, lob a bolt, kite, cool down.
+    acolyte:    { name: "Acolyte",    family: "cultists", tier: 1, behavior: "shooter", speed: 95, r: 13, color: "#27ae60", dmg: 7,  prefRange: 320, aim: 0.55, cooldown: 1.7, shot: 300, retreatFrac: 0.55, repath: 0.4, freezesToKill: 2, threatValue: 3, distanceBand: 0.25 },
+    zealot:     { name: "Zealot",     family: "cultists", tier: 2, behavior: "shooter", speed: 98, r: 14, color: "#1e8449", dmg: 10, prefRange: 340, aim: 0.5,  cooldown: 1.4, shot: 320, retreatFrac: 0.55, repath: 0.4, freezesToKill: 3, threatValue: 4, distanceBand: 0.5 },
+    hierophant: { name: "Hierophant", family: "cultists", tier: 3, behavior: "shooter", speed: 100, r: 15, color: "#145a32", dmg: 13, prefRange: 360, aim: 0.45, cooldown: 1.1, shot: 340, retreatFrac: 0.55, repath: 0.4, freezesToKill: 4, threatValue: 6, distanceBand: 0.7 },
+
+    // Brutes — charger: approach to lunge range, telegraph (the counterplay
+    // window), then dash along a locked aim; a sidestep during the wind-up dodges it.
+    brute:    { name: "Brute",    family: "brutes", tier: 1, behavior: "charger", speed: 90, r: 18, color: "#c0392b", contactDamage: 4, lungeRange: 180, telegraph: 0.6,  lungeSpeed: 520, lungeDur: 0.35, lungeDmg: 16, cooldown: 2.5, repath: 0.4, freezesToKill: 3, threatValue: 4, distanceBand: 0.4 },
+    behemoth: { name: "Behemoth", family: "brutes", tier: 2, behavior: "charger", speed: 95, r: 20, color: "#922b21", contactDamage: 6, lungeRange: 200, telegraph: 0.55, lungeSpeed: 560, lungeDur: 0.38, lungeDmg: 22, cooldown: 2.3, repath: 0.4, freezesToKill: 5, threatValue: 7, distanceBand: 0.65 },
   },
-  spawn: { melee: 10, ranged: 7, wanderer: 8 },
+
+  // Director: spends a depth-scaled live-threat budget on off-screen spawns.
+  // budget(f) = baseThreat + f*threatSlope, monotonic in distance fraction f, so
+  // threat density rises toward home. maxLive caps concurrent enemies (perf).
+  director: { baseThreat: 4, threatSlope: 16, tickInterval: 0.5, spawnBandTiles: 8, maxLive: 40 },
 
   spawnMinTileY: 9, // don't spawn enemies in the player's opening rows
   waypointArrive: 5, // px tolerance for "reached the path node"
-  wandererRoam: 12, // tile radius a wanderer picks its next idle target within
-  meleeHitPad: 14, // px added to melee range when resolving a connecting strike
-  rangedRetreatFrac: 0.55, // ranged enemy backs off when within this fraction of prefRange
   softBodyPush: 0.5, // share of overlap each of two living bodies yields when separating
   enemyShotLife: 2.5, // s an enemy projectile lives before fizzling
   heroShotLife: 2, // s a slingshot pebble lives before fizzling
-  freezesToKill: 2, // freezes needed to finish an enemy
   enemyShotHitPad: 5, // px added to hero radius for enemy-projectile hits
 };
 
@@ -68,8 +86,8 @@ export const THEME = {
   enemyShot: { r: 5, color: "#145a32" },
   heroShot: "#d8d4c8",
   freeze: { fill: "rgba(150,205,255,0.55)", ring: "rgba(190,230,255,0.9)", ringPad: 2 },
-  meleeTelegraph: "rgba(231,76,60,0.7)",
   rangedTelegraph: { ring: "rgba(39,174,96,0.9)", line: "rgba(39,174,96,0.5)", ringPad: 5 },
+  chargerTelegraph: { ring: "rgba(231,76,60,0.85)", line: "rgba(231,76,60,0.6)", lunge: "rgba(255,120,90,0.9)", ringPad: 6 },
   hero: { hit: "#7fb3ff", normal: "#2d6cdf" },
   hud: { font: "14px system-ui, sans-serif", box: "rgba(255,255,255,0.75)", text: "#111" },
   overlay: { bg: "rgba(0,0,0,0.6)", fg: "#fff", titleFont: "32px system-ui, sans-serif", subFont: "16px system-ui, sans-serif" },

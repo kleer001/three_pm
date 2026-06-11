@@ -6,7 +6,8 @@
 import { generate, isWalkable } from "./levelgen.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
-import { findPath, randomWalkableTile, localWalkableTile } from "../ai/ai.js";
+import { findPath } from "../ai/ai.js";
+import { makeDirector } from "./director.js";
 import { BALANCE, THEME } from "./balance.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -15,7 +16,7 @@ const TS = 24 * SCALE; // 2x grid
 const MARGIN = TS; // keep the hero this far inside the window edges
 
 // Gameplay tuning lives in balance.js; alias the hot ones to keep the body terse.
-const { hero: HERO, kind: KIND, spawn: SPAWN } = BALANCE;
+const { hero: HERO, enemies: ENEMIES } = BALANCE;
 const { scroll: SCROLL, mapH: MAP_H, freezeDur: FREEZE_DUR } = BALANCE;
 const TILE_COLOR = THEME.tile; // indexed by tile id (see TILE in levelgen.js)
 
@@ -36,24 +37,29 @@ export function createRunScene(ctx, input, seed) {
     w: HERO.r * 2, h: HERO.r * 2, r: HERO.r, hp: HERO.maxHp, cd: 0, iframes: 0,
   };
 
+  const cam = { x: 0, y: 0 };
   const enemies = [];
-  for (const [kind, n] of Object.entries(SPAWN))
-    for (let i = 0; i < n; i++) {
-      let tx, ty;
-      do { [tx, ty] = randomWalkableTile(level, rng); } while (ty < BALANCE.spawnMinTileY);
-      const k = KIND[kind];
-      enemies.push({
-        kind, x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: k.r * 2, h: k.r * 2, r: k.r,
-        hp: k.maxHp, path: null, pi: 0, repathT: 0, state: null, timer: 0,
-        frozenT: 0, freezeCount: 0, dead: false,
-      });
-    }
-
   const projectiles = []; // enemy shots
   const shots = [];        // hero slingshot pebbles
-  const cam = { x: 0, y: 0 };
   let outcome = null;
   const state = { restart: false };
+
+  // Build an enemy from its def at a tile and push it live. Combat is freeze-to-
+  // kill, so the def's `freezesToKill` (its toughness/tier) rides on the entity.
+  function spawnEnemy(def, tx, ty) {
+    if (ty < BALANCE.spawnMinTileY) return; // never in the player's opening rows
+    enemies.push({
+      def, behavior: def.behavior,
+      x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: def.r * 2, h: def.r * 2, r: def.r,
+      freezesToKill: def.freezesToKill, freezeCount: 0, frozenT: 0, dead: false,
+      path: null, pi: 0, repathT: 0, state: null, timer: 0, lockAim: null,
+    });
+  }
+
+  const director = makeDirector({
+    level, rng, defs: Object.values(ENEMIES), cam, viewH: VIEW_H,
+    cfg: BALANCE.director, ts: TS,
+  });
 
   const tileOf = (e) => [Math.floor(e.x / TS), Math.floor(e.y / TS)];
 
@@ -80,63 +86,94 @@ export function createRunScene(ctx, input, seed) {
     if (hero.hp <= 0) outcome = "lose";
   }
 
-  function stepEnemy(e, dt, heroTile) {
-    const k = KIND[e.kind];
-    const d = dist(e.x, e.y, hero.x, hero.y);
-    e.repathT -= dt;
-
-    if (e.kind === "wanderer") {
-      if (!e.path || e.pi >= e.path.length) {
-        const [ex, ey] = tileOf(e);
-        const [wx, wy] = localWalkableTile(level, rng, ex, ey, BALANCE.wandererRoam);
-        e.path = findPath(level, ex, ey, wx, wy) || [];
-        e.pi = 0;
-      }
+  // Spec 06's four behavior archetypes, one function per family — the frozen
+  // `brainFor(def.behavior)` registry. The slice steers along a BFS path (it has
+  // no movement integrator), so brains repath toward the hero rather than writing
+  // a pure intent vector; the spec's intent is preserved, the mechanism is the
+  // slice's. Only chargers carry scratch state beyond the shared state machine.
+  const BEHAVIORS = {
+    // Shamblers — chase straight in, contact damage on overlap. No telegraph.
+    chaser(e, dt, heroTile) {
+      const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
+      if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
       followPath(e, k.speed, dt);
-      if (d < hero.r + e.r) hurtHero(k.contact);
-      return;
-    }
+      if (d < hero.r + e.r) hurtHero(k.contactDamage);
+    },
 
-    if (e.kind === "melee") {
-      e.state = e.state || "seek";
-      if (e.state === "seek") {
-        if (d < k.range) { e.state = "windup"; e.timer = k.windup; return; }
+    // Imps — chaser, but faster with a random per-step drift so packs fan out
+    // instead of stacking on a single pixel. Only a threat in numbers.
+    swarmer(e, dt, heroTile) {
+      const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
+      if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
+      followPath(e, k.speed, dt);
+      const a = rng.next() * Math.PI * 2, j = k.jitter * k.speed * dt;
+      moveAndCollide(level, e, Math.cos(a) * j, Math.sin(a) * j);
+      if (d < hero.r + e.r) hurtHero(k.contactDamage);
+    },
+
+    // Cultists — hold a preferred range: approach, aim (telegraph), fire a bolt,
+    // then cool down and kite if the hero closes.
+    shooter(e, dt, heroTile) {
+      const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
+      e.state = e.state || "approach";
+      if (e.state === "approach") {
+        if (d <= k.prefRange) { e.state = "aim"; e.timer = k.aim; return; }
         if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
         followPath(e, k.speed, dt);
-      } else if (e.state === "windup") {
+      } else if (e.state === "aim") {
         e.timer -= dt;
         if (e.timer <= 0) {
-          if (d < k.range + BALANCE.meleeHitPad) hurtHero(k.dmg);
-          e.state = "recover"; e.timer = k.recover;
+          const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
+          projectiles.push({ x: e.x, y: e.y, vx: (dx / m) * k.shot, vy: (dy / m) * k.shot, life: BALANCE.enemyShotLife, dmg: k.dmg, dead: false });
+          e.state = "cooldown"; e.timer = k.cooldown;
         }
       } else {
         e.timer -= dt;
-        if (e.timer <= 0) e.state = "seek";
+        if (d < k.prefRange * k.retreatFrac) {
+          const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
+          moveAndCollide(level, e, (dx / m) * k.speed * dt, (dy / m) * k.speed * dt);
+        }
+        if (e.timer <= 0) e.state = "approach";
       }
-      return;
-    }
+    },
 
-    // ranged
-    e.state = e.state || "approach";
-    if (e.state === "approach") {
-      if (d <= k.prefRange) { e.state = "aim"; e.timer = k.aim; return; }
-      if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
-      followPath(e, k.speed, dt);
-    } else if (e.state === "aim") {
-      e.timer -= dt;
-      if (e.timer <= 0) {
-        const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
-        projectiles.push({ x: e.x, y: e.y, vx: (dx / m) * k.shot, vy: (dy / m) * k.shot, life: BALANCE.enemyShotLife, dmg: k.dmg, dead: false });
-        e.state = "cooldown"; e.timer = k.cooldown;
+    // Brutes — approach to lunge range, telegraph (intent frozen, the counterplay
+    // window), then dash along the aim captured at telegraph start. A sidestep
+    // during the wind-up dodges the lunge because the aim is locked, not tracked.
+    charger(e, dt, heroTile) {
+      const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
+      e.state = e.state || "approach";
+      if (e.state === "approach") {
+        if (d <= k.lungeRange) {
+          const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
+          e.lockAim = { x: dx / m, y: dy / m };
+          e.state = "telegraph"; e.timer = k.telegraph;
+          return;
+        }
+        if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
+        followPath(e, k.speed, dt);
+        if (d < hero.r + e.r) hurtHero(k.contactDamage);
+      } else if (e.state === "telegraph") {
+        e.timer -= dt; // hold still and tell the lunge
+        if (e.timer <= 0) { e.state = "lunge"; e.timer = k.lungeDur; e.lunged = false; }
+      } else if (e.state === "lunge") {
+        e.timer -= dt;
+        moveAndCollide(level, e, e.lockAim.x * k.lungeSpeed * dt, e.lockAim.y * k.lungeSpeed * dt);
+        if (!e.lunged && d < hero.r + e.r) { hurtHero(k.lungeDmg); e.lunged = true; }
+        if (e.timer <= 0) { e.state = "cooldown"; e.timer = k.cooldown; }
+      } else {
+        e.timer -= dt;
+        if (d < hero.r + e.r) hurtHero(k.contactDamage);
+        if (e.timer <= 0) e.state = "approach";
       }
-    } else {
-      e.timer -= dt;
-      if (d < k.prefRange * BALANCE.rangedRetreatFrac) {
-        const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
-        moveAndCollide(level, e, (dx / m) * k.speed * dt, (dy / m) * k.speed * dt);
-      }
-      if (e.timer <= 0) e.state = "approach";
-    }
+    },
+  };
+
+  // brainFor: pick the def's behavior. repathT ticks here so every brain shares
+  // one repath clock (spec 06: behavior is selected by def.behavior).
+  function stepEnemy(e, dt, heroTile) {
+    e.repathT -= dt;
+    BEHAVIORS[e.behavior](e, dt, heroTile);
   }
 
   // Soft body collision: shift `e` (and optionally `o`) so circles stop overlapping,
@@ -185,6 +222,9 @@ export function createRunScene(ctx, input, seed) {
 
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
 
+    // Director spends its depth-scaled budget on fresh off-screen threat.
+    director.update(dt, hero, enemies, spawnEnemy);
+
     const intent = input.intent();
     heroMove(intent.x * HERO.speed * dt, intent.y * HERO.speed * dt);
 
@@ -213,7 +253,7 @@ export function createRunScene(ctx, input, seed) {
         if (dist(s.x, s.y, e.x, e.y) < HERO.shotR + e.r) {
           e.freezeCount++;
           e.frozenT = FREEZE_DUR;
-          if (e.freezeCount >= BALANCE.freezesToKill) { e.dead = true; e.hp = 0; }
+          if (e.freezeCount >= e.freezesToKill) e.dead = true; // tougher tiers take more
           s.dead = true;
           break;
         }
@@ -295,19 +335,27 @@ export function createRunScene(ctx, input, seed) {
 
     for (const e of enemies) {
       if (e.dead) continue;
-      const sx = e.x - cam.x, sy = e.y - cam.y, k = KIND[e.kind];
+      const sx = e.x - cam.x, sy = e.y - cam.y, k = e.def;
       disc(ctx, sx, sy, e.r, k.color);
       if (e.frozenT > 0) {
         disc(ctx, sx, sy, e.r, THEME.freeze.fill);
         ring(ctx, sx, sy, e.r + THEME.freeze.ringPad, THEME.freeze.ring);
-      } else { // telegraphs only when active
-        if (e.kind === "melee" && e.state === "windup") ring(ctx, sx, sy, k.range, THEME.meleeTelegraph);
-        if (e.kind === "ranged" && e.state === "aim") {
+      } else { // telegraphs only when an attack is winding up
+        if (e.behavior === "shooter" && e.state === "aim") {
           ring(ctx, sx, sy, e.r + THEME.rangedTelegraph.ringPad, THEME.rangedTelegraph.ring);
           ctx.strokeStyle = THEME.rangedTelegraph.line;
           ctx.beginPath();
           ctx.moveTo(sx, sy);
           ctx.lineTo(hero.x - cam.x, hero.y - cam.y);
+          ctx.stroke();
+        }
+        if (e.behavior === "charger" && (e.state === "telegraph" || e.state === "lunge")) {
+          const tg = THEME.chargerTelegraph;
+          ring(ctx, sx, sy, e.r + tg.ringPad, e.state === "lunge" ? tg.lunge : tg.ring);
+          ctx.strokeStyle = e.state === "lunge" ? tg.lunge : tg.line; // line points along the locked aim
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + e.lockAim.x * k.lungeRange, sy + e.lockAim.y * k.lungeRange);
           ctx.stroke();
         }
       }
