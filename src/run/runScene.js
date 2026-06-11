@@ -44,13 +44,15 @@ export function createRunScene(ctx, input, seed) {
   let outcome = null;
   const state = { restart: false };
 
-  // Build an enemy from its def at a tile and push it live. Combat is freeze-to-
-  // kill, so the def's `freezesToKill` (its toughness/tier) rides on the entity.
+  // Build an enemy from its def at a tile and push it live. The lethal rule is
+  // freeze-to-kill (`freezesToKill`); `hp` is a secondary pool the pebble chips.
+  // Casters carry a mana pool (`maxMana`); melee families have none.
   function spawnEnemy(def, tx, ty) {
     if (ty < BALANCE.spawnMinTileY) return; // never in the player's opening rows
     enemies.push({
       def, behavior: def.behavior,
       x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: def.r * 2, h: def.r * 2, r: def.r,
+      hp: def.maxHp, mana: def.maxMana || 0,
       freezesToKill: def.freezesToKill, freezeCount: 0, frozenT: 0, dead: false,
       path: null, pi: 0, repathT: 0, state: null, timer: 0, lockAim: null,
     });
@@ -111,13 +113,26 @@ export function createRunScene(ctx, input, seed) {
       if (d < hero.r + e.r) hurtHero(k.contactDamage);
     },
 
-    // Cultists — hold a preferred range: approach, aim (telegraph), fire a bolt,
-    // then cool down and kite if the hero closes.
+    // Cultists — hold a preferred range: approach, aim (telegraph), fire a bolt
+    // (costs mana), then cool down and kite if the hero closes. Mana regenerates
+    // every tick; a tapped-out caster can't start an aim, so it holds and kites
+    // until the pool refills — positioning lets you wait one out.
     shooter(e, dt, heroTile) {
       const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
+      e.mana = Math.min(k.maxMana, e.mana + k.manaRegen * dt);
+      const kite = () => {
+        if (d < k.prefRange * k.retreatFrac) {
+          const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
+          moveAndCollide(level, e, (dx / m) * k.speed * dt, (dy / m) * k.speed * dt);
+        }
+      };
       e.state = e.state || "approach";
       if (e.state === "approach") {
-        if (d <= k.prefRange) { e.state = "aim"; e.timer = k.aim; return; }
+        if (d <= k.prefRange) {
+          if (e.mana >= k.manaCost) { e.state = "aim"; e.timer = k.aim; return; }
+          kite(); // in range but dry — hold and regen
+          return;
+        }
         if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
         followPath(e, k.speed, dt);
       } else if (e.state === "aim") {
@@ -125,14 +140,12 @@ export function createRunScene(ctx, input, seed) {
         if (e.timer <= 0) {
           const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
           projectiles.push({ x: e.x, y: e.y, vx: (dx / m) * k.shot, vy: (dy / m) * k.shot, life: BALANCE.enemyShotLife, dmg: k.dmg, dead: false });
+          e.mana -= k.manaCost;
           e.state = "cooldown"; e.timer = k.cooldown;
         }
       } else {
         e.timer -= dt;
-        if (d < k.prefRange * k.retreatFrac) {
-          const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
-          moveAndCollide(level, e, (dx / m) * k.speed * dt, (dy / m) * k.speed * dt);
-        }
+        kite();
         if (e.timer <= 0) e.state = "approach";
       }
     },
@@ -253,7 +266,8 @@ export function createRunScene(ctx, input, seed) {
         if (dist(s.x, s.y, e.x, e.y) < HERO.shotR + e.r) {
           e.freezeCount++;
           e.frozenT = FREEZE_DUR;
-          if (e.freezeCount >= e.freezesToKill) e.dead = true; // tougher tiers take more
+          e.hp -= HERO.shotDmg; // chips the secondary pool; freeze is still the kill
+          if (e.freezeCount >= e.freezesToKill || e.hp <= 0) e.dead = true;
           s.dead = true;
           break;
         }
@@ -359,6 +373,12 @@ export function createRunScene(ctx, input, seed) {
           ctx.stroke();
         }
       }
+      // Status bars above the body: HP (only once chipped) and, for casters, a
+      // mana pip that dims when too dry to cast — the visible "wait it out" tell.
+      const B = THEME.bar;
+      let by = sy - e.r - B.gap - B.h;
+      if (e.hp < k.maxHp) { bar(ctx, sx, by, e.hp / k.maxHp, B.hp); by -= B.h + 1; }
+      if (k.maxMana) bar(ctx, sx, by, e.mana / k.maxMana, e.mana >= k.manaCost ? B.mana : B.tapped);
     }
 
     disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : THEME.hero.normal);
@@ -398,4 +418,12 @@ function ring(ctx, x, y, r, color) {
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.stroke();
+}
+// A centered status bar (HP/mana): dark backing + a `frac`-wide fill.
+function bar(ctx, cx, y, frac, fill) {
+  const B = THEME.bar, x = cx - B.w / 2;
+  ctx.fillStyle = B.back;
+  ctx.fillRect(x, y, B.w, B.h);
+  ctx.fillStyle = fill;
+  ctx.fillRect(x, y, B.w * clamp(frac, 0, 1), B.h);
 }

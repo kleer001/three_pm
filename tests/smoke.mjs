@@ -152,6 +152,19 @@ ok(boxBlocked(lvl, { x: 12, y: 12, w: 34, h: 20 }), "box overlapping into wall: 
   ok(enemies.length === before, "no spawns while live threat already meets budget");
 }
 
+// Roster stat invariants: every enemy has a real HP pool; casters (and only
+// casters) carry mana, sized so a full pool affords at least one cast.
+for (const [id, d] of Object.entries(BALANCE.enemies)) {
+  ok(d.maxHp > 0, `${id}: has maxHp`);
+  ok(d.freezesToKill >= 1, `${id}: freezesToKill >= 1`);
+  const casts = d.behavior === "shooter";
+  ok(casts === (d.maxMana !== undefined), `${id}: mana pool iff it casts`);
+  if (casts) {
+    ok(d.maxMana >= d.manaCost, `${id}: pool affords a cast`);
+    ok(d.manaRegen > 0, `${id}: mana regenerates`);
+  }
+}
+
 console.log(failures === 0
   ? `PASS — 200 maps generated, all connected; min walkable ratio ${walkRatioMin.toFixed(2)}`
   : `${failures} FAILURE(S)`);
