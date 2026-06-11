@@ -9,7 +9,7 @@ import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
 import { findPath } from "../ai/ai.js";
 import { makeDirector } from "./director.js";
-import { weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
+import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
 import { BALANCE, THEME } from "./balance.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -35,34 +35,41 @@ export function createRunScene(ctx, input, seed, weaponId) {
   const rng = makeRng(subSeed(seed, "spawns"));
   const weapon = { id: weaponId, ...BALANCE.weapons[weaponId] };
 
-  // Hero shares the combat.js health/mana component shape with every enemy.
+  // Hero shares the full spec-03 entity shape (stats + derived + faction + the
+  // health/mana component) with every enemy; combat.js operates on all of them.
   const hero = {
     x: level.start.x * TS + TS / 2, y: level.start.y * TS + TS / 2,
-    w: HERO.r * 2, h: HERO.r * 2, r: HERO.r, hp: HERO.maxHp, maxHp: HERO.maxHp,
-    iframes: 0, iframeDur: HERO.iframeDur, mana: HERO.maxMana, maxMana: HERO.maxMana,
-    manaRegen: HERO.manaRegen, dead: false, cd: 0,
+    w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
+    stats: HERO.stats, faction: HERO.faction,
+    iframes: 0, iframeDur: HERO.iframeDur, manaRegen: HERO.manaRegen, dead: false, cd: 0,
   };
+  recomputeDerived(hero, BALANCE.derive);
+  hero.hp = hero.derived.maxHp;
+  hero.mana = hero.derived.maxMana;
 
   const cam = { x: 0, y: 0 };
   const enemies = [];
-  const projectiles = []; // enemy shots
-  const shots = [];        // hero slingshot pebbles
+  const projectiles = []; // all in-flight shots, hero + enemy, tagged by faction
+  const heroTargets = [hero]; // the player-faction target list enemy shots resolve against
   let outcome = null;
   const state = { restart: false };
 
-  // Build an enemy from its def at a tile and push it live. The entity holds only
-  // live state plus the mana fields the shared combat.js resolver reads off a
-  // target (mana/maxMana/manaRegen); immutable config stays on `def` and is read
-  // through `e.def.*` (behavior, maxHp, freezesToKill), so there's one source of truth.
+  // Build an enemy from its def at a tile and push it live. The entity holds live
+  // state + the spec-03 component shape (stats/derived/faction/health/mana) the
+  // shared resolver operates on; immutable config stays on `def` and is read
+  // through `e.def.*` (behavior, freezesToKill, attack), so there's one source of truth.
   function spawnEnemy(def, tx, ty) {
     if (ty < BALANCE.spawnMinTileY) return; // never in the player's opening rows
-    enemies.push({
-      def,
+    const e = {
+      def, stats: def.stats, faction: "enemy",
       x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: def.r * 2, h: def.r * 2, r: def.r,
-      hp: def.maxHp, mana: def.maxMana || 0, maxMana: def.maxMana || 0, manaRegen: def.manaRegen || 0,
-      freezeCount: 0, frozenT: 0, dead: false,
+      manaRegen: def.manaRegen || 0, freezeCount: 0, frozenT: 0, dead: false,
       path: null, pi: 0, repathT: 0, state: null, timer: 0, lockAim: null,
-    });
+    };
+    recomputeDerived(e, BALANCE.derive);
+    e.hp = e.derived.maxHp;
+    e.mana = e.derived.maxMana;
+    enemies.push(e);
   }
 
   const director = makeDirector({
@@ -88,6 +95,22 @@ export function createRunScene(ctx, input, seed, weaponId) {
     e.repathT = k.repath;
   }
 
+  // Spawn a projectile owned by `attacker`; its faction (and so which side it can
+  // hit) comes from the attacker. One shape for hero pebbles and enemy bolts.
+  function fireShot(attacker, vx, vy, o) {
+    projectiles.push({
+      x: attacker.x, y: attacker.y, vx, vy, life: o.life, dead: false,
+      faction: attacker.faction, attacker, damage: o.damage,
+      freeze: o.freeze, knockback: o.knockback, shotR: o.shotR, color: o.color,
+    });
+  }
+
+  // Shove a target `mag` px along (dx,dy), stopping at walls (spec 04 knockback).
+  function knockback(t, dx, dy, mag) {
+    const m = Math.hypot(dx, dy) || 1;
+    moveAndCollide(level, t, (dx / m) * mag, (dy / m) * mag);
+  }
+
   // Hero damage flows through the shared resolver (i-frames + death) like any
   // entity; the run-loss is the hero-specific consequence layered on top.
   function hurtHero(amount) {
@@ -105,7 +128,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
     chaser(e, dt, heroTile) {
       const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
       if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
-      followPath(e, k.speed, dt);
+      followPath(e, e.derived.moveSpeed, dt);
       if (d < hero.r + e.r) hurtHero(k.contactDamage);
     },
 
@@ -114,8 +137,8 @@ export function createRunScene(ctx, input, seed, weaponId) {
     swarmer(e, dt, heroTile) {
       const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
       if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
-      followPath(e, k.speed, dt);
-      const a = rng.next() * Math.PI * 2, j = k.jitter * k.speed * dt;
+      followPath(e, e.derived.moveSpeed, dt);
+      const a = rng.next() * Math.PI * 2, j = k.jitter * e.derived.moveSpeed * dt;
       moveAndCollide(level, e, Math.cos(a) * j, Math.sin(a) * j);
       if (d < hero.r + e.r) hurtHero(k.contactDamage);
     },
@@ -130,24 +153,27 @@ export function createRunScene(ctx, input, seed, weaponId) {
       const kite = () => {
         if (d < k.prefRange * k.retreatFrac) {
           const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
-          moveAndCollide(level, e, (dx / m) * k.speed * dt, (dy / m) * k.speed * dt);
+          moveAndCollide(level, e, (dx / m) * e.derived.moveSpeed * dt, (dy / m) * e.derived.moveSpeed * dt);
         }
       };
       e.state = e.state || "approach";
       if (e.state === "approach") {
         if (d <= k.prefRange) {
-          if (canCast(e, k.manaCost)) { e.state = "aim"; e.timer = k.aim; return; }
+          if (canCast(e, k.attack.manaCost)) { e.state = "aim"; e.timer = k.aim; return; }
           kite(); // in range but dry — hold and regen
           return;
         }
         if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
-        followPath(e, k.speed, dt);
+        followPath(e, e.derived.moveSpeed, dt);
       } else if (e.state === "aim") {
         e.timer -= dt;
         if (e.timer <= 0) {
           const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
-          projectiles.push({ x: e.x, y: e.y, vx: (dx / m) * k.shot, vy: (dy / m) * k.shot, life: BALANCE.enemyShotLife, dmg: k.dmg, dead: false });
-          spendMana(e, k.manaCost);
+          fireShot(e, (dx / m) * k.shot, (dy / m) * k.shot, {
+            damage: k.attack, life: BALANCE.enemyShotLife, shotR: THEME.enemyShot.r,
+            color: THEME.enemyShot.color, freeze: false, knockback: 0,
+          });
+          spendMana(e, k.attack.manaCost);
           e.state = "cooldown"; e.timer = k.cooldown;
         }
       } else {
@@ -171,7 +197,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
           return;
         }
         if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
-        followPath(e, k.speed, dt);
+        followPath(e, e.derived.moveSpeed, dt);
         if (d < hero.r + e.r) hurtHero(k.contactDamage);
       } else if (e.state === "telegraph") {
         e.timer -= dt; // hold still and tell the lunge
@@ -179,7 +205,11 @@ export function createRunScene(ctx, input, seed, weaponId) {
       } else if (e.state === "lunge") {
         e.timer -= dt;
         moveAndCollide(level, e, e.lockAim.x * k.lungeSpeed * dt, e.lockAim.y * k.lungeSpeed * dt);
-        if (!e.lunged && d < hero.r + e.r) { hurtHero(k.lungeDmg); e.lunged = true; }
+        if (!e.lunged && d < hero.r + e.r) { // strength-scaled slam + heavy knockback
+          hurtHero(weaponDamage(k.attack, e, hero.derived.maxHp, hero.hp));
+          knockback(hero, hero.x - e.x, hero.y - e.y, e.derived.knockback * k.attack.knockback);
+          e.lunged = true;
+        }
         if (e.timer <= 0) { e.state = "cooldown"; e.timer = k.cooldown; }
       } else {
         e.timer -= dt;
@@ -247,10 +277,10 @@ export function createRunScene(ctx, input, seed, weaponId) {
     director.update(dt, hero, enemies, spawnEnemy);
 
     const intent = input.intent();
-    heroMove(intent.x * HERO.speed * dt, intent.y * HERO.speed * dt);
+    heroMove(intent.x * hero.derived.moveSpeed * dt, intent.y * hero.derived.moveSpeed * dt);
 
     // Selected weapon: SPACE auto-aims the nearest enemy in range, on cooldown and
-    // affordable mana. The shot carries its weapon so the hit resolves its damage.
+    // affordable mana. The shot carries the weapon so the hit resolves its damage.
     if (hero.cd <= 0 && canCast(hero, weapon.manaCost) && input.down("Space")) {
       let best = null, bd = weapon.range;
       for (const e of enemies) {
@@ -260,30 +290,12 @@ export function createRunScene(ctx, input, seed, weaponId) {
       }
       if (best) {
         const dx = best.x - hero.x, dy = best.y - hero.y, m = Math.hypot(dx, dy) || 1;
-        shots.push({ x: hero.x, y: hero.y, vx: (dx / m) * weapon.speed, vy: (dy / m) * weapon.speed, life: weapon.life, dead: false, w: weapon });
+        fireShot(hero, (dx / m) * weapon.speed, (dy / m) * weapon.speed, {
+          damage: weapon.damage, life: weapon.life, shotR: weapon.shotR,
+          color: THEME.weaponShot[weapon.id], freeze: weapon.freeze, knockback: weapon.knockback,
+        });
         hero.cd = weapon.cd;
         spendMana(hero, weapon.manaCost);
-      }
-    }
-
-    // Hero shots: deal the weapon's percent-HP damage; the slingshot also freezes
-    // (freeze-to-kill stays its lethal counter), other weapons kill via HP.
-    for (const s of shots) {
-      if (s.dead) continue;
-      s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
-      if (s.life <= 0 || !isWalkable(level, Math.floor(s.x / TS), Math.floor(s.y / TS))) { s.dead = true; continue; }
-      for (const e of enemies) {
-        if (e.dead) continue;
-        if (dist(s.x, s.y, e.x, e.y) < s.w.shotR + e.r) {
-          applyDamage(e, weaponDamage(s.w.damage, e.def.maxHp, e.hp));
-          if (s.w.freeze) {
-            e.freezeCount++;
-            e.frozenT = FREEZE_DUR;
-            if (e.freezeCount >= e.def.freezesToKill) e.dead = true;
-          }
-          s.dead = true;
-          break;
-        }
       }
     }
 
@@ -296,12 +308,27 @@ export function createRunScene(ctx, input, seed, weaponId) {
       if (Math.abs(e.y - activeY) < VIEW_H) stepEnemy(e, dt, heroTile);
     }
 
-    // Enemy projectiles
+    // Projectiles (hero + enemy): resolve each against the opposite faction via the
+    // shared resolver. Player shots deal percent-HP and may freeze; enemy bolts deal
+    // flat magic damage. dmgResist and knockback apply uniformly to whoever's hit.
     for (const p of projectiles) {
       if (p.dead) continue;
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life <= 0 || !isWalkable(level, Math.floor(p.x / TS), Math.floor(p.y / TS))) { p.dead = true; continue; }
-      if (dist(p.x, p.y, hero.x, hero.y) < hero.r + BALANCE.enemyShotHitPad) { p.dead = true; hurtHero(p.dmg); }
+      const pad = p.faction === "enemy" ? BALANCE.enemyShotHitPad : 0;
+      for (const t of (p.faction === "player" ? enemies : heroTargets)) {
+        if (t.dead) continue;
+        if (dist(p.x, p.y, t.x, t.y) < p.shotR + t.r + pad) {
+          applyDamage(t, weaponDamage(p.damage, p.attacker, t.derived.maxHp, t.hp));
+          if (p.knockback) knockback(t, p.vx, p.vy, p.attacker.derived.knockback * p.knockback);
+          if (p.freeze && t.def) { // freeze is player→enemy CC; enemies carry the kill counter
+            t.freezeCount++; t.frozenT = FREEZE_DUR;
+            if (t.freezeCount >= t.def.freezesToKill) t.dead = true;
+          }
+          if (t === hero && hero.dead) outcome = "lose";
+          p.dead = true; break;
+        }
+      }
     }
 
     // Bodies take up space. The hero hard-blocks against bodies in heroMove;
@@ -316,7 +343,6 @@ export function createRunScene(ctx, input, seed, weaponId) {
     }
     for (const c of corpses) separate(hero, c, false); // the hero shoves (heavy) corpses aside
 
-    for (let i = shots.length - 1; i >= 0; i--) if (shots[i].dead) shots.splice(i, 1);
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
 
     // Stay inside the moving window; being crushed against a wall is fatal.
@@ -358,8 +384,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
     for (const e of enemies)
       if (e.dead) disc(ctx, e.x - cam.x, e.y - cam.y, e.r, THEME.corpse);
 
-    for (const p of projectiles) disc(ctx, p.x - cam.x, p.y - cam.y, THEME.enemyShot.r, THEME.enemyShot.color);
-    for (const s of shots) disc(ctx, s.x - cam.x, s.y - cam.y, s.w.shotR, THEME.weaponShot[s.w.id]);
+    for (const p of projectiles) disc(ctx, p.x - cam.x, p.y - cam.y, p.shotR, p.color);
 
     for (const e of enemies) {
       if (e.dead) continue;
@@ -389,10 +414,10 @@ export function createRunScene(ctx, input, seed, weaponId) {
       }
       // Status bars above the body: HP (only once chipped) and, for casters, a
       // mana pip that dims when too dry to cast — the visible "wait it out" tell.
-      const B = THEME.bar;
+      const B = THEME.bar, cast = k.attack && k.attack.manaCost;
       let by = sy - e.r - B.gap - B.h;
-      if (e.hp < k.maxHp) { bar(ctx, sx, by, e.hp / k.maxHp, B.hp); by -= B.h + 1; }
-      if (k.maxMana) bar(ctx, sx, by, e.mana / k.maxMana, e.mana >= k.manaCost ? B.mana : B.tapped);
+      if (e.hp < e.derived.maxHp) { bar(ctx, sx, by, e.hp / e.derived.maxHp, B.hp); by -= B.h + 1; }
+      if (cast) bar(ctx, sx, by, e.mana / e.derived.maxMana, e.mana >= k.attack.manaCost ? B.mana : B.tapped);
     }
 
     disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : THEME.hero.normal);
@@ -400,8 +425,8 @@ export function createRunScene(ctx, input, seed, weaponId) {
     ctx.font = THEME.hud.font;
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
     const ready = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
-    const mana = weapon.manaCost > 0 ? `   MP ${Math.round(hero.mana)}/${hero.maxMana}` : "";
-    const hud = `HP ${Math.max(0, Math.round(hero.hp))}/${hero.maxHp}${mana}   home in ${100 - depth}%   ${weapon.name} ${ready} [SPACE]`;
+    const mana = weapon.manaCost > 0 ? `   MP ${Math.round(hero.mana)}/${hero.derived.maxMana}` : "";
+    const hud = `HP ${Math.max(0, Math.round(hero.hp))}/${hero.derived.maxHp}${mana}   home in ${100 - depth}%   ${weapon.name} ${ready} [SPACE]`;
     ctx.fillStyle = THEME.hud.box; // backing box for legibility over any tile
     ctx.fillRect(6, 6, ctx.measureText(hud).width + 12, 22);
     ctx.fillStyle = THEME.hud.text;

@@ -5,7 +5,7 @@ import { moveAndCollide, boxBlocked } from "../src/run/collision.js";
 import { findPath, localWalkableTile } from "../src/ai/ai.js";
 import { makeRng } from "../src/core/rng.js";
 import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
-import { weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
+import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
 import { BALANCE } from "../src/run/balance.js";
 
 let failures = 0;
@@ -153,44 +153,71 @@ ok(boxBlocked(lvl, { x: 12, y: 12, w: 34, h: 20 }), "box overlapping into wall: 
   ok(enemies.length === before, "no spawns while live threat already meets budget");
 }
 
-// Roster stat invariants: every enemy has a real HP pool; casters (and only
-// casters) carry mana, sized so a full pool affords at least one cast.
+// Roster stat invariants: every enemy carries four 1–10 base stats and a kill
+// counter; casters (and only casters) carry a mana-costing attack.
 for (const [id, d] of Object.entries(BALANCE.enemies)) {
-  ok(d.maxHp > 0, `${id}: has maxHp`);
+  const s = d.stats, levels = s && [s.speed, s.constitution, s.strength, s.magic];
+  ok(s && levels.every((v) => v >= 1 && v <= 10), `${id}: four stats in 1..10`);
   ok(d.freezesToKill >= 1, `${id}: freezesToKill >= 1`);
   const casts = d.behavior === "shooter";
-  ok(casts === (d.maxMana !== undefined), `${id}: mana pool iff it casts`);
-  if (casts) {
-    ok(d.maxMana >= d.manaCost, `${id}: pool affords a cast`);
-    ok(d.manaRegen > 0, `${id}: mana regenerates`);
+  ok(casts === !!(d.attack && d.attack.manaCost), `${id}: mana-costing attack iff caster`);
+  if (casts) ok(d.manaRegen > 0, `${id}: caster regenerates mana`);
+  if (d.behavior === "charger") ok(d.attack && !d.attack.manaCost, `${id}: charger lunge is a free attack`);
+}
+
+// Stat → derived model: recomputeDerived maps base stats to gameplay values.
+{
+  const C = BALANCE.derive;
+  const e = { stats: { speed: 5, constitution: 5, strength: 5, magic: 5 } };
+  recomputeDerived(e, C);
+  ok(e.derived.maxHp === C.BASE_HP + 5 * C.HP_PER_CON, "maxHp from constitution");
+  ok(e.derived.maxMana === C.BASE_MANA + 5 * C.MANA_PER_MAG, "maxMana from magic");
+  ok(e.derived.abilityPower === C.BASE_AP + 5 * C.AP_PER_MAG, "abilityPower from magic");
+  ok(e.derived.knockback === 5 * C.KB_PER_STR, "knockback from strength");
+  ok(e.derived.moveSpeed > 0, "moveSpeed from speed");
+  const tank = { stats: { speed: 1, constitution: 10, strength: 1, magic: 1 } };
+  recomputeDerived(tank, C);
+  ok(tank.derived.dmgResist === Math.min(C.RESIST_CAP, 10 * C.RESIST_PER_CON), "dmgResist from constitution");
+  ok(tank.derived.dmgResist > e.derived.dmgResist, "more constitution → more resist");
+  const over = { stats: { speed: 1, constitution: 99, strength: 1, magic: 1 } };
+  recomputeDerived(over, C);
+  ok(over.derived.dmgResist === C.RESIST_CAP, "dmgResist clamps to the cap");
+  // Every caster's full pool affords its bolt (derived maxMana vs attack manaCost).
+  for (const d of Object.values(BALANCE.enemies)) {
+    if (d.behavior !== "shooter") continue;
+    const c = { stats: d.stats }; recomputeDerived(c, C);
+    ok(c.derived.maxMana >= d.attack.manaCost, `${d.name}: pool affords a cast`);
   }
 }
 
 // Combat core: the one resolver shared by hero and enemies.
 {
-  // Percent-of-HP damage model.
-  ok(weaponDamage({ flat: 0, pctMax: 0.5, pctCur: 0 }, 52, 52) === 26, "50% of max HP");
-  ok(weaponDamage({ flat: 7, pctMax: 0, pctCur: 0 }, 52, 52) === 7, "pure flat damage");
-  ok(weaponDamage({ flat: 2, pctMax: 0.1, pctCur: 0.25 }, 40, 20) === 2 + 4 + 5, "blended flat+max+current");
-  // A pure %-current weapon leaves 60% each hit and never reaches 0 (the reason
-  // Hex carries a flat floor): walk it down many times, stays positive.
-  let hp = 100;
-  for (let n = 0; n < 50; n++) hp -= weaponDamage({ flat: 0, pctMax: 0, pctCur: 0.4 }, 100, hp);
+  const atkS = { stats: { strength: 5, magic: 5 }, derived: { abilityPower: 1 } };
+  // weaponDamage = (base + stat*ratio)[*AP if magic] + maxHp*pctMax + curHp*pctCur.
+  ok(weaponDamage({ scaling: "strength", base: 0, ratio: 0, pctMax: 0.5, pctCur: 0 }, atkS, 52, 52) === 26, "50% of max HP");
+  ok(weaponDamage({ scaling: "strength", base: 2, ratio: 1, pctMax: 0, pctCur: 0 }, atkS, 1, 1) === 7, "strength-scaled flat (base + str*ratio)");
+  const atkM = { stats: { strength: 5, magic: 5 }, derived: { abilityPower: 1.2 } };
+  ok(weaponDamage({ scaling: "magic", base: 2, ratio: 0.4, pctMax: 0, pctCur: 0 }, atkM, 1, 1) === (2 + 5 * 0.4) * 1.2, "magic flat × abilityPower");
+  ok(weaponDamage({ scaling: "strength", base: 0, ratio: 0, pctMax: 0.1, pctCur: 0.25 }, atkS, 40, 20) === 4 + 5, "blended max+current");
+  let hp = 100; // pure %-current asymptotes (why Hex needs a flat floor)
+  for (let n = 0; n < 50; n++) hp -= weaponDamage({ scaling: "strength", base: 0, ratio: 0, pctMax: 0, pctCur: 0.4 }, atkS, 100, hp);
   ok(hp > 0, "pure %-current damage asymptotes, never kills");
 
-  // applyDamage: i-frame gate, death flag, and enemies (no iframeDur) take every hit.
-  const hero = { hp: 20, maxHp: 20, iframes: 0, iframeDur: 0.8, dead: false };
+  // applyDamage: i-frame gate, dmgResist, death flag, and no-iframe entities take every hit.
+  const hero = { hp: 20, iframes: 0, iframeDur: 0.8, dead: false, derived: { dmgResist: 0 } };
   applyDamage(hero, 5); ok(hero.hp === 15 && hero.iframes === 0.8, "hero takes a hit, gains i-frames");
   applyDamage(hero, 5); ok(hero.hp === 15, "i-frame window blocks the next hit");
-  const foe = { hp: 8, dead: false };
+  const armored = { hp: 100, dead: false, derived: { dmgResist: 0.5 } };
+  applyDamage(armored, 10); ok(armored.hp === 95, "dmgResist halves incoming damage");
+  const foe = { hp: 8, dead: false, derived: { dmgResist: 0 } };
   applyDamage(foe, 5); applyDamage(foe, 5); ok(foe.hp === 0 && foe.dead, "no-iframe entity takes every hit and dies");
 
-  // Mana: regen clamps to the pool, canCast gates, spend deducts. No-op without a pool.
-  const caster = { mana: 6, maxMana: 16, manaRegen: 10 };
-  regenMana(caster, 1); ok(caster.mana === 16, "regenMana clamps to maxMana");
+  // Mana: regen clamps to the derived pool, canCast gates, spend deducts. No-op without regen.
+  const caster = { mana: 6, manaRegen: 10, derived: { maxMana: 16 } };
+  regenMana(caster, 1); ok(caster.mana === 16, "regenMana clamps to derived maxMana");
   ok(canCast(caster, 16) && !canCast(caster, 17), "canCast boundary");
   spendMana(caster, 10); ok(caster.mana === 6, "spendMana deducts");
-  const noPool = { hp: 5 }; regenMana(noPool, 1); ok(noPool.mana === undefined, "regenMana no-op without a pool");
+  const noRegen = { mana: 5, derived: { maxMana: 20 } }; regenMana(noRegen, 1); ok(noRegen.mana === 5, "regenMana no-op without a regen rate");
 }
 
 console.log(failures === 0

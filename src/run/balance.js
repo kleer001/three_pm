@@ -17,50 +17,62 @@ export const BALANCE = {
   // shape (X×Y); density scales how much obstacle there is overall.
   wall: { scaleX: 1, scaleY: 2, density: 0.5 },
 
-  hero: { speed: 135, maxHp: 50, iframeDur: 0.8, r: 13, maxMana: 40, manaRegen: 8 },
-
-  // Player arsenal — one is chosen per run on the select screen, fired on SPACE.
-  // Each is a declarative offense (the spec's basic/signature, slice-shaped): a
-  // `damage` descriptor (flat + fraction of the target's max/current HP, resolved
-  // by combat.weaponDamage), an optional `manaCost` spent from the hero's pool
-  // (same mana code the enemy casters use), and `freeze` for the slingshot's CC.
-  weapons: {
-    slingshot: { name: "Slingshot", cd: 3,   speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  damage: { flat: 0, pctMax: 0.5, pctCur: 0   }, desc: "50% max HP · freezes" },
-    // 40% of current HP front-loads the chunk; the small flat floor lets it
-    // actually finish (a pure %-current weapon asymptotes and never kills).
-    hex:       { name: "Hex",       cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, damage: { flat: 4, pctMax: 0,   pctCur: 0.4 }, desc: "40% current HP +4 · costs mana" },
+  // Spec 03 stat→derived constants. Each actor carries four 1–10 base stats
+  // (5 = baseline = Marvin); recomputeDerived (combat.js) maps them to gameplay
+  // values via these. Chosen so Marvin lands near the old hand-tuned hero, then
+  // re-tuned by playtest. moveSpeed = BASE_SPEED*(speedBase + speedPerLvl*speed).
+  derive: {
+    BASE_SPEED: 135, speedBase: 0.55, speedPerLvl: 0.09,
+    BASE_HP: 10, HP_PER_CON: 8,             // maxHp     = BASE_HP + constitution*HP_PER_CON
+    RESIST_PER_CON: 0.035, RESIST_CAP: 0.5, // dmgResist = min(cap, constitution*per)  → % incoming reduction
+    KB_PER_STR: 4,                          // knockback = strength*KB_PER_STR  (× an attack's knockback size)
+    BASE_MANA: 15, MANA_PER_MAG: 5,         // maxMana   = BASE_MANA + magic*MANA_PER_MAG
+    BASE_AP: 0.5, AP_PER_MAG: 0.1,          // abilityPower = BASE_AP + magic*AP_PER_MAG  (magic dmg ×AP)
   },
 
-  // Enemy roster — spec 06's four families × tiers. One `behavior` per family
-  // (chaser | swarmer | shooter | charger); tiers differ only in numbers, never
-  // behavior. The slice's lethal rule stays freeze-to-kill (`freezesToKill`
-  // slingshot hits), so `maxHp` is a real-but-secondary pool: the pebble chips it
-  // and it shows as a damage bar, but freeze still does the killing until other
-  // damage sources land. Casters (shooter) carry `maxMana`/`manaRegen`; the bolt
-  // costs `manaCost`, so a tapped-out Cultist must hold and regen (spec 06: mana
-  // only when manaCost > 0). `distanceBand` gates spawn depth; `threatValue` is
-  // the director's budget cost. Enemies are slower than the hero except mid-lunge.
+  // Hero (Marvin): baseline 5/5/5/5. Movement, HP, mana, resist, knockback all
+  // come from recomputeDerived; only authored extras (i-frame window, radius,
+  // mana regen) and faction live here.
+  hero: { stats: { speed: 5, constitution: 5, strength: 5, magic: 5 }, faction: "player", iframeDur: 0.8, r: 13, manaRegen: 8 },
+
+  // Player arsenal — one is chosen per run on the select screen, fired on SPACE.
+  // `damage` is a spec-04 attack: a stat-scaled flat term (base + stat*ratio, ×AP
+  // for magic) plus optional fractions of the target's max/current HP, resolved by
+  // combat.weaponDamage against the hero's stats. `manaCost` spends the hero pool;
+  // `freeze`/`knockback` are on-hit effects.
+  weapons: {
+    slingshot: { name: "Slingshot", cd: 3,   speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  knockback: 0, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 0.5, pctCur: 0 },   desc: "50% max HP + str · freezes" },
+    // 40% of current HP front-loads the chunk; the magic-scaled flat lets it finish
+    // (a pure %-current weapon asymptotes and never kills).
+    hex:       { name: "Hex",       cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, knockback: 0, damage: { scaling: "magic",    base: 2, ratio: 0.4, pctMax: 0,   pctCur: 0.4 }, desc: "40% current HP + magic · costs mana" },
+  },
+
+  // Enemy roster — spec 06's four families × tiers, now on the spec-03 stat model:
+  // each def carries 1–10 `stats` (levels from spec 06) that recomputeDerived turns
+  // into moveSpeed/maxHp/dmgResist/knockback/maxMana. Tiers raise the stats (tankier,
+  // hit harder, resist more), never the behavior. `contactDamage` is flat overlap
+  // damage; shooters/chargers carry a spec-04 `attack` (base+stat*ratio) the brain
+  // fires. `distanceBand` gates spawn depth; `threatValue` is the director's cost.
   enemies: {
     // Shamblers — chaser: steer straight at the hero, contact damage on overlap.
-    shambler: { name: "Shambler", family: "shamblers", tier: 1, behavior: "chaser", speed: 100, r: 15, color: "#d35400", maxHp: 24, contactDamage: 6, repath: 0.4, freezesToKill: 2, threatValue: 1, distanceBand: 0.0 },
-    ghoul:    { name: "Ghoul",    family: "shamblers", tier: 2, behavior: "chaser", speed: 108, r: 16, color: "#b34700", maxHp: 36, contactDamage: 9, repath: 0.4, freezesToKill: 3, threatValue: 2, distanceBand: 0.35 },
-    revenant: { name: "Revenant", family: "shamblers", tier: 3, behavior: "chaser", speed: 116, r: 17, color: "#8c3500", maxHp: 52, contactDamage: 12, repath: 0.35, freezesToKill: 4, threatValue: 4, distanceBand: 0.6 },
+    shambler: { name: "Shambler", family: "shamblers", tier: 1, behavior: "chaser", stats: { speed: 3, constitution: 4, strength: 4, magic: 1 }, r: 15, color: "#d35400", contactDamage: 6,  repath: 0.4,  freezesToKill: 2, threatValue: 1, distanceBand: 0.0 },
+    ghoul:    { name: "Ghoul",    family: "shamblers", tier: 2, behavior: "chaser", stats: { speed: 4, constitution: 6, strength: 5, magic: 1 }, r: 16, color: "#b34700", contactDamage: 9,  repath: 0.4,  freezesToKill: 3, threatValue: 2, distanceBand: 0.35 },
+    revenant: { name: "Revenant", family: "shamblers", tier: 3, behavior: "chaser", stats: { speed: 4, constitution: 8, strength: 6, magic: 1 }, r: 17, color: "#8c3500", contactDamage: 12, repath: 0.35, freezesToKill: 4, threatValue: 4, distanceBand: 0.6 },
 
     // Imps — swarmer: faster chaser with heading jitter so packs spread, not stack.
-    imp:     { name: "Imp",     family: "imps", tier: 1, behavior: "swarmer", speed: 150, r: 11, color: "#8e44ad", maxHp: 12, contactDamage: 3, jitter: 0.5, repath: 0.5, freezesToKill: 1, threatValue: 1, distanceBand: 0.1 },
-    hellpup: { name: "Hellpup", family: "imps", tier: 2, behavior: "swarmer", speed: 165, r: 12, color: "#6c3483", maxHp: 22, contactDamage: 5, jitter: 0.5, repath: 0.5, freezesToKill: 2, threatValue: 2, distanceBand: 0.45 },
+    imp:     { name: "Imp",     family: "imps", tier: 1, behavior: "swarmer", stats: { speed: 7, constitution: 2, strength: 2, magic: 1 }, r: 11, color: "#8e44ad", contactDamage: 3, jitter: 0.5, repath: 0.5, freezesToKill: 1, threatValue: 1, distanceBand: 0.1 },
+    hellpup: { name: "Hellpup", family: "imps", tier: 2, behavior: "swarmer", stats: { speed: 7, constitution: 4, strength: 3, magic: 1 }, r: 12, color: "#6c3483", contactDamage: 5, jitter: 0.5, repath: 0.5, freezesToKill: 2, threatValue: 2, distanceBand: 0.45 },
 
-    // Cultists — shooter: hold a preferred range, aim, lob a bolt (costs mana),
-    // kite, cool down. Out of mana → hold and regen until it can cast again.
-    acolyte:    { name: "Acolyte",    family: "cultists", tier: 1, behavior: "shooter", speed: 95, r: 13, color: "#27ae60", maxHp: 22, dmg: 7,  prefRange: 320, aim: 0.55, cooldown: 1.7, shot: 300, retreatFrac: 0.55, repath: 0.4, maxMana: 16, manaCost: 8, manaRegen: 2.0, freezesToKill: 2, threatValue: 3, distanceBand: 0.25 },
-    zealot:     { name: "Zealot",     family: "cultists", tier: 2, behavior: "shooter", speed: 98, r: 14, color: "#1e8449", maxHp: 34, dmg: 10, prefRange: 340, aim: 0.5,  cooldown: 1.4, shot: 320, retreatFrac: 0.55, repath: 0.4, maxMana: 24, manaCost: 8, manaRegen: 3.0, freezesToKill: 3, threatValue: 4, distanceBand: 0.5 },
-    hierophant: { name: "Hierophant", family: "cultists", tier: 3, behavior: "shooter", speed: 100, r: 15, color: "#145a32", maxHp: 46, dmg: 13, prefRange: 360, aim: 0.45, cooldown: 1.1, shot: 340, retreatFrac: 0.55, repath: 0.4, maxMana: 32, manaCost: 8, manaRegen: 4.0, freezesToKill: 4, threatValue: 6, distanceBand: 0.7 },
+    // Cultists — shooter: hold range, aim, lob a magic bolt (base+magic*ratio ×AP,
+    // costs mana), kite, cool down. Out of mana → hold and regen.
+    acolyte:    { name: "Acolyte",    family: "cultists", tier: 1, behavior: "shooter", stats: { speed: 4, constitution: 3, strength: 2, magic: 6 }, r: 13, color: "#27ae60", contactDamage: 0, attack: { scaling: "magic", base: 5, ratio: 0.6, manaCost: 14 }, prefRange: 320, aim: 0.55, cooldown: 1.7, shot: 300, retreatFrac: 0.55, repath: 0.4, manaRegen: 6, freezesToKill: 2, threatValue: 3, distanceBand: 0.25 },
+    zealot:     { name: "Zealot",     family: "cultists", tier: 2, behavior: "shooter", stats: { speed: 4, constitution: 5, strength: 2, magic: 7 }, r: 14, color: "#1e8449", contactDamage: 0, attack: { scaling: "magic", base: 6, ratio: 0.7, manaCost: 14 }, prefRange: 340, aim: 0.5,  cooldown: 1.4, shot: 320, retreatFrac: 0.55, repath: 0.4, manaRegen: 7, freezesToKill: 3, threatValue: 4, distanceBand: 0.5 },
+    hierophant: { name: "Hierophant", family: "cultists", tier: 3, behavior: "shooter", stats: { speed: 4, constitution: 7, strength: 2, magic: 9 }, r: 15, color: "#145a32", contactDamage: 0, attack: { scaling: "magic", base: 7, ratio: 0.8, manaCost: 14 }, prefRange: 360, aim: 0.45, cooldown: 1.1, shot: 340, retreatFrac: 0.55, repath: 0.4, manaRegen: 8, freezesToKill: 4, threatValue: 6, distanceBand: 0.7 },
 
-    // Brutes — charger: approach to lunge range, telegraph (the counterplay
-    // window), then dash along a locked aim; a sidestep during the wind-up dodges
-    // it. Lunge costs no mana (spec), so brutes carry no mana pool.
-    brute:    { name: "Brute",    family: "brutes", tier: 1, behavior: "charger", speed: 90, r: 18, color: "#c0392b", maxHp: 44, contactDamage: 4, lungeRange: 180, telegraph: 0.6,  lungeSpeed: 520, lungeDur: 0.35, lungeDmg: 16, cooldown: 2.5, repath: 0.4, freezesToKill: 3, threatValue: 4, distanceBand: 0.4 },
-    behemoth: { name: "Behemoth", family: "brutes", tier: 2, behavior: "charger", speed: 95, r: 20, color: "#922b21", maxHp: 72, contactDamage: 6, lungeRange: 200, telegraph: 0.55, lungeSpeed: 560, lungeDur: 0.38, lungeDmg: 22, cooldown: 2.3, repath: 0.4, freezesToKill: 5, threatValue: 7, distanceBand: 0.65 },
+    // Brutes — charger: approach to lunge range, telegraph (the counterplay window),
+    // then dash along a locked aim and slam (strength attack + large knockback).
+    brute:    { name: "Brute",    family: "brutes", tier: 1, behavior: "charger", stats: { speed: 4, constitution: 7, strength: 7, magic: 1 }, r: 18, color: "#c0392b", contactDamage: 4, attack: { scaling: "strength", base: 12, ratio: 1.2, knockback: 2 }, lungeRange: 180, telegraph: 0.6,  lungeSpeed: 520, lungeDur: 0.35, cooldown: 2.5, repath: 0.4, freezesToKill: 3, threatValue: 4, distanceBand: 0.4 },
+    behemoth: { name: "Behemoth", family: "brutes", tier: 2, behavior: "charger", stats: { speed: 4, constitution: 9, strength: 8, magic: 1 }, r: 20, color: "#922b21", contactDamage: 6, attack: { scaling: "strength", base: 14, ratio: 1.3, knockback: 2 }, lungeRange: 200, telegraph: 0.55, lungeSpeed: 560, lungeDur: 0.38, cooldown: 2.3, repath: 0.4, freezesToKill: 5, threatValue: 7, distanceBand: 0.65 },
   },
 
   // Director: spends a depth-scaled live-threat budget on off-screen spawns.

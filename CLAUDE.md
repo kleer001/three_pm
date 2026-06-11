@@ -49,8 +49,10 @@ win. Plain HTML, CSS, and ES modules — no build system, bundler, or dependenci
   bodies, render). Hosts the `BEHAVIORS` registry (spec 06's `chaser`/`swarmer`/
   `shooter`/`charger`). Gameplay knobs live in `balance.js` (`HERO`, `weapons`,
   `ENEMIES` roster, `director`, `SCROLL`, `MAP_H`, `FREEZE_DUR`, wall scale/density)
-- `src/run/combat.js` — the one resolver: percent-HP `weaponDamage`, `applyDamage`
-  (i-frames/death) and mana (`regenMana`/`canCast`/`spendMana`), shared by hero+enemies
+- `src/run/combat.js` — the one resolver (spec 03/04): `recomputeDerived` (1–10
+  `stats`→`derived`: moveSpeed/maxHp/dmgResist/knockback/maxMana/abilityPower),
+  percent-HP + stat-scaled `weaponDamage`, `applyDamage` (i-frames/dmgResist/death),
+  mana (`regenMana`/`canCast`/`spendMana`) — shared by hero and enemies
 - `src/run/director.js` — spec 06 spawn director: distance-scaled threat budget +
   `distanceBand` eligibility, placing enemies off-screen home-ward
 - `src/ai/ai.js` — BFS pathfinding + waypoint pickers (ported from BrainMaze)
