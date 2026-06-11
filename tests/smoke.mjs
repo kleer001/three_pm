@@ -6,7 +6,7 @@ import { findPath, localWalkableTile } from "../src/ai/ai.js";
 import { makeRng } from "../src/core/rng.js";
 import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
-import { BALANCE } from "../src/run/balance.js";
+import { BALANCE, THEME } from "../src/run/balance.js";
 
 let failures = 0;
 const ok = (cond, msg) => {
@@ -163,6 +163,18 @@ for (const [id, d] of Object.entries(BALANCE.enemies)) {
   ok(casts === !!(d.attack && d.attack.manaCost), `${id}: mana-costing attack iff caster`);
   if (casts) ok(d.manaRegen > 0, `${id}: caster regenerates mana`);
   if (d.behavior === "charger") ok(d.attack && !d.attack.manaCost, `${id}: charger lunge is a free attack`);
+}
+
+// Weapon roster: every weapon has a known shape, the fields that shape needs, a
+// stat-scaled damage descriptor, and a select-screen swatch color.
+for (const [id, w] of Object.entries(BALANCE.weapons)) {
+  ok(["projectile", "nova", "bomb", "field"].includes(w.shape), `${id}: known shape`);
+  ok(w.damage && (w.damage.scaling === "strength" || w.damage.scaling === "magic"), `${id}: stat-scaled damage`);
+  ok(THEME.weaponShot[id], `${id}: has a swatch color`);
+  if (w.shape === "projectile") ok(w.speed > 0 && w.range > 0, `${id}: projectile has speed+range`);
+  if (w.shape === "nova" || w.shape === "bomb" || w.shape === "field") ok(w.radius > 0, `${id}: area shape has radius`);
+  if (w.shape === "field") ok(w.lifespan > 0 && w.tickInterval > 0, `${id}: field lingers and ticks`);
+  if (w.pierce) ok(w.shape === "projectile", `${id}: pierce only on projectiles`);
 }
 
 // Stat → derived model: recomputeDerived maps base stats to gameplay values.

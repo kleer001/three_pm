@@ -35,16 +35,26 @@ export const BALANCE = {
   // mana regen) and faction live here.
   hero: { stats: { speed: 5, constitution: 5, strength: 5, magic: 5 }, faction: "player", iframeDur: 0.8, r: 13, manaRegen: 8 },
 
-  // Player arsenal — one is chosen per run on the select screen, fired on SPACE.
-  // `damage` is a spec-04 attack: a stat-scaled flat term (base + stat*ratio, ×AP
-  // for magic) plus optional fractions of the target's max/current HP, resolved by
-  // combat.weaponDamage against the hero's stats. `manaCost` spends the hero pool;
-  // `freeze`/`knockback` are on-hit effects.
+  // Player arsenal — all are offered on the select screen each run; one is fired
+  // on SPACE (auto-aimed). `shape` picks the delivery: `projectile` flies and hits
+  // the first enemy (slingshot/hex) or pierces a line (`pierce`); `nova` bursts
+  // around the hero; `bomb` lobs and detonates an area on impact; `field` drops a
+  // lingering damage zone. `damage` is a spec-04 attack (base+stat*ratio ×AP for
+  // magic, plus percent-HP terms) resolved against the hero's stats; `manaCost`
+  // spends the hero pool; `freeze`/`knockback` are on-hit effects.
   weapons: {
-    slingshot: { name: "Slingshot", cd: 3,   speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  knockback: 0, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 0.5, pctCur: 0 },   desc: "50% max HP + str · freezes" },
+    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  knockback: 0, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 0.5, pctCur: 0 },   desc: "50% max HP + str · freezes" },
     // 40% of current HP front-loads the chunk; the magic-scaled flat lets it finish
     // (a pure %-current weapon asymptotes and never kills).
-    hex:       { name: "Hex",       cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, knockback: 0, damage: { scaling: "magic",    base: 2, ratio: 0.4, pctMax: 0,   pctCur: 0.4 }, desc: "40% current HP + magic · costs mana" },
+    hex:       { name: "Hex",       shape: "projectile", cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, knockback: 0, damage: { scaling: "magic",    base: 2, ratio: 0.4, pctMax: 0, pctCur: 0.4 },  desc: "40% current HP + magic · costs mana" },
+    // Beam: a piercing projectile — hits every enemy along its line, once each.
+    beam:      { name: "Beam",       shape: "projectile", pierce: true, cd: 1.5, speed: 520, range: 520, shotR: 6, life: 1.2, freeze: false, manaCost: 12, knockback: 0, damage: { scaling: "strength", base: 4, ratio: 0.8, pctMax: 0.18, pctCur: 0 }, desc: "pierces a whole line" },
+    // Nova: an instant burst centered on the hero — clears a closing swarm.
+    nova:      { name: "Nova",       shape: "nova", cd: 4, radius: 130, freeze: false, manaCost: 16, knockback: 1.5, damage: { scaling: "strength", base: 6, ratio: 1.0, pctMax: 0.12, pctCur: 0 }, desc: "burst around you + knockback" },
+    // Bomb: lobbed at the nearest enemy, detonates an area on impact/expiry.
+    bomb:      { name: "Bomb",       shape: "bomb", cd: 2.5, speed: 320, range: 460, shotR: 7, life: 1.6, radius: 95, freeze: false, manaCost: 14, knockback: 1, damage: { scaling: "magic", base: 5, ratio: 0.8, pctMax: 0.15, pctCur: 0 }, desc: "lobbed area blast" },
+    // Field: a lingering zone dropped on the hero — ticks damage, denies ground.
+    field:     { name: "Hex Field",  shape: "field", cd: 5, range: 420, radius: 90, lifespan: 4, tickInterval: 0.4, freeze: false, manaCost: 20, knockback: 0, damage: { scaling: "magic", base: 2, ratio: 0.3, pctMax: 0.04, pctCur: 0 }, desc: "lingering damage zone" },
   },
 
   // Enemy roster — spec 06's four families × tiers, now on the spec-03 stat model:
@@ -111,7 +121,9 @@ export const THEME = {
   homeBand: "rgba(255,215,0,0.35)",
   corpse: "#2b2622",
   enemyShot: { r: 5, color: "#145a32" },
-  weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6" }, // hero pebble color, keyed by weapon id
+  weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6", beam: "#1abc9c", bomb: "#e67e22", nova: "#f5d76e", field: "#8e44ad" }, // weapon color (shot + select swatch), keyed by id
+  blast: { ring: "rgba(255,240,200,0.85)", dur: 0.28 }, // expanding ring for nova/bomb detonations
+  field: { fill: "rgba(155,89,182,0.16)", ring: "rgba(155,89,182,0.45)" }, // lingering zone disc
   freeze: { fill: "rgba(150,205,255,0.55)", ring: "rgba(190,230,255,0.9)", ringPad: 2 },
   rangedTelegraph: { ring: "rgba(39,174,96,0.9)", line: "rgba(39,174,96,0.5)", ringPad: 5 },
   chargerTelegraph: { ring: "rgba(231,76,60,0.85)", line: "rgba(231,76,60,0.6)", lunge: "rgba(255,120,90,0.9)", ringPad: 6 },

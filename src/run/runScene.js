@@ -50,6 +50,8 @@ export function createRunScene(ctx, input, seed, weaponId) {
   const cam = { x: 0, y: 0 };
   const enemies = [];
   const projectiles = []; // all in-flight shots, hero + enemy, tagged by faction
+  const blasts = [];      // transient AoE rings (nova/bomb detonations), visual only
+  const fields = [];      // lingering damage zones (field weapon)
   const heroTargets = [hero]; // the player-faction target list enemy shots resolve against
   let outcome = null;
   const state = { restart: false };
@@ -95,13 +97,15 @@ export function createRunScene(ctx, input, seed, weaponId) {
     e.repathT = k.repath;
   }
 
-  // Spawn a projectile owned by `attacker`; its faction (and so which side it can
-  // hit) comes from the attacker. One shape for hero pebbles and enemy bolts.
+  // Spawn a projectile owned by `attacker`; its faction (which side it can hit)
+  // comes from the attacker. `shape` defaults to a single-hit projectile; a `bomb`
+  // detonates an area on contact, a `pierce` projectile (beam) hits each enemy once.
   function fireShot(attacker, vx, vy, o) {
     projectiles.push({
       x: attacker.x, y: attacker.y, vx, vy, life: o.life, dead: false,
       faction: attacker.faction, attacker, damage: o.damage,
       freeze: o.freeze, knockback: o.knockback, shotR: o.shotR, color: o.color,
+      shape: o.shape || "projectile", radius: o.radius, pierce: o.pierce, hits: o.pierce ? new Set() : null,
     });
   }
 
@@ -109,6 +113,42 @@ export function createRunScene(ctx, input, seed, weaponId) {
   function knockback(t, dx, dy, mag) {
     const m = Math.hypot(dx, dy) || 1;
     moveAndCollide(level, t, (dx / m) * mag, (dy / m) * mag);
+  }
+
+  // Resolve a single hit: percent-HP/stat-scaled damage through dmgResist, optional
+  // knockback along (kdx,kdy), optional freeze (player→enemy CC). Every damage
+  // source — projectiles, beams, AoE blasts — funnels through here so they agree.
+  function applyHit(attacker, t, damage, kbMult, kdx, kdy, freeze) {
+    applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
+    if (kbMult) knockback(t, kdx, kdy, attacker.derived.knockback * kbMult);
+    if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
+    if (t === hero && hero.dead) outcome = "lose";
+  }
+
+  // Area blast at (cx,cy): hit every enemy overlapping the radius, knocked outward
+  // from the center. Shared by nova, bomb detonation, and field ticks.
+  function blast(cx, cy, radius, attacker, damage, kbMult, freeze) {
+    for (const e of enemies) {
+      if (e.dead) continue;
+      if (dist(cx, cy, e.x, e.y) <= radius + e.r) applyHit(attacker, e, damage, kbMult, e.x - cx, e.y - cy, freeze);
+    }
+  }
+
+  // Detonate a bomb projectile: area damage + a visual ring at its position.
+  function detonate(p) {
+    blast(p.x, p.y, p.radius, p.attacker, p.damage, p.knockback, p.freeze);
+    blasts.push({ x: p.x, y: p.y, r: p.radius, t: 0 });
+  }
+
+  // Nearest living enemy to the hero, with its distance — the shared auto-aim pick.
+  function nearestEnemy() {
+    let best = null, bd = Infinity;
+    for (const e of enemies) {
+      if (e.dead) continue;
+      const d = dist(e.x, e.y, hero.x, hero.y);
+      if (d < bd) { bd = d; best = e; }
+    }
+    return best && { e: best, d: bd };
   }
 
   // Hero damage flows through the shared resolver (i-frames + death) like any
@@ -279,24 +319,33 @@ export function createRunScene(ctx, input, seed, weaponId) {
     const intent = input.intent();
     heroMove(intent.x * hero.derived.moveSpeed * dt, intent.y * hero.derived.moveSpeed * dt);
 
-    // Selected weapon: SPACE auto-aims the nearest enemy in range, on cooldown and
-    // affordable mana. The shot carries the weapon so the hit resolves its damage.
+    // Selected weapon: SPACE fires when there's a target and the cooldown + mana
+    // allow it. Delivery depends on `shape`: nova bursts on the hero, field drops a
+    // zone, the rest auto-aim a projectile at the nearest enemy.
     if (hero.cd <= 0 && canCast(hero, weapon.manaCost) && input.down("Space")) {
-      let best = null, bd = weapon.range;
-      for (const e of enemies) {
-        if (e.dead) continue;
-        const d = dist(e.x, e.y, hero.x, hero.y);
-        if (d < bd) { bd = d; best = e; }
-      }
-      if (best) {
-        const dx = best.x - hero.x, dy = best.y - hero.y, m = Math.hypot(dx, dy) || 1;
+      const near = nearestEnemy();
+      let fired = false;
+      if (weapon.shape === "nova") {
+        if (near && near.d <= weapon.radius) {
+          blast(hero.x, hero.y, weapon.radius, hero, weapon.damage, weapon.knockback, weapon.freeze);
+          blasts.push({ x: hero.x, y: hero.y, r: weapon.radius, t: 0 });
+          fired = true;
+        }
+      } else if (weapon.shape === "field") {
+        if (near && near.d <= weapon.range) {
+          fields.push({ x: hero.x, y: hero.y, r: weapon.radius, life: weapon.lifespan, tick: 0, weapon });
+          fired = true;
+        }
+      } else if (near && near.d <= weapon.range) { // projectile / beam / bomb — aimed
+        const dx = near.e.x - hero.x, dy = near.e.y - hero.y, m = Math.hypot(dx, dy) || 1;
         fireShot(hero, (dx / m) * weapon.speed, (dy / m) * weapon.speed, {
           damage: weapon.damage, life: weapon.life, shotR: weapon.shotR,
           color: THEME.weaponShot[weapon.id], freeze: weapon.freeze, knockback: weapon.knockback,
+          shape: weapon.shape, radius: weapon.radius, pierce: weapon.pierce,
         });
-        hero.cd = weapon.cd;
-        spendMana(hero, weapon.manaCost);
+        fired = true;
       }
+      if (fired) { hero.cd = weapon.cd; spendMana(hero, weapon.manaCost); }
     }
 
     // Enemy brains (skip dead/frozen; cull far enemies on the long map)
@@ -309,27 +358,36 @@ export function createRunScene(ctx, input, seed, weaponId) {
     }
 
     // Projectiles (hero + enemy): resolve each against the opposite faction via the
-    // shared resolver. Player shots deal percent-HP and may freeze; enemy bolts deal
-    // flat magic damage. dmgResist and knockback apply uniformly to whoever's hit.
+    // shared hit path. Bombs detonate an area on contact/expiry; beams pierce and
+    // hit each enemy once; the rest hit the first enemy and die.
     for (const p of projectiles) {
       if (p.dead) continue;
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-      if (p.life <= 0 || !isWalkable(level, Math.floor(p.x / TS), Math.floor(p.y / TS))) { p.dead = true; continue; }
+      if (p.life <= 0 || !isWalkable(level, Math.floor(p.x / TS), Math.floor(p.y / TS))) {
+        if (p.shape === "bomb") detonate(p); // lob that fizzles still bursts where it lands
+        p.dead = true; continue;
+      }
       const pad = p.faction === "enemy" ? BALANCE.enemyShotHitPad : 0;
       for (const t of (p.faction === "player" ? enemies : heroTargets)) {
         if (t.dead) continue;
         if (dist(p.x, p.y, t.x, t.y) < p.shotR + t.r + pad) {
-          applyDamage(t, weaponDamage(p.damage, p.attacker, t.derived.maxHp, t.hp));
-          if (p.knockback) knockback(t, p.vx, p.vy, p.attacker.derived.knockback * p.knockback);
-          if (p.freeze && t.def) { // freeze is player→enemy CC; enemies carry the kill counter
-            t.freezeCount++; t.frozenT = FREEZE_DUR;
-            if (t.freezeCount >= t.def.freezesToKill) t.dead = true;
+          if (p.shape === "bomb") { detonate(p); p.dead = true; break; }
+          if (p.pierce) { // beam: hit each enemy once, keep flying
+            if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze); p.hits.add(t); }
+            continue;
           }
-          if (t === hero && hero.dead) outcome = "lose";
+          applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze);
           p.dead = true; break;
         }
       }
     }
+
+    // Lingering fields tick area damage to enemies inside them, then expire.
+    for (const f of fields) {
+      f.life -= dt; f.tick -= dt;
+      if (f.tick <= 0) { blast(f.x, f.y, f.r, hero, f.weapon.damage, f.weapon.knockback, f.weapon.freeze); f.tick = f.weapon.tickInterval; }
+    }
+    for (const b of blasts) b.t += dt; // visual rings expand then expire
 
     // Bodies take up space. The hero hard-blocks against bodies in heroMove;
     // here push living enemies out of one another, the hero, and solid corpses.
@@ -344,6 +402,8 @@ export function createRunScene(ctx, input, seed, weaponId) {
     for (const c of corpses) separate(hero, c, false); // the hero shoves (heavy) corpses aside
 
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
+    for (let i = fields.length - 1; i >= 0; i--) if (fields[i].life <= 0) fields.splice(i, 1);
+    for (let i = blasts.length - 1; i >= 0; i--) if (blasts[i].t >= THEME.blast.dur) blasts.splice(i, 1);
 
     // Stay inside the moving window; being crushed against a wall is fatal.
     // (heroMove already keeps x within the map and out of walls — no x clamp.)
@@ -379,6 +439,12 @@ export function createRunScene(ctx, input, seed, weaponId) {
     for (const [hx, hy] of level.homeBand)
       if (hx >= x0 && hx <= x1 && hy >= y0 && hy <= y1)
         ctx.fillRect(Math.floor(hx * TS - cam.x), Math.floor(hy * TS - cam.y), TS + 1, TS + 1);
+
+    // Lingering fields sit on the ground, under the bodies.
+    for (const f of fields) {
+      disc(ctx, f.x - cam.x, f.y - cam.y, f.r, THEME.field.fill);
+      ring(ctx, f.x - cam.x, f.y - cam.y, f.r, THEME.field.ring);
+    }
 
     // Corpses (drawn under everything live)
     for (const e of enemies)
@@ -419,6 +485,10 @@ export function createRunScene(ctx, input, seed, weaponId) {
       if (e.hp < e.derived.maxHp) { bar(ctx, sx, by, e.hp / e.derived.maxHp, B.hp); by -= B.h + 1; }
       if (cast) bar(ctx, sx, by, e.mana / e.derived.maxMana, e.mana >= k.attack.manaCost ? B.mana : B.tapped);
     }
+
+    // Nova/bomb detonation rings: a quick expanding flash to the blast radius.
+    for (const b of blasts)
+      ring(ctx, b.x - cam.x, b.y - cam.y, b.r * (0.4 + 0.6 * b.t / THEME.blast.dur), THEME.blast.ring);
 
     disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : THEME.hero.normal);
 
