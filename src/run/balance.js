@@ -17,28 +17,106 @@ export const BALANCE = {
   // shape (X×Y); density scales how much obstacle there is overall.
   wall: { scaleX: 1, scaleY: 2, density: 0.5 },
 
-  hero: { speed: 135, maxHp: 50, iframeDur: 0.8, r: 13, shotCD: 3, shotSpeed: 360, shotRange: 470, shotR: 6 },
-
-  // Enemies are slower than the hero (dodgeable) and stop to attack.
-  kind: {
-    // Stops and hits with a stick: chase, then windup -> strike -> recover.
-    melee:    { speed: 110, maxHp: 30, r: 15, color: "#d35400", dmg: 10, range: 64, windup: 0.45, recover: 0.6, repath: 0.4 },
-    // Stops to take potshots: approach to range, aim, fire a projectile, cool down.
-    ranged:   { speed: 95,  maxHp: 18, r: 13, color: "#27ae60", dmg: 7, prefRange: 320, aim: 0.55, cooldown: 1.7, shot: 300, repath: 0.4 },
-    // Ambient roamer; light contact damage.
-    wanderer: { speed: 120, maxHp: 12, r: 11, color: "#8e44ad", contact: 4 },
+  // Spec 03 stat→derived constants. Each actor carries four 1–10 base stats
+  // (5 = baseline = Marvin); recomputeDerived (combat.js) maps them to gameplay
+  // values via these. Chosen so Marvin lands near the old hand-tuned hero, then
+  // re-tuned by playtest. moveSpeed = BASE_SPEED*(speedBase + speedPerLvl*speed).
+  derive: {
+    BASE_SPEED: 135, speedBase: 0.55, speedPerLvl: 0.09,
+    BASE_HP: 10, HP_PER_CON: 8,             // maxHp     = BASE_HP + constitution*HP_PER_CON
+    RESIST_PER_CON: 0.035, RESIST_CAP: 0.5, // dmgResist = min(cap, constitution*per)  → % incoming reduction
+    KB_PER_STR: 4,                          // knockback = strength*KB_PER_STR  (× an attack's knockback size)
+    BASE_MANA: 15, MANA_PER_MAG: 5,         // maxMana   = BASE_MANA + magic*MANA_PER_MAG
+    BASE_AP: 0.5, AP_PER_MAG: 0.1,          // abilityPower = BASE_AP + magic*AP_PER_MAG  (magic dmg ×AP)
   },
-  spawn: { melee: 10, ranged: 7, wanderer: 8 },
+
+  // Hero (Marvin): baseline 5/5/5/5. Movement, HP, mana, resist, knockback all
+  // come from recomputeDerived; only authored extras (i-frame window, radius,
+  // mana regen) and faction live here.
+  hero: { stats: { speed: 5, constitution: 5, strength: 5, magic: 5 }, faction: "player", iframeDur: 0.8, r: 13, manaRegen: 8 },
+
+  // Player arsenal — all are offered on the select screen each run; one is fired
+  // on SPACE (auto-aimed). `shape` picks the delivery: `projectile` flies and hits
+  // the first enemy (slingshot/hex) or pierces a line (`pierce`); `nova` bursts
+  // around the hero; `bomb` lobs and detonates an area on impact; `field` drops a
+  // lingering damage zone. `damage` is a spec-04 attack (base+stat*ratio ×AP for
+  // magic, plus percent-HP terms) resolved against the hero's stats; `manaCost`
+  // spends the hero pool; `freeze`/`knockback` are on-hit effects.
+  weapons: {
+    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  knockback: 0, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 0.5, pctCur: 0 },   desc: "50% max HP + str · freezes" },
+    // 40% of current HP front-loads the chunk; the magic-scaled flat lets it finish
+    // (a pure %-current weapon asymptotes and never kills).
+    hex:       { name: "Hex",       shape: "projectile", cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, knockback: 0, damage: { scaling: "magic",    base: 2, ratio: 0.4, pctMax: 0, pctCur: 0.4 },  desc: "40% current HP + magic · costs mana" },
+    // Beam: a piercing projectile — hits every enemy along its line, once each.
+    beam:      { name: "Beam",       shape: "projectile", pierce: true, cd: 1.5, speed: 520, range: 520, shotR: 6, life: 1.2, freeze: false, manaCost: 12, knockback: 0, damage: { scaling: "strength", base: 4, ratio: 0.8, pctMax: 0.18, pctCur: 0 }, desc: "pierces a whole line" },
+    // Nova: an instant burst centered on the hero — clears a closing swarm.
+    nova:      { name: "Nova",       shape: "nova", cd: 4, radius: 130, freeze: false, manaCost: 16, knockback: 1.5, damage: { scaling: "strength", base: 6, ratio: 1.0, pctMax: 0.12, pctCur: 0 }, desc: "burst around you + knockback" },
+    // Bomb: lobbed at the nearest enemy, detonates an area on impact/expiry.
+    bomb:      { name: "Bomb",       shape: "bomb", cd: 2.5, speed: 320, range: 460, shotR: 7, life: 1.6, radius: 95, freeze: false, manaCost: 14, knockback: 1, damage: { scaling: "magic", base: 5, ratio: 0.8, pctMax: 0.15, pctCur: 0 }, desc: "lobbed area blast" },
+    // Field: a lingering zone dropped on the hero — ticks damage, denies ground.
+    field:     { name: "Hex Field",  shape: "field", cd: 5, range: 420, radius: 90, lifespan: 4, tickInterval: 0.4, freeze: false, manaCost: 20, knockback: 0, damage: { scaling: "magic", base: 2, ratio: 0.3, pctMax: 0.04, pctCur: 0 }, desc: "lingering damage zone" },
+    // Melee — `arc` degrees of swing at short `radius` reach, auto-aimed at the
+    // nearest enemy (360 = full circle). Free, strength-scaled, knockback-heavy:
+    // you trade reach (into contact range) for raw burst. Reuse the AoE blast path.
+    bat:    { name: "Bat",    shape: "melee-arc", cd: 0.4,  radius: 56, arc: 110, freeze: false, manaCost: 0, knockback: 1,   damage: { scaling: "strength", base: 8,  ratio: 1.4, pctMax: 0.08, pctCur: 0 }, desc: "fast wide swing" },
+    cleave: { name: "Cleave", shape: "melee-arc", cd: 0.9,  radius: 64, arc: 130, freeze: false, manaCost: 0, knockback: 2.5, damage: { scaling: "strength", base: 14, ratio: 1.8, pctMax: 0.10, pctCur: 0 }, desc: "heavy hit + big knockback" },
+    spear:  { name: "Spear",  shape: "melee-arc", cd: 0.45, radius: 84, arc: 45,  freeze: false, manaCost: 0, knockback: 1,   damage: { scaling: "strength", base: 7,  ratio: 1.2, pctMax: 0.06, pctCur: 0 }, desc: "long narrow thrust" },
+    whirl:  { name: "Whirl",  shape: "melee-arc", cd: 0.8,  radius: 60, arc: 360, freeze: false, manaCost: 0, knockback: 1.5, damage: { scaling: "strength", base: 9,  ratio: 1.3, pctMax: 0.09, pctCur: 0 }, desc: "360° spin around you" },
+  },
+
+  // Enemy roster — spec 06's four families × tiers, now on the spec-03 stat model:
+  // each def carries 1–10 `stats` (levels from spec 06) that recomputeDerived turns
+  // into moveSpeed/maxHp/dmgResist/knockback/maxMana. Tiers raise the stats (tankier,
+  // hit harder, resist more), never the behavior. `contactDamage` is flat overlap
+  // damage; shooters/chargers carry a spec-04 `attack` (base+stat*ratio) the brain
+  // fires. `distanceBand` gates spawn depth; `threatValue` is the director's cost.
+  enemies: {
+    // Shamblers — chaser: steer straight at the hero, contact damage on overlap.
+    shambler: { name: "Shambler", family: "shamblers", tier: 1, behavior: "chaser", stats: { speed: 3, constitution: 4, strength: 4, magic: 1 }, r: 15, color: "#d35400", contactDamage: 6,  repath: 0.4,  freezesToKill: 2, threatValue: 1, distanceBand: 0.0 },
+    ghoul:    { name: "Ghoul",    family: "shamblers", tier: 2, behavior: "chaser", stats: { speed: 4, constitution: 6, strength: 5, magic: 1 }, r: 16, color: "#b34700", contactDamage: 9,  repath: 0.4,  freezesToKill: 3, threatValue: 2, distanceBand: 0.35 },
+    revenant: { name: "Revenant", family: "shamblers", tier: 3, behavior: "chaser", stats: { speed: 4, constitution: 8, strength: 6, magic: 1 }, r: 17, color: "#8c3500", contactDamage: 12, repath: 0.35, freezesToKill: 4, threatValue: 4, distanceBand: 0.6 },
+
+    // Imps — swarmer: faster chaser with heading jitter so packs spread, not stack.
+    imp:     { name: "Imp",     family: "imps", tier: 1, behavior: "swarmer", stats: { speed: 7, constitution: 2, strength: 2, magic: 1 }, r: 11, color: "#8e44ad", contactDamage: 3, jitter: 0.5, repath: 0.5, freezesToKill: 1, threatValue: 1, distanceBand: 0.1 },
+    hellpup: { name: "Hellpup", family: "imps", tier: 2, behavior: "swarmer", stats: { speed: 7, constitution: 4, strength: 3, magic: 1 }, r: 12, color: "#6c3483", contactDamage: 5, jitter: 0.5, repath: 0.5, freezesToKill: 2, threatValue: 2, distanceBand: 0.45 },
+
+    // Cultists — shooter: hold range, aim, lob a magic bolt (base+magic*ratio ×AP,
+    // costs mana), kite, cool down. Out of mana → hold and regen.
+    acolyte:    { name: "Acolyte",    family: "cultists", tier: 1, behavior: "shooter", stats: { speed: 4, constitution: 3, strength: 2, magic: 6 }, r: 13, color: "#27ae60", contactDamage: 0, attack: { scaling: "magic", base: 5, ratio: 0.6, manaCost: 14 }, prefRange: 320, aim: 0.55, cooldown: 1.7, shot: 300, retreatFrac: 0.55, repath: 0.4, manaRegen: 6, freezesToKill: 2, threatValue: 3, distanceBand: 0.25 },
+    zealot:     { name: "Zealot",     family: "cultists", tier: 2, behavior: "shooter", stats: { speed: 4, constitution: 5, strength: 2, magic: 7 }, r: 14, color: "#1e8449", contactDamage: 0, attack: { scaling: "magic", base: 6, ratio: 0.7, manaCost: 14 }, prefRange: 340, aim: 0.5,  cooldown: 1.4, shot: 320, retreatFrac: 0.55, repath: 0.4, manaRegen: 7, freezesToKill: 3, threatValue: 4, distanceBand: 0.5 },
+    hierophant: { name: "Hierophant", family: "cultists", tier: 3, behavior: "shooter", stats: { speed: 4, constitution: 7, strength: 2, magic: 9 }, r: 15, color: "#145a32", contactDamage: 0, attack: { scaling: "magic", base: 7, ratio: 0.8, manaCost: 14 }, prefRange: 360, aim: 0.45, cooldown: 1.1, shot: 340, retreatFrac: 0.55, repath: 0.4, manaRegen: 8, freezesToKill: 4, threatValue: 6, distanceBand: 0.7 },
+
+    // Brutes — charger: approach to lunge range, telegraph (the counterplay window),
+    // then dash along a locked aim and slam (strength attack + large knockback).
+    brute:    { name: "Brute",    family: "brutes", tier: 1, behavior: "charger", stats: { speed: 4, constitution: 7, strength: 7, magic: 1 }, r: 18, color: "#c0392b", contactDamage: 4, attack: { scaling: "strength", base: 12, ratio: 1.2, knockback: 2 }, lungeRange: 180, telegraph: 0.6,  lungeSpeed: 520, lungeDur: 0.35, cooldown: 2.5, repath: 0.4, freezesToKill: 3, threatValue: 4, distanceBand: 0.4 },
+    behemoth: { name: "Behemoth", family: "brutes", tier: 2, behavior: "charger", stats: { speed: 4, constitution: 9, strength: 8, magic: 1 }, r: 20, color: "#922b21", contactDamage: 6, attack: { scaling: "strength", base: 14, ratio: 1.3, knockback: 2 }, lungeRange: 200, telegraph: 0.55, lungeSpeed: 560, lungeDur: 0.38, cooldown: 2.3, repath: 0.4, freezesToKill: 5, threatValue: 7, distanceBand: 0.65 },
+  },
+
+  // Director: spends a depth-scaled live-threat budget on off-screen spawns.
+  // budget(f) = baseThreat + f*threatSlope, monotonic in distance fraction f, so
+  // threat density rises toward home. maxLive caps concurrent enemies (perf).
+  director: { baseThreat: 4, threatSlope: 16, tickInterval: 0.5, spawnBandTiles: 8, maxLive: 40 },
+
+  // In-run powerups (spec 07): kills pay scrap and may drop a powerup pickup; scrap
+  // is spent at shop spots. Drops/stock roll on the `loot` RNG sub-stream so they're
+  // reproducible per seed and independent of gen/spawns.
+  loot: {
+    scrapPerKill: 3, scrapPerThreat: 2,        // scrap = base + threatValue*per
+    dropChanceBase: 0.05, dropChancePerThreat: 0.02, // powerup-drop chance scales with threat
+    rarityWeight: { common: 6, uncommon: 3, rare: 1 }, // pick favors commons
+    pickupR: 13, pickupBob: 3, pickupBobRate: 4, // pickup radius + idle bob (px / rad·s)
+    splitSpread: 0.16,                          // radians between split-shot projectiles
+    minCd: 0.1,                                 // floor on weapon cooldown after stacks
+  },
+  // Shops: N spots scattered down the descent (one per depth band), each offering a
+  // single rolled powerup at its `cost`. minTileY keeps the first shop past the
+  // opening rows; bandMargin insets each band so spots don't crowd the edges.
+  shop: { count: 4, minTileY: 16, r: 18 },
 
   spawnMinTileY: 9, // don't spawn enemies in the player's opening rows
   waypointArrive: 5, // px tolerance for "reached the path node"
-  wandererRoam: 12, // tile radius a wanderer picks its next idle target within
-  meleeHitPad: 14, // px added to melee range when resolving a connecting strike
-  rangedRetreatFrac: 0.55, // ranged enemy backs off when within this fraction of prefRange
   softBodyPush: 0.5, // share of overlap each of two living bodies yields when separating
   enemyShotLife: 2.5, // s an enemy projectile lives before fizzling
-  heroShotLife: 2, // s a slingshot pebble lives before fizzling
-  freezesToKill: 2, // freezes needed to finish an enemy
   enemyShotHitPad: 5, // px added to hero radius for enemy-projectile hits
 };
 
@@ -66,11 +144,27 @@ export const THEME = {
   homeBand: "rgba(255,215,0,0.35)",
   corpse: "#2b2622",
   enemyShot: { r: 5, color: "#145a32" },
-  heroShot: "#d8d4c8",
+  weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6", beam: "#1abc9c", bomb: "#e67e22", nova: "#f5d76e", field: "#8e44ad",
+    bat: "#bdc3c7", cleave: "#e74c3c", spear: "#95a5a6", whirl: "#f39c12" }, // weapon color (shot + select swatch), keyed by id
+  blast: { ring: "rgba(255,240,200,0.85)", dur: 0.28 }, // expanding ring for nova/bomb detonations
+  melee: { swing: "rgba(255,255,255,0.7)", dur: 0.15 }, // quick wedge flash for melee swings
+  field: { fill: "rgba(155,89,182,0.16)", ring: "rgba(155,89,182,0.45)" }, // lingering zone disc
   freeze: { fill: "rgba(150,205,255,0.55)", ring: "rgba(190,230,255,0.9)", ringPad: 2 },
-  meleeTelegraph: "rgba(231,76,60,0.7)",
   rangedTelegraph: { ring: "rgba(39,174,96,0.9)", line: "rgba(39,174,96,0.5)", ringPad: 5 },
+  chargerTelegraph: { ring: "rgba(231,76,60,0.85)", line: "rgba(231,76,60,0.6)", lunge: "rgba(255,120,90,0.9)", ringPad: 6 },
   hero: { hit: "#7fb3ff", normal: "#2d6cdf" },
+  pickup: { fill: "#f1c40f", ring: "rgba(255,255,255,0.85)", glyph: "#3a2e00", glyphFont: "bold 13px system-ui, sans-serif" }, // powerup drop on the ground
+  shop: { fill: "#1f6f4a", ring: "#3ddc97", roof: "#13452f", glyph: "#eafff5", glyphFont: "bold 16px system-ui, sans-serif", // shop marker
+    label: "rgba(0,0,0,0.7)", labelText: "#fff", labelFont: "13px system-ui, sans-serif", afford: "#3ddc97", broke: "#e57373" },
+  bar: { back: "rgba(0,0,0,0.5)", hp: "#e74c3c", mana: "#3498db", tapped: "rgba(52,152,219,0.25)", w: 26, h: 3, gap: 2 },
   hud: { font: "14px system-ui, sans-serif", box: "rgba(255,255,255,0.75)", text: "#111" },
   overlay: { bg: "rgba(0,0,0,0.6)", fg: "#fff", titleFont: "32px system-ui, sans-serif", subFont: "16px system-ui, sans-serif" },
+  select: { bg: "#161616", title: "#fff", card: "#262626", cardActive: "#3a3a3a", border: "#6aa9ff", name: "#fff", desc: "#bbb", hint: "#999",
+    titleFont: "28px system-ui, sans-serif", nameFont: "20px system-ui, sans-serif", descFont: "14px system-ui, sans-serif", hintFont: "14px system-ui, sans-serif" },
+  // Run-summary (DEATH/VICTORY) + META scenes (specs 15/08). Monospace for the
+  // payout/cost columns so the +credits align.
+  summary: { bg: "#0f0f12", win: "#f5d76e", lose: "#c97b6a", sub: "#cfcfcf", label: "#9a9a9a", value: "#fff", plus: "#7ed6a5", lost: "#c97b6a", rule: "#3a3a3a", unlock: "#7ed6a5", cta: "#fff",
+    titleFont: "34px system-ui, sans-serif", subFont: "16px system-ui, sans-serif", rowFont: "16px ui-monospace, monospace", ctaFont: "16px system-ui, sans-serif" },
+  meta: { bg: "#121417", title: "#fff", credits: "#f5d76e", row: "#222630", rowActive: "#313947", border: "#6aa9ff", name: "#fff", blurb: "#9aa3af", rank: "#cfd6df", cost: "#7ed6a5", broke: "#c97b6a", maxed: "#6f7782", cont: "#7ed6a5", hint: "#7a818c",
+    titleFont: "28px system-ui, sans-serif", creditsFont: "18px system-ui, sans-serif", nameFont: "18px system-ui, sans-serif", blurbFont: "13px system-ui, sans-serif", costFont: "15px ui-monospace, monospace", hintFont: "14px system-ui, sans-serif" },
 };

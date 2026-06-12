@@ -37,16 +37,24 @@ win. Plain HTML, CSS, and ES modules — no build system, bundler, or dependenci
 ## Project structure
 
 - `index.html` — page shell; loads `src/main.js` as a module
-- `src/main.js` — boot: canvas, input, run scene, loop; restarts into a new day
+- `src/main.js` — boot: canvas, input, loop; runs each day as two phases
+  (weapon-select → run → select for the next day)
 - `src/core/loop.js` — fixed-timestep loop (owns no game state)
 - `src/core/rng.js` — seeded PRNG (mulberry32) + labelled sub-streams
 - `src/run/levelgen.js` — suburb generator: street grid → houses → noise-decay
   obstacles → connectivity repair. Exposes `wallScaleX/Y` + `wallDensity` knobs
 - `src/run/collision.js` — center-based AABB vs walkable tiles
-- `src/run/runScene.js` — the playable RUN scene (descent, slingshot, enemies,
-  bodies, render). **Tunable knobs live as named constants at the top**
-  (`SCROLL`, `MAP_H`, `FREEZE_DUR`, `WALL_SCALE_X/Y`, `WALL_DENSITY`, `HERO`,
-  `KIND`, `SPAWN`)
+- `src/run/selectScene.js` — per-run weapon picker shown before each descent
+- `src/run/runScene.js` — the playable RUN scene (descent, chosen weapon, enemies,
+  bodies, render). Hosts the `BEHAVIORS` registry (spec 06's `chaser`/`swarmer`/
+  `shooter`/`charger`). Gameplay knobs live in `balance.js` (`HERO`, `weapons`,
+  `ENEMIES` roster, `director`, `SCROLL`, `MAP_H`, `FREEZE_DUR`, wall scale/density)
+- `src/run/combat.js` — the one resolver (spec 03/04): `recomputeDerived` (1–10
+  `stats`→`derived`: moveSpeed/maxHp/dmgResist/knockback/maxMana/abilityPower),
+  percent-HP + stat-scaled `weaponDamage`, `applyDamage` (i-frames/dmgResist/death),
+  mana (`regenMana`/`canCast`/`spendMana`) — shared by hero and enemies
+- `src/run/director.js` — spec 06 spawn director: distance-scaled threat budget +
+  `distanceBand` eligibility, placing enemies off-screen home-ward
 - `src/ai/ai.js` — BFS pathfinding + waypoint pickers (ported from BrainMaze)
 - `src/input/input.js` — movement on WASD, arrows, and vim `hjkl`; `SPACE` fires
 - `tests/smoke.mjs` — node logic tests
