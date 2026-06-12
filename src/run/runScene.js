@@ -62,6 +62,27 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   hero.hp = hero.derived.maxHp;
   hero.mana = hero.derived.maxMana;
 
+  // Follower train (spec-18 party, slice stand-in): hero clones that trail one tile
+  // back, auto-fire their own weapon, take full combat damage, and permadie. Built
+  // from the pure-data `BALANCE.follower.roster`; `trail` is the hero's breadcrumb
+  // polyline they retrace.
+  const FOLLOWER = BALANCE.follower;
+  const trail = []; // hero positions, newest first, with the head at trail[0]
+  const gap = FOLLOWER.gapTiles * TS;
+  const followers = FOLLOWER.roster.map((def) => {
+    const w = BALANCE.weapons[def.weaponId];
+    const f = {
+      x: hero.x, y: hero.y, w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
+      stats: { ...HERO.stats }, faction: "player", color: def.color,
+      iframes: 0, iframeDur: FOLLOWER.iframeDur, manaRegen: FOLLOWER.manaRegen, dead: false, cd: 0,
+      weapon: { id: def.weaponId, ...w, damage: { ...w.damage } },
+    };
+    recomputeDerived(f, BALANCE.derive);
+    f.hp = f.derived.maxHp;
+    f.mana = f.derived.maxMana;
+    return f;
+  });
+
   // Rebuild hero + weapon from base after every acquisition (spec 07 applyHeld), and
   // refresh the cached HUD tally so render doesn't rebuild it every frame.
   let heldLine = "";
@@ -82,7 +103,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   const swings = [];      // transient melee swing wedges, visual only
   const fields = [];      // lingering damage zones (field weapon)
   const floaters = [];    // rising damage numbers, one per landed hit, visual only
-  const heroTargets = [hero]; // the player-faction target list enemy shots resolve against
+  const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   let outcome = null;
   let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
   // One place to end the run as a loss with its cause — every lethal path routes here.
@@ -252,15 +273,81 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     blasts.push({ x: p.x, y: p.y, r: p.radius, t: 0 });
   }
 
-  // Nearest living enemy to the hero, with its distance — the shared auto-aim pick.
-  function nearestEnemy() {
+  // Nearest living enemy to a point, with its distance — the shared auto-aim pick,
+  // used by the hero (SPACE) and every follower (auto-swing).
+  function nearestEnemyTo(px, py) {
     let best = null, bd = Infinity;
     for (const e of enemies) {
       if (e.dead) continue;
-      const d = dist(e.x, e.y, hero.x, hero.y);
+      const d = dist(e.x, e.y, px, py);
       if (d < bd) { bd = d; best = e; }
     }
     return best && { e: best, d: bd };
+  }
+  const nearestEnemy = () => nearestEnemyTo(hero.x, hero.y);
+
+  // A melee-arc swing from `attacker` at the nearest enemy `near` ({e,d}): a wedge
+  // blast in reach plus its visual. Returns whether it connected. Shared by the
+  // hero's SPACE fire and the follower train.
+  function meleeSwing(attacker, w, near) {
+    if (!near || near.d > w.radius + near.e.r) return false;
+    const dx = near.e.x - attacker.x, dy = near.e.y - attacker.y, m = Math.hypot(dx, dy) || 1;
+    const aim = w.arc >= 360 ? null : { x: dx / m, y: dy / m, cosHalf: Math.cos((w.arc * Math.PI) / 360) };
+    blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.knockback, w.freeze, aim);
+    swings.push({ x: attacker.x, y: attacker.y, r: w.radius, ax: dx / m, ay: dy / m, arc: w.arc, t: 0 });
+    return true;
+  }
+
+  // Fire `attacker`'s weapon `w` at the nearest enemy `near` ({e,d}) when its cooldown
+  // and mana allow, branching on `w.shape` for delivery. One fire path for the hero
+  // (gated by SPACE) and every follower (auto). Sets cooldown + spends mana on a fire.
+  function fireWeapon(attacker, w, near) {
+    if (attacker.cd > 0 || !canCast(attacker, w.manaCost)) return false;
+    let fired = false;
+    if (w.shape === "nova") {
+      if (near && near.d <= w.radius) {
+        blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.knockback, w.freeze);
+        blasts.push({ x: attacker.x, y: attacker.y, r: w.radius, t: 0 });
+        fired = true;
+      }
+    } else if (w.shape === "field") {
+      if (near && near.d <= w.range) {
+        fields.push({ x: attacker.x, y: attacker.y, r: w.radius, life: w.lifespan, tick: 0, weapon: w });
+        fired = true;
+      }
+    } else if (w.shape === "melee-arc") {
+      fired = meleeSwing(attacker, w, near);
+    } else if (near && near.d <= w.range) { // projectile / beam / bomb — aimed
+      const dx = near.e.x - attacker.x, dy = near.e.y - attacker.y;
+      const ang = Math.atan2(dy, dx), n = w.count || 1, spread = n > 1 ? LOOT.splitSpread : 0;
+      for (let s = 0; s < n; s++) { // count>1 fans the shots (Split Shot powerup)
+        const a = ang + (s - (n - 1) / 2) * spread;
+        fireShot(attacker, Math.cos(a) * w.speed, Math.sin(a) * w.speed, {
+          damage: w.damage, life: w.life, shotR: w.shotR,
+          color: THEME.weaponShot[w.id], freeze: w.freeze, knockback: w.knockback,
+          shape: w.shape, radius: w.radius, pierce: w.pierce,
+        });
+      }
+      fired = true;
+    }
+    if (fired) { attacker.cd = w.cd; spendMana(attacker, w.manaCost); }
+    return fired;
+  }
+
+  // Point on the hero's breadcrumb trail `back` world-units behind the head, walking
+  // the polyline and interpolating. Null only before the trail has any points.
+  function trailPointBack(back) {
+    if (trail.length < 2) return trail[0] || null;
+    let acc = 0;
+    for (let i = 1; i < trail.length; i++) {
+      const seg = dist(trail[i].x, trail[i].y, trail[i - 1].x, trail[i - 1].y);
+      if (acc + seg >= back) {
+        const t = (back - acc) / (seg || 1);
+        return { x: trail[i - 1].x + (trail[i].x - trail[i - 1].x) * t, y: trail[i - 1].y + (trail[i].y - trail[i - 1].y) * t };
+      }
+      acc += seg;
+    }
+    return trail[trail.length - 1];
   }
 
   // Hero damage flows through the shared resolver (i-frames + death) like any
@@ -455,6 +542,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     regenMana(hero, dt); // same mana code the enemy casters use
 
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
+    const minY = cam.y + MARGIN; // the advancing crush line; fatal to whoever crosses it
 
     // Director spends its depth-scaled budget on fresh off-screen threat.
     director.update(dt, hero, enemies, spawnEnemy);
@@ -462,46 +550,21 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     const intent = input.intent();
     heroMove(intent.x * hero.derived.moveSpeed * dt, intent.y * hero.derived.moveSpeed * dt);
 
-    // Selected weapon: SPACE fires when there's a target and the cooldown + mana
-    // allow it. Delivery depends on `shape`: nova bursts on the hero, field drops a
-    // zone, the rest auto-aim a projectile at the nearest enemy.
-    if (hero.cd <= 0 && canCast(hero, weapon.manaCost) && input.down("Space")) {
-      const near = nearestEnemy();
-      let fired = false;
-      if (weapon.shape === "nova") {
-        if (near && near.d <= weapon.radius) {
-          blast(hero.x, hero.y, weapon.radius, hero, weapon.damage, weapon.knockback, weapon.freeze);
-          blasts.push({ x: hero.x, y: hero.y, r: weapon.radius, t: 0 });
-          fired = true;
-        }
-      } else if (weapon.shape === "field") {
-        if (near && near.d <= weapon.range) {
-          fields.push({ x: hero.x, y: hero.y, r: weapon.radius, life: weapon.lifespan, tick: 0, weapon });
-          fired = true;
-        }
-      } else if (weapon.shape === "melee-arc") {
-        if (near && near.d <= weapon.radius + near.e.r) { // in reach
-          const dx = near.e.x - hero.x, dy = near.e.y - hero.y, m = Math.hypot(dx, dy) || 1;
-          const aim = weapon.arc >= 360 ? null : { x: dx / m, y: dy / m, cosHalf: Math.cos(weapon.arc * Math.PI / 360) };
-          blast(hero.x, hero.y, weapon.radius, hero, weapon.damage, weapon.knockback, weapon.freeze, aim);
-          swings.push({ x: hero.x, y: hero.y, r: weapon.radius, ax: dx / m, ay: dy / m, arc: weapon.arc, t: 0 });
-          fired = true;
-        }
-      } else if (near && near.d <= weapon.range) { // projectile / beam / bomb — aimed
-        const dx = near.e.x - hero.x, dy = near.e.y - hero.y;
-        const ang = Math.atan2(dy, dx), n = weapon.count, spread = n > 1 ? LOOT.splitSpread : 0;
-        for (let s = 0; s < n; s++) { // count>1 fans the shots (Split Shot powerup)
-          const a = ang + (s - (n - 1) / 2) * spread;
-          fireShot(hero, Math.cos(a) * weapon.speed, Math.sin(a) * weapon.speed, {
-            damage: weapon.damage, life: weapon.life, shotR: weapon.shotR,
-            color: THEME.weaponShot[weapon.id], freeze: weapon.freeze, knockback: weapon.knockback,
-            shape: weapon.shape, radius: weapon.radius, pierce: weapon.pierce,
-          });
-        }
-        fired = true;
+    // Breadcrumb the hero's path (newest first) for the follower train to retrace,
+    // sampling only on real movement and keeping just enough length for the whole train.
+    if (!trail.length || dist(hero.x, hero.y, trail[0].x, trail[0].y) > 1) {
+      trail.unshift({ x: hero.x, y: hero.y });
+      const maxLen = (followers.length + 1) * gap;
+      let acc = 0;
+      for (let i = 1; i < trail.length; i++) {
+        acc += dist(trail[i].x, trail[i].y, trail[i - 1].x, trail[i - 1].y);
+        if (acc > maxLen) { trail.length = i + 1; break; }
       }
-      if (fired) { hero.cd = weapon.cd; spendMana(hero, weapon.manaCost); }
     }
+
+    // Selected weapon: SPACE fires through the shared resolver (cooldown + mana gated
+    // inside), auto-aimed at the nearest enemy. The follower train fires the same way.
+    if (input.down("Space")) fireWeapon(hero, weapon, nearestEnemy());
 
     // Enemy brains (skip dead/frozen; cull far enemies on the long map)
     const heroTile = tileOf(hero);
@@ -521,6 +584,32 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       else if (e.staggerT > 0) e.staggerT--;
     }
     applyKb(hero);
+
+    // Follower train: snap each to its breadcrumb a fixed arc-length back, auto-swing
+    // its bat, and permadie when crushed against the advancing edge. Enemy projectiles
+    // already hit them (heroTargets); their contact damage is applied below.
+    for (let i = 0; i < followers.length; i++) {
+      const f = followers[i];
+      f.cd = Math.max(0, f.cd - dt);
+      f.iframes = Math.max(0, f.iframes - dt);
+      regenMana(f, dt);
+      const p = trailPointBack((i + 1) * gap);
+      if (p) { f.x = p.x; f.y = p.y; }
+      // Mirror the hero's crush rule (below): riding the advancing edge is fine,
+      // but being pinned against a wall there is fatal — that's "left behind".
+      if (f.y < minY) { f.y = minY; if (boxBlocked(level, f)) { f.dead = true; continue; } }
+      fireWeapon(f, f.weapon, nearestEnemyTo(f.x, f.y)); // auto-fire its own weapon
+    }
+    // Enemy contact damage to followers (the BEHAVIORS only target the hero); each
+    // follower's i-frames throttle the per-frame overlap so it chips, not instakills.
+    for (const e of enemies) {
+      if (e.dead || !e.def.contactDamage) continue;
+      for (const f of followers) {
+        if (f.dead || dist(e.x, e.y, f.x, f.y) >= f.r + e.r) continue;
+        const dealt = applyDamage(f, e.def.contactDamage);
+        if (dealt > 0) spawnHitNumber(f, dealt);
+      }
+    }
 
     // Projectiles (hero + enemy): resolve each against the opposite faction via the
     // shared hit path. Bombs detonate an area on contact/expiry; beams pierce and
@@ -550,7 +639,10 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     // Lingering fields tick area damage to enemies inside them, then expire.
     for (const f of fields) {
       f.life -= dt; f.tick -= dt;
-      if (f.tick <= 0) { blast(f.x, f.y, f.r, hero, f.weapon.damage, f.weapon.knockback, f.weapon.freeze); f.tick = f.weapon.tickInterval; }
+      // Field ticks never knock back — a lingering zone that flung enemies out (once
+      // a knockback powerup folds into the weapon) would just cycle them in and out for
+      // repeat ticks. Pass 0 regardless of the weapon's knockback.
+      if (f.tick <= 0) { blast(f.x, f.y, f.r, hero, f.weapon.damage, 0, f.weapon.freeze); f.tick = f.weapon.tickInterval; }
     }
     for (const b of blasts) b.t += dt; // visual rings expand then expire
     for (const s of swings) s.t += dt; // melee wedges flash then expire
@@ -593,10 +685,16 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     for (let i = blasts.length - 1; i >= 0; i--) if (blasts[i].t >= THEME.blast.dur) blasts.splice(i, 1);
     for (let i = swings.length - 1; i >= 0; i--) if (swings[i].t >= THEME.melee.dur) swings.splice(i, 1);
     for (let i = floaters.length - 1; i >= 0; i--) if (floaters[i].t >= THEME.hitNumber.dur) floaters.splice(i, 1);
+    // Reap dead followers (HP gone or crushed) — permadeath, also off the shot-target list.
+    for (let i = followers.length - 1; i >= 0; i--) {
+      if (!followers[i].dead) continue;
+      const ti = heroTargets.indexOf(followers[i]);
+      if (ti >= 0) heroTargets.splice(ti, 1);
+      followers.splice(i, 1);
+    }
 
     // Stay inside the moving window; being crushed against a wall is fatal.
     // (heroMove already keeps x within the map and out of walls — no x clamp.)
-    const minY = cam.y + MARGIN;
     if (hero.y < minY) {
       hero.y = minY;
       if (boxBlocked(level, hero)) loseRun("left behind by the dark");
@@ -769,6 +867,14 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       ctx.closePath();
       ctx.fill();
       ctx.globalAlpha = 1;
+    }
+
+    // Follower train: hero-clone discs under the hero in each follower's roster color
+    // (white flash on i-frames), each with an HP bar — shown always, like the hero.
+    for (const f of followers) {
+      const fx = f.x - cam.x, fy = f.y - cam.y, B = THEME.bar;
+      disc(ctx, fx, fy, f.r, f.iframes > 0 ? THEME.follower.hit : f.color);
+      bar(ctx, fx, fy - f.r - B.gap - B.h, f.hp / f.derived.maxHp, B.hp);
     }
 
     disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : THEME.hero.normal);

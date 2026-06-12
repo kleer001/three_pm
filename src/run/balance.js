@@ -35,6 +35,27 @@ export const BALANCE = {
   // mana regen) and faction live here.
   hero: { stats: { speed: 5, constitution: 5, strength: 5, magic: 5 }, faction: "player", iframeDur: 0.8, r: 13, manaRegen: 8 },
 
+  // Follower train (spec-18 party, slice stand-in): hero clones that trail one tile
+  // back, auto-fire their own weapon, and permadie (HP gone or crushed by the dark).
+  // `iframeDur` is shorter than the hero's 0.8s so they chip faster — but non-zero,
+  // because enemy contact damage applies every frame on overlap and would otherwise
+  // instakill. `gapTiles` is the center-to-center spacing along the trail.
+  //
+  // `roster` is pure data: one entry per follower (the player's head is separate),
+  // each a `weaponId` into `weapons` and a body `color`. The render and combat code
+  // reads it generically, so resizing the train or re-skinning it is a data edit
+  // only. These four + the player's head make the five-strong party (the docs' cast),
+  // spanning a weapon-shape spread (melee-arc, projectile, pierce, nova) for testing.
+  follower: {
+    iframeDur: 0.4, gapTiles: 1, manaRegen: 8,
+    roster: [
+      { weaponId: "bat",       color: "#1abc9c" },
+      { weaponId: "slingshot", color: "#e84393" },
+      { weaponId: "beam",      color: "#ff7675" },
+      { weaponId: "nova",      color: "#ecf0f1" },
+    ],
+  },
+
   // Player arsenal — all are offered on the select screen each run; one is fired
   // on SPACE (auto-aimed). `shape` picks the delivery: `projectile` flies and hits
   // the first enemy (slingshot/hex) or pierces a line (`pierce`); `nova` bursts
@@ -162,6 +183,7 @@ export const THEME = {
   rangedTelegraph: { ring: "rgba(39,174,96,0.9)", line: "rgba(39,174,96,0.5)", ringPad: 5 },
   chargerTelegraph: { ring: "rgba(231,76,60,0.85)", line: "rgba(231,76,60,0.6)", lunge: "rgba(255,120,90,0.9)", ringPad: 6 },
   hero: { hit: "#7fb3ff", normal: "#2d6cdf" },
+  follower: { hit: "#ffffff" }, // i-frame flash; each follower's body color comes from BALANCE.follower.roster
   pickup: { fill: "#f1c40f", ring: "rgba(255,255,255,0.85)", glyph: "#3a2e00", glyphFont: "bold 13px system-ui, sans-serif" }, // powerup drop on the ground
   shop: { fill: "#1f6f4a", ring: "#3ddc97", roof: "#13452f", glyph: "#eafff5", glyphFont: "bold 16px system-ui, sans-serif", // shop marker
     label: "rgba(0,0,0,0.7)", labelText: "#fff", labelFont: "13px system-ui, sans-serif", afford: "#3ddc97", broke: "#e57373" },
