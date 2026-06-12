@@ -75,6 +75,13 @@ is **droppable**: the game renders procedurally and must boot without it. Do not
 edit `src/` for art reasons, and do not let the game hard-depend on a sprite
 asset existing in a way that white-screens on load.
 
+**Always show generated images in a browser.** Whenever you generate images (the
+image_gen ComfyUI stack on `:8188`, or anything else), assemble them into a simple
+HTML page under `art-test/`, serve it over local HTTP (`python3 -m http.server`,
+never `file://` — ES modules and some browsers reject `file://`), and launch a
+browser window to it (`firefox <url> &`). Close the loop yourself: open the page,
+don't ask the user to find the files. This applies to every image-gen task.
+
 ## Code style
 
 - `camelCase` for functions/vars, `PascalCase` for classes (standard JS).
