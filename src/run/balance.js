@@ -43,22 +43,22 @@ export const BALANCE = {
   // magic, plus percent-HP terms) resolved against the hero's stats; `manaCost`
   // spends the hero pool; `freeze`/`knockback` are on-hit effects.
   weapons: {
-    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  knockback: 0, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 0.5, pctCur: 0 },   desc: "50% max HP + str · freezes" },
+    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  knockback: 0, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 1 / 3, pctCur: 0 },   desc: "⅓ max HP + str · freezes" },
     // 40% of current HP front-loads the chunk; the magic-scaled flat lets it finish
     // (a pure %-current weapon asymptotes and never kills).
     hex:       { name: "Hex",       shape: "projectile", cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, knockback: 0, damage: { scaling: "magic",    base: 2, ratio: 0.4, pctMax: 0, pctCur: 0.4 },  desc: "40% current HP + magic · costs mana" },
     // Beam: a piercing projectile — hits every enemy along its line, once each.
     beam:      { name: "Beam",       shape: "projectile", pierce: true, cd: 1.5, speed: 520, range: 520, shotR: 6, life: 1.2, freeze: false, manaCost: 12, knockback: 0, damage: { scaling: "strength", base: 4, ratio: 0.8, pctMax: 0.18, pctCur: 0 }, desc: "pierces a whole line" },
     // Nova: an instant burst centered on the hero — clears a closing swarm.
-    nova:      { name: "Nova",       shape: "nova", cd: 4, radius: 130, freeze: false, manaCost: 16, knockback: 1.5, damage: { scaling: "strength", base: 6, ratio: 1.0, pctMax: 0.12, pctCur: 0 }, desc: "burst around you + knockback" },
+    nova:      { name: "Nova",       shape: "nova", cd: 4, radius: 130, freeze: false, manaCost: 16, knockback: 4.5, damage: { scaling: "strength", base: 6, ratio: 1.0, pctMax: 0.12, pctCur: 0 }, desc: "burst around you + big knockback" },
     // Bomb: lobbed at the nearest enemy, detonates an area on impact/expiry.
-    bomb:      { name: "Bomb",       shape: "bomb", cd: 2.5, speed: 320, range: 460, shotR: 7, life: 1.6, radius: 95, freeze: false, manaCost: 14, knockback: 1, damage: { scaling: "magic", base: 5, ratio: 0.8, pctMax: 0.15, pctCur: 0 }, desc: "lobbed area blast" },
+    bomb:      { name: "Bomb",       shape: "bomb", cd: 2.5, speed: 320, range: 460, shotR: 7, life: 1.6, radius: 190, freeze: false, manaCost: 14, knockback: 1, damage: { scaling: "magic", base: 5, ratio: 0.8, pctMax: 0.15, pctCur: 0 }, desc: "lobbed area blast" },
     // Field: a lingering zone dropped on the hero — ticks damage, denies ground.
     field:     { name: "Hex Field",  shape: "field", cd: 5, range: 420, radius: 90, lifespan: 4, tickInterval: 0.4, freeze: false, manaCost: 20, knockback: 0, damage: { scaling: "magic", base: 2, ratio: 0.3, pctMax: 0.04, pctCur: 0 }, desc: "lingering damage zone" },
     // Melee — `arc` degrees of swing at short `radius` reach, auto-aimed at the
     // nearest enemy (360 = full circle). Free, strength-scaled, knockback-heavy:
     // you trade reach (into contact range) for raw burst. Reuse the AoE blast path.
-    bat:    { name: "Bat",    shape: "melee-arc", cd: 0.4,  radius: 56, arc: 110, freeze: false, manaCost: 0, knockback: 1,   damage: { scaling: "strength", base: 8,  ratio: 1.4, pctMax: 0.08, pctCur: 0 }, desc: "fast wide swing" },
+    bat:    { name: "Bat",    shape: "melee-arc", cd: 0.8,  radius: 67, arc: 110, freeze: false, manaCost: 0, knockback: 1,   damage: { scaling: "strength", base: 6.8, ratio: 1.19, pctMax: 0.068, pctCur: 0 }, desc: "wide swing" },
     cleave: { name: "Cleave", shape: "melee-arc", cd: 0.9,  radius: 64, arc: 130, freeze: false, manaCost: 0, knockback: 2.5, damage: { scaling: "strength", base: 14, ratio: 1.8, pctMax: 0.10, pctCur: 0 }, desc: "heavy hit + big knockback" },
     spear:  { name: "Spear",  shape: "melee-arc", cd: 0.45, radius: 84, arc: 45,  freeze: false, manaCost: 0, knockback: 1,   damage: { scaling: "strength", base: 7,  ratio: 1.2, pctMax: 0.06, pctCur: 0 }, desc: "long narrow thrust" },
     whirl:  { name: "Whirl",  shape: "melee-arc", cd: 0.8,  radius: 60, arc: 360, freeze: false, manaCost: 0, knockback: 1.5, damage: { scaling: "strength", base: 9,  ratio: 1.3, pctMax: 0.09, pctCur: 0 }, desc: "360° spin around you" },
@@ -111,7 +111,7 @@ export const BALANCE = {
   // Shops: N spots scattered down the descent (one per depth band), each offering a
   // single rolled powerup at its `cost`. minTileY keeps the first shop past the
   // opening rows; bandMargin insets each band so spots don't crowd the edges.
-  shop: { count: 4, minTileY: 16, r: 18 },
+  shop: { count: 4, minTileY: 16, r: 18, stock: 3 }, // items offered per shop (player picks at a paused stall)
 
   spawnMinTileY: 9, // don't spawn enemies in the player's opening rows
   waypointArrive: 5, // px tolerance for "reached the path node"
@@ -147,6 +147,7 @@ export const THEME = {
   weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6", beam: "#1abc9c", bomb: "#e67e22", nova: "#f5d76e", field: "#8e44ad",
     bat: "#bdc3c7", cleave: "#e74c3c", spear: "#95a5a6", whirl: "#f39c12" }, // weapon color (shot + select swatch), keyed by id
   blast: { ring: "rgba(255,240,200,0.85)", dur: 0.28 }, // expanding ring for nova/bomb detonations
+  beam: { width: 16 }, // max stroke width of a piercing shot drawn as a beam (thin→thick→fade over its life)
   melee: { swing: "rgba(255,255,255,0.7)", dur: 0.15 }, // quick wedge flash for melee swings
   field: { fill: "rgba(155,89,182,0.16)", ring: "rgba(155,89,182,0.45)" }, // lingering zone disc
   freeze: { fill: "rgba(150,205,255,0.55)", ring: "rgba(190,230,255,0.9)", ringPad: 2 },

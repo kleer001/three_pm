@@ -86,8 +86,12 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
   // One place to end the run as a loss with its cause — every lethal path routes here.
   const loseRun = (cause) => { outcome = "lose"; deathCause = cause; };
-  let prevBuy = false;  // edge-trigger for the shop buy key (one press = one buy)
-  let nearShop = null;  // shop the hero is standing on this frame (drives the buy prompt)
+  let nearShop = null;  // shop the hero is standing on this frame
+  // Stepping onto a shop pauses the run and opens a pick-one-item modal. shopLatch
+  // keeps it from instantly reopening while the hero still overlaps after leaving;
+  // it clears once they step off. prev* edge-trigger the modal's discrete keys.
+  let shopOpen = false, shopLatch = false, shopSel = 0;
+  let prevBuy = false, prevUp = false, prevDown = false, prevLeave = false;
 
   // Build an enemy from its def at a tile and push it live. The entity holds live
   // state + the spec-03 component shape (stats/derived/faction/health/mana) the
@@ -111,7 +115,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // through the run. Each rolls a single offering from the loot table (spec 07 shop
   // stock). Placed here, not in levelgen, which "emits geometry only".
   function placeShops() {
-    const { count, minTileY, r } = BALANCE.shop;
+    const { count, minTileY, r, stock } = BALANCE.shop;
     const lo = Math.max(minTileY, BALANCE.spawnMinTileY), hi = level.h - 3;
     const bandH = (hi - lo) / count;
     const out = [];
@@ -123,8 +127,12 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
           if (isWalkable(level, tx, ty) && !homeSet.has(ty * level.w + tx)) cells.push([tx, ty]);
       if (!cells.length) continue;
       const [tx, ty] = lootRng.pick(cells);
-      const defId = weightedPick(lootRng, LOOT.rarityWeight);
-      out.push({ tx, ty, x: tx * TS + TS / 2, y: ty * TS + TS / 2, r, defId, cost: POWERUPS[defId].cost, sold: false });
+      const items = [];
+      for (let k = 0; k < stock; k++) {
+        const defId = weightedPick(lootRng, LOOT.rarityWeight);
+        items.push({ defId, cost: POWERUPS[defId].cost, bought: false });
+      }
+      out.push({ tx, ty, x: tx * TS + TS / 2, y: ty * TS + TS / 2, r, items });
     }
     return out;
   }
@@ -157,7 +165,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // detonates an area on contact, a `pierce` projectile (beam) hits each enemy once.
   function fireShot(attacker, vx, vy, o) {
     projectiles.push({
-      x: attacker.x, y: attacker.y, vx, vy, life: o.life, dead: false,
+      x: attacker.x, y: attacker.y, ox: attacker.x, oy: attacker.y, vx, vy, life: o.life, life0: o.life, dead: false,
       faction: attacker.faction, attacker, damage: o.damage,
       freeze: o.freeze, knockback: o.knockback, shotR: o.shotR, color: o.color,
       shape: o.shape || "projectile", radius: o.radius, pierce: o.pierce, hits: o.pierce ? new Set() : null,
@@ -375,8 +383,41 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     if (boxBlocked(level, hero) || bodyDeeper(hero.x, oy)) hero.y = oy;
   }
 
+  // Standing on a shop freezes the world: the player browses the stall's stock and
+  // buys what they want without the descent crushing them. World sim is skipped while
+  // this returns true (update() returns early), so only the modal's keys are read.
+  function stepShop() {
+    const items = nearShop.items;
+    const up = input.down("ArrowUp") || input.down("KeyW") || input.down("KeyK");
+    const down = input.down("ArrowDown") || input.down("KeyS") || input.down("KeyJ");
+    if (up && !prevUp) shopSel = (shopSel - 1 + items.length) % items.length;
+    if (down && !prevDown) shopSel = (shopSel + 1) % items.length;
+    prevUp = up; prevDown = down;
+
+    const buy = input.down("KeyE") || input.down("Enter");
+    if (buy && !prevBuy) {
+      const it = items[shopSel];
+      if (!it.bought && runState.scrap >= it.cost) {
+        runState.scrap -= it.cost;
+        runState.powerups.push(it.defId);
+        rebuild();
+        it.bought = true;
+      }
+    }
+    prevBuy = buy;
+
+    const leave = input.down("KeyQ") || input.down("Escape");
+    // Close on leave, or once the stall is cleared out. Latch so the still-overlapping
+    // hero doesn't reopen it; the latch clears when they step off (in update()).
+    if ((leave && !prevLeave) || items.every((it) => it.bought)) {
+      shopOpen = false; shopLatch = true; nearShop = null;
+    }
+    prevLeave = leave;
+  }
+
   function update(dt) {
     if (outcome) return; // run is over; main hands off to the summary scene (spec 15)
+    if (shopOpen) { stepShop(); return; } // paused at a stall — only the modal runs
     hero.cd = Math.max(0, hero.cd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
     regenMana(hero, dt); // same mana code the enemy casters use
@@ -495,20 +536,13 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       }
     }
 
-    // Shops: standing on an unsold spot offers its stock; E buys when scrap covers the
-    // cost (edge-triggered). Purchase ends in the same rebuild as a world pickup.
+    // Shops: stepping onto a stall with stock left opens the paused pick modal
+    // (handled by stepShop next frame). Leaving the pad re-arms the latch.
     nearShop = null;
     for (const s of shops)
-      if (!s.sold && dist(s.x, s.y, hero.x, hero.y) < hero.r + s.r) { nearShop = s; break; }
-    const buy = input.down("KeyE");
-    if (nearShop && buy && !prevBuy && runState.scrap >= nearShop.cost) {
-      runState.scrap -= nearShop.cost;
-      runState.powerups.push(nearShop.defId);
-      rebuild();
-      nearShop.sold = true;
-      nearShop = null;
-    }
-    prevBuy = buy;
+      if (dist(s.x, s.y, hero.x, hero.y) < hero.r + s.r) { nearShop = s; break; }
+    if (!nearShop) shopLatch = false;
+    else if (!shopLatch && nearShop.items.some((it) => !it.bought)) { shopOpen = true; shopSel = 0; }
 
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
     for (let i = pickups.length - 1; i >= 0; i--) if (pickups[i].dead) pickups.splice(i, 1);
@@ -528,6 +562,49 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
 
     const [tx, ty] = tileOf(hero);
     if (homeSet.has(ty * level.w + tx)) outcome = "win";
+  }
+
+  // The paused stall: a centered card list of the shop's stock. Reuses the
+  // select-screen palette; cost is colored by affordability (dimmed once sold).
+  function renderShop() {
+    const items = nearShop.items, S = THEME.select;
+    ctx.fillStyle = THEME.overlay.bg;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    const panelW = 520, rowH = 56, gap = 8;
+    const panelH = 132 + items.length * (rowH + gap);
+    const px = (VIEW_W - panelW) / 2, py = (VIEW_H - panelH) / 2;
+    ctx.fillStyle = S.bg;
+    ctx.fillRect(px, py, panelW, panelH);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = S.title; ctx.font = S.titleFont;
+    ctx.fillText("Shop", VIEW_W / 2, py + 46);
+    ctx.fillStyle = S.hint; ctx.font = S.hintFont;
+    ctx.fillText(`scrap ${runState.scrap}`, VIEW_W / 2, py + 70);
+
+    let y = py + 92;
+    for (let n = 0; n < items.length; n++) {
+      const it = items[n], def = POWERUPS[it.defId], active = n === shopSel;
+      const can = runState.scrap >= it.cost;
+      ctx.fillStyle = active ? S.cardActive : S.card;
+      ctx.fillRect(px + 20, y, panelW - 40, rowH);
+      if (active) { ctx.strokeStyle = S.border; ctx.lineWidth = 2; ctx.strokeRect(px + 21, y + 1, panelW - 42, rowH - 2); }
+      ctx.textAlign = "left";
+      ctx.fillStyle = it.bought ? S.hint : S.name; ctx.font = S.nameFont;
+      ctx.fillText(it.bought ? `${def.name}  (sold)` : def.name, px + 40, y + 24);
+      ctx.fillStyle = S.desc; ctx.font = S.descFont;
+      ctx.fillText(def.blurb, px + 40, y + 44);
+      ctx.textAlign = "right";
+      ctx.fillStyle = it.bought ? S.hint : can ? THEME.shop.afford : THEME.shop.broke;
+      ctx.font = S.nameFont;
+      ctx.fillText(it.bought ? "—" : `${it.cost}`, px + panelW - 40, y + 34);
+      y += rowH + gap;
+    }
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = S.hint; ctx.font = S.hintFont;
+    ctx.fillText("↑/↓ pick    E buy    Q leave", VIEW_W / 2, py + panelH - 18);
+    ctx.textAlign = "left";
   }
 
   function render() {
@@ -553,7 +630,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
 
     // Shop spots are structures — draw on the ground, under everything live.
     for (const s of shops) {
-      if (s.sold) continue;
+      if (s.items.every((it) => it.bought)) continue;
       const sx = s.x - cam.x, sy = s.y - cam.y;
       ctx.fillStyle = THEME.shop.roof; // a little awning so the spot reads as a stall
       ctx.fillRect(sx - s.r, sy - s.r - 4, s.r * 2, 6);
@@ -581,7 +658,23 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       glyph(ctx, "+", px, py + 4, THEME.pickup.glyph, THEME.pickup.glyphFont);
     }
 
-    for (const p of projectiles) disc(ctx, p.x - cam.x, p.y - cam.y, p.shotR, p.color);
+    // Piercing shots (beam, or any shot made to pierce) draw as a beam lancing from
+    // launch origin to the live tip; the rest are dots. A sin envelope over the shot's
+    // life thins it at fire, swells it mid-flight, then fades it out.
+    for (const p of projectiles) {
+      if (p.pierce) {
+        const env = Math.sin(Math.PI * (1 - p.life / p.life0));
+        ctx.globalAlpha = Math.max(0, env);
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = THEME.beam.width * env + 1;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(p.ox - cam.x, p.oy - cam.y);
+        ctx.lineTo(p.x - cam.x, p.y - cam.y);
+        ctx.stroke();
+        ctx.globalAlpha = 1; ctx.lineWidth = 1;
+      } else disc(ctx, p.x - cam.x, p.y - cam.y, p.shotR, p.color);
+    }
 
     for (const e of enemies) {
       if (e.dead) continue;
@@ -636,6 +729,18 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
 
     disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : THEME.hero.normal);
 
+    // Status bars above the hero, mirroring the enemies: HP always, plus a mana bar
+    // when the chosen weapon spends mana (dim when too dry to fire).
+    {
+      const B = THEME.bar, hx = hero.x - cam.x;
+      let by = hero.y - cam.y - hero.r - B.gap - B.h;
+      bar(ctx, hx, by, hero.hp / hero.derived.maxHp, B.hp);
+      if (weapon.manaCost > 0) {
+        by -= B.h + 1;
+        bar(ctx, hx, by, hero.mana / hero.derived.maxMana, hero.mana >= weapon.manaCost ? B.mana : B.tapped);
+      }
+    }
+
     ctx.font = THEME.hud.font;
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
     const ready = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
@@ -646,28 +751,26 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     ctx.fillStyle = THEME.hud.text;
     ctx.fillText(hud, 12, 21);
 
+    // Player stats (current, so powerups/upgrades show live) under the main line.
+    const s = hero.stats;
+    const statLine = `SPD ${Math.round(s.speed)}   CON ${Math.round(s.constitution)}   STR ${Math.round(s.strength)}   MAG ${Math.round(s.magic)}`;
+    ctx.fillStyle = THEME.hud.box;
+    ctx.fillRect(6, 32, ctx.measureText(statLine).width + 12, 20);
+    ctx.fillStyle = THEME.hud.text;
+    ctx.fillText(statLine, 12, 46);
+
     // Held powerups, tallied (stacks shown ×N) — the run's accumulating build. The
     // string is cached in rebuild(); render only draws it.
     if (heldLine) {
       ctx.fillStyle = THEME.hud.box;
-      ctx.fillRect(6, 32, ctx.measureText(heldLine).width + 12, 20);
+      ctx.fillRect(6, 58, ctx.measureText(heldLine).width + 12, 20);
       ctx.fillStyle = THEME.hud.text;
-      ctx.fillText(heldLine, 12, 46);
+      ctx.fillText(heldLine, 12, 72);
     }
 
-    // Shop prompt: name + price, colored by whether the hero can afford it.
-    if (nearShop && !outcome) {
-      const def = POWERUPS[nearShop.defId], can = runState.scrap >= nearShop.cost;
-      const msg = `[E]  ${def.name} — ${def.blurb}   (${nearShop.cost} scrap)`;
-      ctx.font = THEME.shop.labelFont;
-      ctx.textAlign = "center";
-      const w = ctx.measureText(msg).width + 18;
-      ctx.fillStyle = THEME.shop.label;
-      ctx.fillRect(VIEW_W / 2 - w / 2, VIEW_H - 72, w, 24);
-      ctx.fillStyle = can ? THEME.shop.afford : THEME.shop.broke;
-      ctx.fillText(msg, VIEW_W / 2, VIEW_H - 55);
-      ctx.textAlign = "left";
-    }
+    // Paused shop modal: the frozen world shows behind a dimmed panel listing the
+    // stall's stock; the player picks one to buy. Drawn last so it sits over everything.
+    if (shopOpen && nearShop) renderShop();
     // No end overlay here — when a run resolves, main hands off to the dedicated
     // DEATH/VICTORY summary scene (spec 15), which owns the end-of-run screen.
   }
