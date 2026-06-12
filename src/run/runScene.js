@@ -103,7 +103,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     const e = {
       def, stats: def.stats, faction: "enemy",
       x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: def.r * 2, h: def.r * 2, r: def.r,
-      manaRegen: def.manaRegen || 0, freezeCount: 0, frozenT: 0, dead: false,
+      manaRegen: def.manaRegen || 0, freezeCount: 0, frozenT: 0, staggerT: 0, dead: false,
       path: null, pi: 0, repathT: 0, state: null, timer: 0, lockAim: null,
     };
     recomputeDerived(e, BALANCE.derive);
@@ -179,8 +179,12 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   function knockback(t, dx, dy, mag) {
     const m = Math.hypot(dx, dy) || 1;
     const K = BALANCE.knockback;
-    const frames = Math.max(1, Math.round(K.min + Math.min(1, t.derived.maxHp / K.hpAtMax) * (K.max - K.min)));
+    const hpFrac = Math.min(1, t.derived.maxHp / K.hpAtMax);
+    const frames = Math.max(1, Math.round(K.min + hpFrac * (K.max - K.min)));
     t.kb = { vx: (dx / m) * mag / frames, vy: (dy / m) * mag / frames, frames };
+    // Enemies stagger and recover after a shove (bigger bodies take longer to get up);
+    // the hero keeps full control, so it gets no stagger.
+    if (t.def) { const s = Math.round(K.staggerMin + hpFrac * (K.staggerMax - K.staggerMin)); t.staggerT = s; t.staggerMax = s; }
   }
   // Spend one frame of a queued knockback, stopping at walls (spec 04 knockback).
   function applyKb(t) {
@@ -188,9 +192,14 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     moveAndCollide(level, t, t.kb.vx, t.kb.vy);
     t.kb.frames--;
   }
+  // An enemy's current locomotion speed: full, except while recovering from a knockback,
+  // when it ramps from a near-stop back to full over its stagger window.
+  function moveSpeedOf(e) {
+    return e.staggerT > 0 ? e.derived.moveSpeed * (1 - e.staggerT / e.staggerMax) : e.derived.moveSpeed;
+  }
   // A landed hit's HP loss, surfaced as a rising number at the target (spec: honest hits).
   function spawnHitNumber(t, dealt) {
-    floaters.push({ x: t.x, y: t.y, value: Math.round(dealt), t: 0, hero: t === hero });
+    floaters.push({ x: t.x, y: t.y, value: Math.round(dealt), t: 0 });
   }
 
   // An enemy just died (the slice's stand-in for spec 04's `death` event, funneled
@@ -266,7 +275,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     chaser(e, dt, heroTile) {
       const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
       if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
-      followPath(e, e.derived.moveSpeed, dt);
+      followPath(e, moveSpeedOf(e), dt);
       if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
     },
 
@@ -275,8 +284,8 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     swarmer(e, dt, heroTile) {
       const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
       if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
-      followPath(e, e.derived.moveSpeed, dt);
-      const a = rng.next() * Math.PI * 2, j = k.jitter * e.derived.moveSpeed * dt;
+      followPath(e, moveSpeedOf(e), dt);
+      const a = rng.next() * Math.PI * 2, j = k.jitter * moveSpeedOf(e) * dt;
       moveAndCollide(level, e, Math.cos(a) * j, Math.sin(a) * j);
       if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
     },
@@ -291,7 +300,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       const kite = () => {
         if (d < k.prefRange * k.retreatFrac) {
           const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
-          moveAndCollide(level, e, (dx / m) * e.derived.moveSpeed * dt, (dy / m) * e.derived.moveSpeed * dt);
+          moveAndCollide(level, e, (dx / m) * moveSpeedOf(e) * dt, (dy / m) * moveSpeedOf(e) * dt);
         }
       };
       e.state = e.state || "approach";
@@ -302,7 +311,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
           return;
         }
         if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
-        followPath(e, e.derived.moveSpeed, dt);
+        followPath(e, moveSpeedOf(e), dt);
       } else if (e.state === "aim") {
         e.timer -= dt;
         if (e.timer <= 0) {
@@ -335,7 +344,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
           return;
         }
         if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
-        followPath(e, e.derived.moveSpeed, dt);
+        followPath(e, moveSpeedOf(e), dt);
         if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
       } else if (e.state === "telegraph") {
         e.timer -= dt; // hold still and tell the lunge
@@ -499,7 +508,8 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
 
     // Queued knockback rides out here, after brains — a frozen or mid-attack enemy
     // still slides, and the hero's own shoves (charger lunges) play out the same way.
-    for (const e of enemies) if (!e.dead) applyKb(e);
+    // The post-shove stagger ticks down here too, so enemies ramp back to full speed.
+    for (const e of enemies) if (!e.dead) { applyKb(e); if (e.staggerT > 0) e.staggerT--; }
     applyKb(hero);
 
     // Projectiles (hero + enemy): resolve each against the opposite faction via the
@@ -768,10 +778,10 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     // Floating damage numbers: rise and fade, ghosted so they don't bury the action.
     const HN = THEME.hitNumber;
     ctx.font = HN.font;
+    ctx.fillStyle = HN.color; // white for every hit, dealt or taken
     ctx.textAlign = "center";
     for (const f of floaters) {
       ctx.globalAlpha = (1 - f.t / HN.dur) * HN.alpha;
-      ctx.fillStyle = f.hero ? HN.heroHit : HN.color;
       ctx.fillText(f.value, f.x - cam.x, f.y - cam.y - f.t * HN.rise);
     }
     ctx.globalAlpha = 1;
