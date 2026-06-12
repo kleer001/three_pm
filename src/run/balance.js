@@ -116,9 +116,10 @@ export const BALANCE = {
   // Knockback rides out over a few frames instead of teleporting: the impulse is
   // split across `min`..`max` frames, more frames for a higher-maxHp target (heavier
   // bodies carry the shove longer). `hpAtMax` is the maxHp that earns the full count.
-  // After a shove an enemy is staggered for `stagger{Min..Max}` frames, ramping from a
-  // near-stop back to full locomotion (bigger bodies take longer to get up).
-  knockback: { min: 4, max: 6, hpAtMax: 80, staggerMin: 6, staggerMax: 10 },
+  // After a shove an enemy is fully stopped for `pause{Min..Max}` frames, then ramps
+  // from a near-stop back to full locomotion over `stagger{Min..Max}` frames (bigger
+  // bodies pause and recover longer).
+  knockback: { min: 4, max: 6, hpAtMax: 80, pauseMin: 10, pauseMax: 14, staggerMin: 6, staggerMax: 10 },
 
   spawnMinTileY: 9, // don't spawn enemies in the player's opening rows
   waypointArrive: 5, // px tolerance for "reached the path node"

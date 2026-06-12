@@ -103,7 +103,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     const e = {
       def, stats: def.stats, faction: "enemy",
       x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: def.r * 2, h: def.r * 2, r: def.r,
-      manaRegen: def.manaRegen || 0, freezeCount: 0, frozenT: 0, staggerT: 0, dead: false,
+      manaRegen: def.manaRegen || 0, freezeCount: 0, frozenT: 0, pauseT: 0, staggerT: 0, dead: false,
       path: null, pi: 0, repathT: 0, state: null, timer: 0, lockAim: null,
     };
     recomputeDerived(e, BALANCE.derive);
@@ -182,9 +182,14 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     const hpFrac = Math.min(1, t.derived.maxHp / K.hpAtMax);
     const frames = Math.max(1, Math.round(K.min + hpFrac * (K.max - K.min)));
     t.kb = { vx: (dx / m) * mag / frames, vy: (dy / m) * mag / frames, frames };
-    // Enemies stagger and recover after a shove (bigger bodies take longer to get up);
-    // the hero keeps full control, so it gets no stagger.
-    if (t.def) { const s = Math.round(K.staggerMin + hpFrac * (K.staggerMax - K.staggerMin)); t.staggerT = s; t.staggerMax = s; }
+    // Enemies are stunned after a shove (bigger bodies take longer to recover): a full
+    // stop for pauseT frames, then a ramp back to speed over staggerT. The hero keeps
+    // full control, so it gets neither.
+    if (t.def) {
+      t.pauseT = Math.round(K.pauseMin + hpFrac * (K.pauseMax - K.pauseMin));
+      const s = Math.round(K.staggerMin + hpFrac * (K.staggerMax - K.staggerMin));
+      t.staggerT = s; t.staggerMax = s;
+    }
   }
   // Spend one frame of a queued knockback, stopping at walls (spec 04 knockback).
   function applyKb(t) {
@@ -195,6 +200,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // An enemy's current locomotion speed: full, except while recovering from a knockback,
   // when it ramps from a near-stop back to full over its stagger window.
   function moveSpeedOf(e) {
+    if (e.pauseT > 0) return 0; // dead stop right after a shove, before the ramp
     return e.staggerT > 0 ? e.derived.moveSpeed * (1 - e.staggerT / e.staggerMax) : e.derived.moveSpeed;
   }
   // A landed hit's HP loss, surfaced as a rising number at the target (spec: honest hits).
@@ -507,9 +513,13 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     }
 
     // Queued knockback rides out here, after brains — a frozen or mid-attack enemy
-    // still slides, and the hero's own shoves (charger lunges) play out the same way.
-    // The post-shove stagger ticks down here too, so enemies ramp back to full speed.
-    for (const e of enemies) if (!e.dead) { applyKb(e); if (e.staggerT > 0) e.staggerT--; }
+    // still slides, and so does a corpse, so a killing blow still flings the body. The
+    // post-shove stun ticks down too: pause first, then the ramp back to full speed.
+    for (const e of enemies) {
+      applyKb(e);
+      if (e.pauseT > 0) e.pauseT--;
+      else if (e.staggerT > 0) e.staggerT--;
+    }
     applyKb(hero);
 
     // Projectiles (hero + enemy): resolve each against the opposite faction via the
