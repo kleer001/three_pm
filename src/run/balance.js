@@ -25,7 +25,7 @@ export const BALANCE = {
     BASE_SPEED: 135, speedBase: 0.55, speedPerLvl: 0.09,
     BASE_HP: 10, HP_PER_CON: 8,             // maxHp     = BASE_HP + constitution*HP_PER_CON
     RESIST_PER_CON: 0.035, RESIST_CAP: 0.5, // dmgResist = min(cap, constitution*per)  → % incoming reduction
-    KB_PER_STR: 5,                          // knockback = strength*KB_PER_STR  (× an attack's knockback size)
+    KB_PER_STR: 3.3,                        // knockback = strength*KB_PER_STR  (× an attack's knockback size)
     BASE_MANA: 15, MANA_PER_MAG: 5,         // maxMana   = BASE_MANA + magic*MANA_PER_MAG
     BASE_AP: 0.5, AP_PER_MAG: 0.1,          // abilityPower = BASE_AP + magic*AP_PER_MAG  (magic dmg ×AP)
   },
@@ -119,7 +119,7 @@ export const BALANCE = {
   // After a shove an enemy is fully stopped for `pause{Min..Max}` frames, then ramps
   // from a near-stop back to full locomotion over `stagger{Min..Max}` frames (bigger
   // bodies pause and recover longer).
-  knockback: { min: 4, max: 6, hpAtMax: 80, pauseMin: 10, pauseMax: 14, staggerMin: 6, staggerMax: 10 },
+  knockback: { min: 6, max: 9, hpAtMax: 80, pauseMin: 8, pauseMax: 11.2, staggerMin: 6, staggerMax: 10 },
 
   spawnMinTileY: 9, // don't spawn enemies in the player's opening rows
   waypointArrive: 5, // px tolerance for "reached the path node"
