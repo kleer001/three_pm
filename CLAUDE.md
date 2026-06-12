@@ -24,9 +24,14 @@ win. Plain HTML, CSS, and ES modules — no build system, bundler, or dependenci
   ES modules require HTTP, not `file://`.
 - **Verify logic headlessly:** `node tests/smoke.mjs` — exercises the pure,
   browser-free logic (generation, connectivity, collision, BFS pathfinding,
-  wall-density knob). This environment has **no headless browser**, so visual /
-  input behavior must be playtested in a real browser; say so rather than
-  claiming an unverified visual fix works.
+  wall-density knob).
+- **Verify visuals/input in a browser:** `node tools/verify.mjs [weaponId] [seconds]`
+  drives the real game in headless Chrome and dumps screenshots to
+  `/tmp/three_pm-verify/` (weapon select, the run scene, HUD, beam, shop modal) — use
+  these to confirm rendering and input wiring. The driver lib (`puppeteer-core`) lives
+  in a machine-level cache outside the repo so the game stays dependency-free; the
+  script points at the system Chrome. If a machine has neither, fall back to a manual
+  playtest and say so rather than claiming an unverified visual fix works.
 - **Package for itch.io:** `./package.sh` → `dist/three_pm.zip` (index.html at
   the zip root; `tools/` and `docs/` excluded).
 - **GitHub Pages:** auto-served from `main` at <https://kleer001.github.io/three_pm/>.
