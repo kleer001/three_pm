@@ -97,6 +97,22 @@ export const BALANCE = {
   // threat density rises toward home. maxLive caps concurrent enemies (perf).
   director: { baseThreat: 4, threatSlope: 16, tickInterval: 0.5, spawnBandTiles: 8, maxLive: 40 },
 
+  // In-run powerups (spec 07): kills pay scrap and may drop a powerup pickup; scrap
+  // is spent at shop spots. Drops/stock roll on the `loot` RNG sub-stream so they're
+  // reproducible per seed and independent of gen/spawns.
+  loot: {
+    scrapPerKill: 3, scrapPerThreat: 2,        // scrap = base + threatValue*per
+    dropChanceBase: 0.05, dropChancePerThreat: 0.02, // powerup-drop chance scales with threat
+    rarityWeight: { common: 6, uncommon: 3, rare: 1 }, // pick favors commons
+    pickupR: 13, pickupBob: 3, pickupBobRate: 4, // pickup radius + idle bob (px / rad·s)
+    splitSpread: 0.16,                          // radians between split-shot projectiles
+    minCd: 0.1,                                 // floor on weapon cooldown after stacks
+  },
+  // Shops: N spots scattered down the descent (one per depth band), each offering a
+  // single rolled powerup at its `cost`. minTileY keeps the first shop past the
+  // opening rows; bandMargin insets each band so spots don't crowd the edges.
+  shop: { count: 4, minTileY: 16, r: 18 },
+
   spawnMinTileY: 9, // don't spawn enemies in the player's opening rows
   waypointArrive: 5, // px tolerance for "reached the path node"
   softBodyPush: 0.5, // share of overlap each of two living bodies yields when separating
@@ -137,9 +153,18 @@ export const THEME = {
   rangedTelegraph: { ring: "rgba(39,174,96,0.9)", line: "rgba(39,174,96,0.5)", ringPad: 5 },
   chargerTelegraph: { ring: "rgba(231,76,60,0.85)", line: "rgba(231,76,60,0.6)", lunge: "rgba(255,120,90,0.9)", ringPad: 6 },
   hero: { hit: "#7fb3ff", normal: "#2d6cdf" },
+  pickup: { fill: "#f1c40f", ring: "rgba(255,255,255,0.85)", glyph: "#3a2e00", glyphFont: "bold 13px system-ui, sans-serif" }, // powerup drop on the ground
+  shop: { fill: "#1f6f4a", ring: "#3ddc97", roof: "#13452f", glyph: "#eafff5", glyphFont: "bold 16px system-ui, sans-serif", // shop marker
+    label: "rgba(0,0,0,0.7)", labelText: "#fff", labelFont: "13px system-ui, sans-serif", afford: "#3ddc97", broke: "#e57373" },
   bar: { back: "rgba(0,0,0,0.5)", hp: "#e74c3c", mana: "#3498db", tapped: "rgba(52,152,219,0.25)", w: 26, h: 3, gap: 2 },
   hud: { font: "14px system-ui, sans-serif", box: "rgba(255,255,255,0.75)", text: "#111" },
   overlay: { bg: "rgba(0,0,0,0.6)", fg: "#fff", titleFont: "32px system-ui, sans-serif", subFont: "16px system-ui, sans-serif" },
   select: { bg: "#161616", title: "#fff", card: "#262626", cardActive: "#3a3a3a", border: "#6aa9ff", name: "#fff", desc: "#bbb", hint: "#999",
     titleFont: "28px system-ui, sans-serif", nameFont: "20px system-ui, sans-serif", descFont: "14px system-ui, sans-serif", hintFont: "14px system-ui, sans-serif" },
+  // Run-summary (DEATH/VICTORY) + META scenes (specs 15/08). Monospace for the
+  // payout/cost columns so the +credits align.
+  summary: { bg: "#0f0f12", win: "#f5d76e", lose: "#c97b6a", sub: "#cfcfcf", label: "#9a9a9a", value: "#fff", plus: "#7ed6a5", lost: "#c97b6a", rule: "#3a3a3a", unlock: "#7ed6a5", cta: "#fff",
+    titleFont: "34px system-ui, sans-serif", subFont: "16px system-ui, sans-serif", rowFont: "16px ui-monospace, monospace", ctaFont: "16px system-ui, sans-serif" },
+  meta: { bg: "#121417", title: "#fff", credits: "#f5d76e", row: "#222630", rowActive: "#313947", border: "#6aa9ff", name: "#fff", blurb: "#9aa3af", rank: "#cfd6df", cost: "#7ed6a5", broke: "#c97b6a", maxed: "#6f7782", cont: "#7ed6a5", hint: "#7a818c",
+    titleFont: "28px system-ui, sans-serif", creditsFont: "18px system-ui, sans-serif", nameFont: "18px system-ui, sans-serif", blurbFont: "13px system-ui, sans-serif", costFont: "15px ui-monospace, monospace", hintFont: "14px system-ui, sans-serif" },
 };
