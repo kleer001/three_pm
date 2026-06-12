@@ -7,7 +7,13 @@ import { makeRng } from "../src/core/rng.js";
 import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
 import { POWERUPS, SYNERGIES, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weightedPick } from "../src/run/powerups.js";
+import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgrade, applyHeroUpgrades, recomputeUnlocks, isHeroUnlocked, upgradeRank, nextCost } from "../src/meta/save.js";
 import { BALANCE, THEME } from "../src/run/balance.js";
+
+const freshBlob = () => ({
+  version: 1, credits: 0, runCount: 0, unlockedHeroes: ["marvin"], heroUpgrades: {},
+  stats: { wins: 0, bestDistance: 0, totalKills: 0 },
+});
 
 let failures = 0;
 const ok = (cond, msg) => {
@@ -295,6 +301,53 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   const wp = makeRng(5); let allValid = true;
   for (let i = 0; i < 100; i++) if (!POWERUPS[weightedPick(wp, L.rarityWeight)]) allValid = false;
   ok(allValid, "weightedPick returns a registered id");
+}
+
+// Meta-progression + save (spec 08): payout, recordRun fold, upgrade purchase +
+// run-start application, unlock gate. All pure transforms — no localStorage.
+{
+  // Payout: distance + kills + win bonus, rounded.
+  ok(computePayout({ distanceFraction: 1, kills: 0, won: false }) === PAYOUT.distance, "payout: full distance");
+  ok(computePayout({ distanceFraction: 0, kills: 10, won: false }) === 10 * PAYOUT.perKill, "payout: per-kill");
+  ok(computePayout({ distanceFraction: 0.5, kills: 3, won: true }) === Math.round(0.5 * PAYOUT.distance + 3 * PAYOUT.perKill + PAYOUT.win), "payout: blended + win bonus");
+
+  // recordRun folds one run and is pure (input blob untouched).
+  const b0 = freshBlob();
+  const b1 = recordRun(b0, { distanceFraction: 0.5, kills: 4, won: false });
+  ok(b0.runCount === 0 && b0.credits === 0, "recordRun does not mutate its input");
+  ok(b1.runCount === 1, "recordRun bumps runCount");
+  ok(b1.credits === computePayout({ distanceFraction: 0.5, kills: 4, won: false }), "recordRun banks the payout");
+  ok(b1.stats.totalKills === 4 && b1.stats.wins === 0, "recordRun folds lifetime stats");
+  ok(b1.stats.bestDistance === 0.5, "recordRun tracks best distance");
+  const b2 = recordRun(b1, { distanceFraction: 0.3, kills: 1, won: true });
+  ok(b2.stats.bestDistance === 0.5, "best distance only rises");
+  ok(b2.stats.wins === 1, "win counts");
+  ok(bankCurrency(b2, 10).credits === b2.credits + 10, "bankCurrency adds");
+
+  // Upgrades: buy gates on affordability + maxRank, and is pure.
+  const upId = Object.keys(UPGRADES.marvin)[0], def = UPGRADES.marvin[upId];
+  const broke = freshBlob();
+  ok(purchaseUpgrade(broke, "marvin", upId) === broke, "purchase no-op when broke (returns same blob)");
+  const rich = { ...freshBlob(), credits: 1000 };
+  let r = purchaseUpgrade(rich, "marvin", upId);
+  ok(upgradeRank(r, "marvin", upId) === 1, "purchase advances rank");
+  ok(r.credits === 1000 - def.costCurve[0], "purchase deducts the rank cost");
+  ok(rich.credits === 1000, "purchase does not mutate its input");
+  for (let n = 0; n < def.maxRank + 2; n++) r = purchaseUpgrade(r, "marvin", upId); // spam past max
+  ok(upgradeRank(r, "marvin", upId) === def.maxRank, "purchase stops at maxRank");
+  ok(nextCost(r, "marvin", upId) === null, "nextCost null when maxed");
+
+  // applyHeroUpgrades folds owned ranks into base stats before derive.
+  const hero = { stats: { speed: 5, constitution: 5, strength: 5, magic: 5 } };
+  const blob = { ...freshBlob(), heroUpgrades: { marvin: { [upId]: 2 } } };
+  applyHeroUpgrades(hero, "marvin", blob, BALANCE.derive);
+  const k = Object.keys(def.apply)[0];
+  ok(hero.stats[k] === 5 + def.apply[k] * 2, "applyHeroUpgrades scales stat delta by rank");
+  ok(hero.derived && hero.derived.maxHp > 0, "applyHeroUpgrades derives after folding stats");
+
+  // Unlock gate: runCount >= unlockAtRuns; Marvin always unlocked.
+  ok(recomputeUnlocks(0).includes("marvin"), "marvin unlocked from the first load");
+  ok(isHeroUnlocked(freshBlob(), "marvin"), "isHeroUnlocked: marvin");
 }
 
 console.log(failures === 0

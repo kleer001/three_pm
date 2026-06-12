@@ -8,9 +8,10 @@ import { generate, isWalkable } from "./levelgen.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
 import { findPath } from "../ai/ai.js";
-import { makeDirector } from "./director.js";
+import { makeDirector, distanceFraction } from "./director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
 import { POWERUPS, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weightedPick } from "./powerups.js";
+import { applyHeroUpgrades } from "../meta/save.js";
 import { BALANCE, THEME } from "./balance.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -26,7 +27,7 @@ const TILE_COLOR = THEME.tile; // indexed by tile id (see TILE in levelgen.js)
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
-export function createRunScene(ctx, input, seed, weaponId) {
+export function createRunScene(ctx, input, seed, weaponId, saveBlob) {
   const level = generate(seed, {
     w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS,
     wallScaleX: BALANCE.wall.scaleX, wallScaleY: BALANCE.wall.scaleY, wallDensity: BALANCE.wall.density,
@@ -55,7 +56,9 @@ export function createRunScene(ctx, input, seed, weaponId) {
     stats: { ...HERO.stats }, faction: HERO.faction,
     iframes: 0, iframeDur: HERO.iframeDur, manaRegen: HERO.manaRegen, dead: false, cd: 0,
   };
-  recomputeDerived(hero, BALANCE.derive);
+  // Meta upgrades (spec 08) fold into base stats before derive — permanent boosts
+  // bought between runs, applied once at run start (vs. powerups, applied mid-run).
+  applyHeroUpgrades(hero, "marvin", saveBlob, BALANCE.derive);
   hero.hp = hero.derived.maxHp;
   hero.mana = hero.derived.maxMana;
 
@@ -73,9 +76,9 @@ export function createRunScene(ctx, input, seed, weaponId) {
   const fields = [];      // lingering damage zones (field weapon)
   const heroTargets = [hero]; // the player-faction target list enemy shots resolve against
   let outcome = null;
+  let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
   let prevBuy = false;  // edge-trigger for the shop buy key (one press = one buy)
   let nearShop = null;  // shop the hero is standing on this frame (drives the buy prompt)
-  const state = { restart: false };
 
   // Build an enemy from its def at a tile and push it live. The entity holds live
   // state + the spec-03 component shape (stats/derived/faction/health/mana) the
@@ -177,7 +180,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
     applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
     if (kbMult) knockback(t, kdx, kdy, attacker.derived.knockback * kbMult);
     if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
-    if (t === hero && hero.dead) outcome = "lose";
+    if (t === hero && hero.dead) { outcome = "lose"; deathCause = attacker.def ? attacker.def.name : null; }
     else if (t.def && t.dead && !t.looted) onEnemyDeath(t);
   }
 
@@ -214,9 +217,9 @@ export function createRunScene(ctx, input, seed, weaponId) {
 
   // Hero damage flows through the shared resolver (i-frames + death) like any
   // entity; the run-loss is the hero-specific consequence layered on top.
-  function hurtHero(amount) {
+  function hurtHero(amount, srcName) {
     applyDamage(hero, amount);
-    if (hero.dead) outcome = "lose";
+    if (hero.dead) { outcome = "lose"; deathCause = srcName; }
   }
 
   // Spec 06's four behavior archetypes, one function per family — the frozen
@@ -230,7 +233,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
       const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
       if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
       followPath(e, e.derived.moveSpeed, dt);
-      if (d < hero.r + e.r) hurtHero(k.contactDamage);
+      if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
     },
 
     // Imps — chaser, but faster with a random per-step drift so packs fan out
@@ -241,7 +244,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
       followPath(e, e.derived.moveSpeed, dt);
       const a = rng.next() * Math.PI * 2, j = k.jitter * e.derived.moveSpeed * dt;
       moveAndCollide(level, e, Math.cos(a) * j, Math.sin(a) * j);
-      if (d < hero.r + e.r) hurtHero(k.contactDamage);
+      if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
     },
 
     // Cultists — hold a preferred range: approach, aim (telegraph), fire a bolt
@@ -299,7 +302,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
         }
         if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
         followPath(e, e.derived.moveSpeed, dt);
-        if (d < hero.r + e.r) hurtHero(k.contactDamage);
+        if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
       } else if (e.state === "telegraph") {
         e.timer -= dt; // hold still and tell the lunge
         if (e.timer <= 0) { e.state = "lunge"; e.timer = k.lungeDur; e.lunged = false; }
@@ -307,14 +310,14 @@ export function createRunScene(ctx, input, seed, weaponId) {
         e.timer -= dt;
         moveAndCollide(level, e, e.lockAim.x * k.lungeSpeed * dt, e.lockAim.y * k.lungeSpeed * dt);
         if (!e.lunged && d < hero.r + e.r) { // strength-scaled slam + heavy knockback
-          hurtHero(weaponDamage(k.attack, e, hero.derived.maxHp, hero.hp));
+          hurtHero(weaponDamage(k.attack, e, hero.derived.maxHp, hero.hp), k.name);
           knockback(hero, hero.x - e.x, hero.y - e.y, e.derived.knockback * k.attack.knockback);
           e.lunged = true;
         }
         if (e.timer <= 0) { e.state = "cooldown"; e.timer = k.cooldown; }
       } else {
         e.timer -= dt;
-        if (d < hero.r + e.r) hurtHero(k.contactDamage);
+        if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
         if (e.timer <= 0) e.state = "approach";
       }
     },
@@ -364,10 +367,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
   }
 
   function update(dt) {
-    if (outcome) {
-      if (input.down("Space") || input.down("Enter")) state.restart = true;
-      return;
-    }
+    if (outcome) return; // run is over; main hands off to the summary scene (spec 15)
     hero.cd = Math.max(0, hero.cd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
     regenMana(hero, dt); // same mana code the enemy casters use
@@ -512,7 +512,7 @@ export function createRunScene(ctx, input, seed, weaponId) {
     const minY = cam.y + MARGIN;
     if (hero.y < minY) {
       hero.y = minY;
-      if (boxBlocked(level, hero)) outcome = "lose";
+      if (boxBlocked(level, hero)) { outcome = "lose"; deathCause = "left behind by the dark"; }
     }
     hero.y = clamp(hero.y, minY, cam.y + VIEW_H - MARGIN);
     cam.x = clamp(hero.x - VIEW_W / 2, 0, mapW - VIEW_W);
@@ -661,22 +661,24 @@ export function createRunScene(ctx, input, seed, weaponId) {
       ctx.fillText(msg, VIEW_W / 2, VIEW_H - 55);
       ctx.textAlign = "left";
     }
-    if (outcome) {
-      ctx.fillStyle = THEME.overlay.bg;
-      ctx.fillRect(0, VIEW_H / 2 - 50, VIEW_W, 100);
-      ctx.fillStyle = THEME.overlay.fg;
-      ctx.textAlign = "center";
-      ctx.font = THEME.overlay.titleFont;
-      ctx.fillText(outcome === "win" ? "MADE IT HOME" : "ANOTHER 3PM…", VIEW_W / 2, VIEW_H / 2 - 4);
-      ctx.font = THEME.overlay.subFont;
-      ctx.fillText("press SPACE to try another day", VIEW_W / 2, VIEW_H / 2 + 26);
-      ctx.textAlign = "left";
-    }
+    // No end overlay here — when a run resolves, main hands off to the dedicated
+    // DEATH/VICTORY summary scene (spec 15), which owns the end-of-run screen.
   }
 
-  // `runState` is exposed for the run-summary scene (spec 15 RunResult: scrap/kills/
-  // held powerups are dropped with the run, read once at the end).
-  return { update, render, get restart() { return state.restart; }, runState, nextSeed: seed + 1 };
+  // RunResult (spec 15): the Run→resolution payload, built from the live run state
+  // at the instant it ends. Only distanceFraction/kills/won reach the save; the rest
+  // are display-only. `finished` flips once and tells main to hand off to the summary.
+  return {
+    update, render, runState, nextSeed: seed + 1,
+    get finished() { return outcome !== null; },
+    get result() {
+      return {
+        distanceFraction: outcome === "win" ? 1 : distanceFraction(hero, level, TS),
+        kills: runState.kills, won: outcome === "win",
+        cause: deathCause, heroId: "marvin", seed, scrapDiscarded: runState.scrap,
+      };
+    },
+  };
 }
 
 function disc(ctx, x, y, r, color) {

@@ -161,4 +161,10 @@ export const THEME = {
   overlay: { bg: "rgba(0,0,0,0.6)", fg: "#fff", titleFont: "32px system-ui, sans-serif", subFont: "16px system-ui, sans-serif" },
   select: { bg: "#161616", title: "#fff", card: "#262626", cardActive: "#3a3a3a", border: "#6aa9ff", name: "#fff", desc: "#bbb", hint: "#999",
     titleFont: "28px system-ui, sans-serif", nameFont: "20px system-ui, sans-serif", descFont: "14px system-ui, sans-serif", hintFont: "14px system-ui, sans-serif" },
+  // Run-summary (DEATH/VICTORY) + META scenes (specs 15/08). Monospace for the
+  // payout/cost columns so the +credits align.
+  summary: { bg: "#0f0f12", win: "#f5d76e", lose: "#c97b6a", sub: "#cfcfcf", label: "#9a9a9a", value: "#fff", plus: "#7ed6a5", lost: "#c97b6a", rule: "#3a3a3a", unlock: "#7ed6a5", cta: "#fff",
+    titleFont: "34px system-ui, sans-serif", subFont: "16px system-ui, sans-serif", rowFont: "16px ui-monospace, monospace", ctaFont: "16px system-ui, sans-serif" },
+  meta: { bg: "#121417", title: "#fff", credits: "#f5d76e", row: "#222630", rowActive: "#313947", border: "#6aa9ff", name: "#fff", blurb: "#9aa3af", rank: "#cfd6df", cost: "#7ed6a5", broke: "#c97b6a", maxed: "#6f7782", cont: "#7ed6a5", hint: "#7a818c",
+    titleFont: "28px system-ui, sans-serif", creditsFont: "18px system-ui, sans-serif", nameFont: "18px system-ui, sans-serif", blurbFont: "13px system-ui, sans-serif", costFont: "15px ui-monospace, monospace", hintFont: "14px system-ui, sans-serif" },
 };
