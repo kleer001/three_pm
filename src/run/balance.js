@@ -113,6 +113,11 @@ export const BALANCE = {
   // opening rows; bandMargin insets each band so spots don't crowd the edges.
   shop: { count: 4, minTileY: 16, r: 18, stock: 3 }, // items offered per shop (player picks at a paused stall)
 
+  // Knockback rides out over a few frames instead of teleporting: the impulse is
+  // split across `min`..`max` frames, more frames for a higher-maxHp target (heavier
+  // bodies carry the shove longer). `hpAtMax` is the maxHp that earns the full count.
+  knockback: { min: 4, max: 6, hpAtMax: 80 },
+
   spawnMinTileY: 9, // don't spawn enemies in the player's opening rows
   waypointArrive: 5, // px tolerance for "reached the path node"
   softBodyPush: 0.5, // share of overlap each of two living bodies yields when separating
@@ -159,6 +164,9 @@ export const THEME = {
     label: "rgba(0,0,0,0.7)", labelText: "#fff", labelFont: "13px system-ui, sans-serif", afford: "#3ddc97", broke: "#e57373" },
   bar: { back: "rgba(0,0,0,0.5)", hp: "#e74c3c", mana: "#3498db", tapped: "rgba(52,152,219,0.25)", w: 26, h: 3, gap: 2 },
   hud: { font: "14px system-ui, sans-serif", box: "rgba(255,255,255,0.75)", text: "#111" },
+  // Floating damage numbers: rise `rise` px/s, live `dur` s, fade out. `alpha` caps
+  // opacity so they read as ghosted, not solid. heroHit recolors damage the hero takes.
+  hitNumber: { font: "bold 15px system-ui, sans-serif", color: "#fff", heroHit: "#ff7b6b", rise: 36, dur: 0.7, alpha: 0.8 },
   overlay: { bg: "rgba(0,0,0,0.6)", fg: "#fff", titleFont: "32px system-ui, sans-serif", subFont: "16px system-ui, sans-serif" },
   select: { bg: "#161616", title: "#fff", card: "#262626", cardActive: "#3a3a3a", border: "#6aa9ff", name: "#fff", desc: "#bbb", hint: "#999",
     titleFont: "28px system-ui, sans-serif", nameFont: "20px system-ui, sans-serif", descFont: "14px system-ui, sans-serif", hintFont: "14px system-ui, sans-serif" },

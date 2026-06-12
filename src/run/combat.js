@@ -37,11 +37,14 @@ export function weaponDamage(d, attacker, maxHp, curHp) {
 // Apply damage through the i-frame gate and the target's dmgResist. Only entities
 // with an `iframeDur` (the hero) get an invulnerability window; enemies take every
 // hit. Knockback is applied by the caller (it needs the level for collision).
+// Returns the HP actually removed (0 if i-framed) so callers can surface the hit.
 export function applyDamage(target, amount) {
-  if (target.iframes > 0) return;
-  target.hp -= amount * (1 - (target.derived.dmgResist || 0));
+  if (target.iframes > 0) return 0;
+  const dealt = amount * (1 - (target.derived.dmgResist || 0));
+  target.hp -= dealt;
   if (target.iframeDur) target.iframes = target.iframeDur;
   if (target.hp <= 0) { target.hp = 0; target.dead = true; }
+  return dealt;
 }
 
 // Mana: regenerate toward the derived pool cap (only for entities with a regen

@@ -81,6 +81,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   const blasts = [];      // transient AoE rings (nova/bomb detonations), visual only
   const swings = [];      // transient melee swing wedges, visual only
   const fields = [];      // lingering damage zones (field weapon)
+  const floaters = [];    // rising damage numbers, one per landed hit, visual only
   const heroTargets = [hero]; // the player-faction target list enemy shots resolve against
   let outcome = null;
   let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
@@ -172,10 +173,24 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     });
   }
 
-  // Shove a target `mag` px along (dx,dy), stopping at walls (spec 04 knockback).
+  // Knockback no longer teleports: it queues an impulse of `mag` px along (dx,dy)
+  // to ride out over a few frames (heavier targets carry it longer), consumed by
+  // applyKb each tick. A fresh hit overwrites any in-flight shove.
   function knockback(t, dx, dy, mag) {
     const m = Math.hypot(dx, dy) || 1;
-    moveAndCollide(level, t, (dx / m) * mag, (dy / m) * mag);
+    const K = BALANCE.knockback;
+    const frames = Math.max(1, Math.round(K.min + Math.min(1, t.derived.maxHp / K.hpAtMax) * (K.max - K.min)));
+    t.kb = { vx: (dx / m) * mag / frames, vy: (dy / m) * mag / frames, frames };
+  }
+  // Spend one frame of a queued knockback, stopping at walls (spec 04 knockback).
+  function applyKb(t) {
+    if (!t.kb || t.kb.frames <= 0) return;
+    moveAndCollide(level, t, t.kb.vx, t.kb.vy);
+    t.kb.frames--;
+  }
+  // A landed hit's HP loss, surfaced as a rising number at the target (spec: honest hits).
+  function spawnHitNumber(t, dealt) {
+    floaters.push({ x: t.x, y: t.y, value: Math.round(dealt), t: 0, hero: t === hero });
   }
 
   // An enemy just died (the slice's stand-in for spec 04's `death` event, funneled
@@ -194,7 +209,8 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // source — projectiles, beams, AoE blasts — funnels through here so they agree
   // (and so every enemy death routes through one loot roll).
   function applyHit(attacker, t, damage, kbMult, kdx, kdy, freeze) {
-    applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
+    const dealt = applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
+    if (dealt > 0) spawnHitNumber(t, dealt);
     if (kbMult) knockback(t, kdx, kdy, attacker.derived.knockback * kbMult);
     if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
     if (t === hero && hero.dead) loseRun(attacker.def ? attacker.def.name : null);
@@ -235,7 +251,8 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // Hero damage flows through the shared resolver (i-frames + death) like any
   // entity; the run-loss is the hero-specific consequence layered on top.
   function hurtHero(amount, srcName) {
-    applyDamage(hero, amount);
+    const dealt = applyDamage(hero, amount);
+    if (dealt > 0) spawnHitNumber(hero, dealt);
     if (hero.dead) loseRun(srcName);
   }
 
@@ -480,6 +497,11 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       if (Math.abs(e.y - activeY) < VIEW_H) stepEnemy(e, dt, heroTile);
     }
 
+    // Queued knockback rides out here, after brains — a frozen or mid-attack enemy
+    // still slides, and the hero's own shoves (charger lunges) play out the same way.
+    for (const e of enemies) if (!e.dead) applyKb(e);
+    applyKb(hero);
+
     // Projectiles (hero + enemy): resolve each against the opposite faction via the
     // shared hit path. Bombs detonate an area on contact/expiry; beams pierce and
     // hit each enemy once; the rest hit the first enemy and die.
@@ -512,6 +534,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     }
     for (const b of blasts) b.t += dt; // visual rings expand then expire
     for (const s of swings) s.t += dt; // melee wedges flash then expire
+    for (const f of floaters) f.t += dt; // damage numbers rise and fade
 
     // Bodies take up space. The hero hard-blocks against bodies in heroMove;
     // here push living enemies out of one another, the hero, and solid corpses.
@@ -549,6 +572,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     for (let i = fields.length - 1; i >= 0; i--) if (fields[i].life <= 0) fields.splice(i, 1);
     for (let i = blasts.length - 1; i >= 0; i--) if (blasts[i].t >= THEME.blast.dur) blasts.splice(i, 1);
     for (let i = swings.length - 1; i >= 0; i--) if (swings[i].t >= THEME.melee.dur) swings.splice(i, 1);
+    for (let i = floaters.length - 1; i >= 0; i--) if (floaters[i].t >= THEME.hitNumber.dur) floaters.splice(i, 1);
 
     // Stay inside the moving window; being crushed against a wall is fatal.
     // (heroMove already keeps x within the map and out of walls — no x clamp.)
@@ -740,6 +764,18 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
         bar(ctx, hx, by, hero.mana / hero.derived.maxMana, hero.mana >= weapon.manaCost ? B.mana : B.tapped);
       }
     }
+
+    // Floating damage numbers: rise and fade, ghosted so they don't bury the action.
+    const HN = THEME.hitNumber;
+    ctx.font = HN.font;
+    ctx.textAlign = "center";
+    for (const f of floaters) {
+      ctx.globalAlpha = (1 - f.t / HN.dur) * HN.alpha;
+      ctx.fillStyle = f.hero ? HN.heroHit : HN.color;
+      ctx.fillText(f.value, f.x - cam.x, f.y - cam.y - f.t * HN.rise);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = "left";
 
     ctx.font = THEME.hud.font;
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
