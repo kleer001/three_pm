@@ -6,6 +6,7 @@ import { findPath, localWalkableTile } from "../src/ai/ai.js";
 import { makeRng } from "../src/core/rng.js";
 import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
+import { POWERUPS, SYNERGIES, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weightedPick } from "../src/run/powerups.js";
 import { BALANCE, THEME } from "../src/run/balance.js";
 
 let failures = 0;
@@ -231,6 +232,69 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   ok(canCast(caster, 16) && !canCast(caster, 17), "canCast boundary");
   spendMana(caster, 10); ok(caster.mana === 6, "spendMana deducts");
   const noRegen = { mana: 5, derived: { maxMana: 20 } }; regenMana(noRegen, 1); ok(noRegen.mana === 5, "regenMana no-op without a regen rate");
+}
+
+// In-run powerups (spec 07): stat/weapon mods, rebuild-from-base stacking,
+// synergies, the loot/scrap roll. All pure — no canvas, no input.
+{
+  const derive = BALANCE.derive, L = BALANCE.loot;
+  const baseStats = { speed: 5, constitution: 5, strength: 5, magic: 5 };
+  const mkHero = () => { const h = { stats: { ...baseStats } }; recomputeDerived(h, derive); h.hp = h.derived.maxHp; h.mana = h.derived.maxMana; return h; };
+  const base = snapshotBase(baseStats, { id: "slingshot", ...BALANCE.weapons.slingshot });
+  const mkWeapon = (b) => ({ ...b.weapon, damage: { ...b.weapon.damage } });
+  ok(base.weapon.count === 1 && base.weapon.pierce === false, "snapshotBase normalizes count/pierce");
+
+  // Every registry entry is well-formed (the loader contract, validated up front).
+  for (const [id, d] of Object.entries(POWERUPS)) {
+    ok(d.kind === "stat" || d.kind === "weapon", `powerup ${id}: known kind`);
+    ok(typeof d.cost === "number" && d.cost > 0, `powerup ${id}: has a shop cost`);
+    ok(L.rarityWeight[d.rarity], `powerup ${id}: rarity has a drop weight`);
+  }
+  for (const [id, s] of Object.entries(SYNERGIES))
+    ok(s.requires.every((r) => POWERUPS[r]), `synergy ${id}: requires known powerups`);
+
+  // Stat powerups stack and re-derive.
+  const h1 = mkHero(), w1 = mkWeapon(base);
+  applyHeld(h1, w1, base, ["espresso_shot", "espresso_shot"], derive, L);
+  ok(h1.stats.speed === 7, "stat powerup stacks (+2 speed)");
+  ok(h1.derived.moveSpeed > mkHero().derived.moveSpeed, "stat stack re-derives moveSpeed");
+
+  // Weapon mods add (count, flat damage).
+  const h2 = mkHero(), w2 = mkWeapon(base);
+  applyHeld(h2, w2, base, ["split_shot", "split_shot", "heavy_hands"], derive, L);
+  ok(w2.count === 3, "split_shot stacks projectile count");
+  ok(w2.damage.base === base.weapon.damage.base + 3, "weapon damage mod adds");
+
+  // Rebuild-from-base clears prior mods (a dropped pierce must not linger).
+  const h3 = mkHero(), w3 = mkWeapon(base);
+  applyHeld(h3, w3, base, ["needle_tip"], derive, L);
+  ok(w3.pierce === true, "needle_tip sets pierce");
+  applyHeld(h3, w3, base, [], derive, L);
+  ok(w3.pierce === false && w3.count === 1 && w3.damage.base === base.weapon.damage.base, "rebuild from base clears prior mods");
+
+  // Synergy applies on top of the held set when its requires are all present.
+  const hexBase = snapshotBase(baseStats, { id: "hex", ...BALANCE.weapons.hex });
+  const hA = mkHero(), wA = mkWeapon(hexBase); applyHeld(hA, wA, hexBase, ["split_shot", "needle_tip"], derive, L);
+  const hB = mkHero(), wB = mkWeapon(hexBase); applyHeld(hB, wB, hexBase, ["split_shot"], derive, L);
+  ok(wA.damage.base === wB.damage.base + SYNERGIES.skewer_volley.mods.damage.base, "synergy adds when its set is held");
+
+  // Cooldown floor holds under heavy stacking.
+  const h5 = mkHero(), w5 = mkWeapon(base);
+  applyHeld(h5, w5, base, Array(20).fill("hair_trigger"), derive, L);
+  ok(w5.cd === L.minCd, "weapon cooldown floored at minCd");
+
+  // Scrap + loot rolls: formula, determinism, well-formed output.
+  ok(scrapForKill(BALANCE.enemies.shambler, L) === L.scrapPerKill + 1 * L.scrapPerThreat, "scrapForKill formula");
+  const r1 = makeRng(7), r2 = makeRng(7), a1 = [], a2 = [];
+  for (let i = 0; i < 200; i++) { a1.push(rollPowerupDrop(r1, BALANCE.enemies.brute, L)); a2.push(rollPowerupDrop(r2, BALANCE.enemies.brute, L)); }
+  ok(a1.every((v, i) => v === a2[i]), "loot rolls reproduce on the same seed");
+  ok(a1.every((v) => v === null || POWERUPS[v]), "drops are null or a valid powerup id");
+  ok(a1.some((v) => v !== null), "a high-threat enemy drops sometimes");
+
+  // weightedPick only ever returns a registered id.
+  const wp = makeRng(5); let allValid = true;
+  for (let i = 0; i < 100; i++) if (!POWERUPS[weightedPick(wp, L.rarityWeight)]) allValid = false;
+  ok(allValid, "weightedPick returns a registered id");
 }
 
 console.log(failures === 0

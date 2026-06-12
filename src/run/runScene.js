@@ -10,6 +10,7 @@ import { makeRng, subSeed } from "../core/rng.js";
 import { findPath } from "../ai/ai.js";
 import { makeDirector } from "./director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
+import { POWERUPS, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weightedPick } from "./powerups.js";
 import { BALANCE, THEME } from "./balance.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -33,19 +34,36 @@ export function createRunScene(ctx, input, seed, weaponId) {
   const mapW = level.w * TS, mapH = level.h * TS;
   const homeSet = new Set(level.homeBand.map(([x, y]) => y * level.w + x));
   const rng = makeRng(subSeed(seed, "spawns"));
-  const weapon = { id: weaponId, ...BALANCE.weapons[weaponId] };
+  // Loot stream is its own sub-seed (spec 07): drops + shop stock stay reproducible
+  // and independent of world-gen ("gen") and the director ("spawns").
+  const lootRng = makeRng(subSeed(seed, "loot"));
+  const LOOT = BALANCE.loot;
+
+  // Run-scoped progression (spec 07 runState): held powerup ids (repeats = stacks)
+  // and the single in-run currency. `base` is the normalized rebuild snapshot the
+  // hero + weapon are replayed from on every acquisition.
+  const runState = { scrap: 0, powerups: [], kills: 0 };
+  const base = snapshotBase(HERO.stats, { id: weaponId, ...BALANCE.weapons[weaponId] });
+  const weapon = { ...base.weapon, damage: { ...base.weapon.damage } };
 
   // Hero shares the full spec-03 entity shape (stats + derived + faction + the
   // health/mana component) with every enemy; combat.js operates on all of them.
+  // `stats` is a copy of the def (powerups mutate it; the BALANCE def must stay base).
   const hero = {
     x: level.start.x * TS + TS / 2, y: level.start.y * TS + TS / 2,
     w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
-    stats: HERO.stats, faction: HERO.faction,
+    stats: { ...HERO.stats }, faction: HERO.faction,
     iframes: 0, iframeDur: HERO.iframeDur, manaRegen: HERO.manaRegen, dead: false, cd: 0,
   };
   recomputeDerived(hero, BALANCE.derive);
   hero.hp = hero.derived.maxHp;
   hero.mana = hero.derived.maxMana;
+
+  // Rebuild hero + weapon from base after every acquisition (spec 07 applyHeld).
+  const rebuild = () => applyHeld(hero, weapon, base, runState.powerups, BALANCE.derive, LOOT);
+
+  const pickups = []; // powerup drops lying on the ground, awaiting hero overlap
+  const shops = placeShops();
 
   const cam = { x: 0, y: 0 };
   const enemies = [];
@@ -55,6 +73,8 @@ export function createRunScene(ctx, input, seed, weaponId) {
   const fields = [];      // lingering damage zones (field weapon)
   const heroTargets = [hero]; // the player-faction target list enemy shots resolve against
   let outcome = null;
+  let prevBuy = false;  // edge-trigger for the shop buy key (one press = one buy)
+  let nearShop = null;  // shop the hero is standing on this frame (drives the buy prompt)
   const state = { restart: false };
 
   // Build an enemy from its def at a tile and push it live. The entity holds live
@@ -73,6 +93,28 @@ export function createRunScene(ctx, input, seed, weaponId) {
     e.hp = e.derived.maxHp;
     e.mana = e.derived.maxMana;
     enemies.push(e);
+  }
+
+  // Scatter shop spots down the descent — one per even depth band so they appear
+  // through the run. Each rolls a single offering from the loot table (spec 07 shop
+  // stock). Placed here, not in levelgen, which "emits geometry only".
+  function placeShops() {
+    const { count, minTileY, r } = BALANCE.shop;
+    const lo = Math.max(minTileY, BALANCE.spawnMinTileY), hi = level.h - 3;
+    const bandH = (hi - lo) / count;
+    const out = [];
+    for (let b = 0; b < count; b++) {
+      const y0 = Math.floor(lo + b * bandH), y1 = Math.floor(lo + (b + 1) * bandH);
+      const cells = [];
+      for (let ty = y0; ty < y1; ty++)
+        for (let tx = 1; tx < level.w - 1; tx++)
+          if (isWalkable(level, tx, ty) && !homeSet.has(ty * level.w + tx)) cells.push([tx, ty]);
+      if (!cells.length) continue;
+      const [tx, ty] = lootRng.pick(cells);
+      const defId = weightedPick(lootRng, LOOT.rarityWeight);
+      out.push({ tx, ty, x: tx * TS + TS / 2, y: ty * TS + TS / 2, r, defId, cost: POWERUPS[defId].cost, sold: false });
+    }
+    return out;
   }
 
   const director = makeDirector({
@@ -116,14 +158,27 @@ export function createRunScene(ctx, input, seed, weaponId) {
     moveAndCollide(level, t, (dx / m) * mag, (dy / m) * mag);
   }
 
+  // An enemy just died (the slice's stand-in for spec 04's `death` event, funneled
+  // through the single hit path below). Pay scrap and roll a world drop on the loot
+  // stream. `looted` guards the one-shot — corpses linger, so we'd otherwise re-pay.
+  function onEnemyDeath(e) {
+    e.looted = true;
+    runState.kills++;
+    runState.scrap += scrapForKill(e.def, LOOT);
+    const id = rollPowerupDrop(lootRng, e.def, LOOT);
+    if (id) pickups.push({ x: e.x, y: e.y, defId: id, r: LOOT.pickupR, t: 0, dead: false });
+  }
+
   // Resolve a single hit: percent-HP/stat-scaled damage through dmgResist, optional
   // knockback along (kdx,kdy), optional freeze (player→enemy CC). Every damage
-  // source — projectiles, beams, AoE blasts — funnels through here so they agree.
+  // source — projectiles, beams, AoE blasts — funnels through here so they agree
+  // (and so every enemy death routes through one loot roll).
   function applyHit(attacker, t, damage, kbMult, kdx, kdy, freeze) {
     applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
     if (kbMult) knockback(t, kdx, kdy, attacker.derived.knockback * kbMult);
     if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
     if (t === hero && hero.dead) outcome = "lose";
+    else if (t.def && t.dead && !t.looted) onEnemyDeath(t);
   }
 
   // Area blast at (cx,cy): hit every enemy overlapping the radius, knocked outward
@@ -351,12 +406,16 @@ export function createRunScene(ctx, input, seed, weaponId) {
           fired = true;
         }
       } else if (near && near.d <= weapon.range) { // projectile / beam / bomb — aimed
-        const dx = near.e.x - hero.x, dy = near.e.y - hero.y, m = Math.hypot(dx, dy) || 1;
-        fireShot(hero, (dx / m) * weapon.speed, (dy / m) * weapon.speed, {
-          damage: weapon.damage, life: weapon.life, shotR: weapon.shotR,
-          color: THEME.weaponShot[weapon.id], freeze: weapon.freeze, knockback: weapon.knockback,
-          shape: weapon.shape, radius: weapon.radius, pierce: weapon.pierce,
-        });
+        const dx = near.e.x - hero.x, dy = near.e.y - hero.y;
+        const ang = Math.atan2(dy, dx), n = weapon.count, spread = n > 1 ? LOOT.splitSpread : 0;
+        for (let s = 0; s < n; s++) { // count>1 fans the shots (Split Shot powerup)
+          const a = ang + (s - (n - 1) / 2) * spread;
+          fireShot(hero, Math.cos(a) * weapon.speed, Math.sin(a) * weapon.speed, {
+            damage: weapon.damage, life: weapon.life, shotR: weapon.shotR,
+            color: THEME.weaponShot[weapon.id], freeze: weapon.freeze, knockback: weapon.knockback,
+            shape: weapon.shape, radius: weapon.radius, pierce: weapon.pierce,
+          });
+        }
         fired = true;
       }
       if (fired) { hero.cd = weapon.cd; spendMana(hero, weapon.manaCost); }
@@ -416,7 +475,34 @@ export function createRunScene(ctx, input, seed, weaponId) {
     }
     for (const c of corpses) separate(hero, c, false); // the hero shoves (heavy) corpses aside
 
+    // Powerup pickups: collect on hero overlap → append to held + rebuild from base.
+    for (const p of pickups) {
+      if (p.dead) continue;
+      p.t += dt;
+      if (dist(p.x, p.y, hero.x, hero.y) < hero.r + p.r) {
+        runState.powerups.push(p.defId);
+        rebuild();
+        p.dead = true;
+      }
+    }
+
+    // Shops: standing on an unsold spot offers its stock; E buys when scrap covers the
+    // cost (edge-triggered). Purchase ends in the same rebuild as a world pickup.
+    nearShop = null;
+    for (const s of shops)
+      if (!s.sold && dist(s.x, s.y, hero.x, hero.y) < hero.r + s.r) { nearShop = s; break; }
+    const buy = input.down("KeyE");
+    if (nearShop && buy && !prevBuy && runState.scrap >= nearShop.cost) {
+      runState.scrap -= nearShop.cost;
+      runState.powerups.push(nearShop.defId);
+      rebuild();
+      nearShop.sold = true;
+      nearShop = null;
+    }
+    prevBuy = buy;
+
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
+    for (let i = pickups.length - 1; i >= 0; i--) if (pickups[i].dead) pickups.splice(i, 1);
     for (let i = fields.length - 1; i >= 0; i--) if (fields[i].life <= 0) fields.splice(i, 1);
     for (let i = blasts.length - 1; i >= 0; i--) if (blasts[i].t >= THEME.blast.dur) blasts.splice(i, 1);
     for (let i = swings.length - 1; i >= 0; i--) if (swings[i].t >= THEME.melee.dur) swings.splice(i, 1);
@@ -456,6 +542,17 @@ export function createRunScene(ctx, input, seed, weaponId) {
       if (hx >= x0 && hx <= x1 && hy >= y0 && hy <= y1)
         ctx.fillRect(Math.floor(hx * TS - cam.x), Math.floor(hy * TS - cam.y), TS + 1, TS + 1);
 
+    // Shop spots are structures — draw on the ground, under everything live.
+    for (const s of shops) {
+      if (s.sold) continue;
+      const sx = s.x - cam.x, sy = s.y - cam.y;
+      ctx.fillStyle = THEME.shop.roof; // a little awning so the spot reads as a stall
+      ctx.fillRect(sx - s.r, sy - s.r - 4, s.r * 2, 6);
+      disc(ctx, sx, sy, s.r, THEME.shop.fill);
+      ring(ctx, sx, sy, s.r, THEME.shop.ring);
+      glyph(ctx, "$", sx, sy + 5, THEME.shop.glyph, THEME.shop.glyphFont);
+    }
+
     // Lingering fields sit on the ground, under the bodies.
     for (const f of fields) {
       disc(ctx, f.x - cam.x, f.y - cam.y, f.r, THEME.field.fill);
@@ -465,6 +562,15 @@ export function createRunScene(ctx, input, seed, weaponId) {
     // Corpses (drawn under everything live)
     for (const e of enemies)
       if (e.dead) disc(ctx, e.x - cam.x, e.y - cam.y, e.r, THEME.corpse);
+
+    // Powerup drops: bob in place so they catch the eye over the rubble.
+    for (const p of pickups) {
+      if (p.dead) continue;
+      const px = p.x - cam.x, py = p.y - cam.y + Math.sin(p.t * LOOT.pickupBobRate) * LOOT.pickupBob;
+      disc(ctx, px, py, p.r, THEME.pickup.fill);
+      ring(ctx, px, py, p.r, THEME.pickup.ring);
+      glyph(ctx, "+", px, py + 4, THEME.pickup.glyph, THEME.pickup.glyphFont);
+    }
 
     for (const p of projectiles) disc(ctx, p.x - cam.x, p.y - cam.y, p.shotR, p.color);
 
@@ -525,11 +631,36 @@ export function createRunScene(ctx, input, seed, weaponId) {
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
     const ready = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
     const mana = weapon.manaCost > 0 ? `   MP ${Math.round(hero.mana)}/${hero.derived.maxMana}` : "";
-    const hud = `HP ${Math.max(0, Math.round(hero.hp))}/${hero.derived.maxHp}${mana}   home in ${100 - depth}%   ${weapon.name} ${ready} [SPACE]`;
+    const hud = `HP ${Math.max(0, Math.round(hero.hp))}/${hero.derived.maxHp}${mana}   scrap ${runState.scrap}   home in ${100 - depth}%   ${weapon.name} ${ready} [SPACE]`;
     ctx.fillStyle = THEME.hud.box; // backing box for legibility over any tile
     ctx.fillRect(6, 6, ctx.measureText(hud).width + 12, 22);
     ctx.fillStyle = THEME.hud.text;
     ctx.fillText(hud, 12, 21);
+
+    // Held powerups, tallied (stacks shown ×N) — the run's accumulating build.
+    if (runState.powerups.length) {
+      const counts = {};
+      for (const id of runState.powerups) counts[id] = (counts[id] || 0) + 1;
+      const line = Object.keys(counts).map((id) => POWERUPS[id].name + (counts[id] > 1 ? ` ×${counts[id]}` : "")).join(",  ");
+      ctx.fillStyle = THEME.hud.box;
+      ctx.fillRect(6, 32, ctx.measureText(line).width + 12, 20);
+      ctx.fillStyle = THEME.hud.text;
+      ctx.fillText(line, 12, 46);
+    }
+
+    // Shop prompt: name + price, colored by whether the hero can afford it.
+    if (nearShop && !outcome) {
+      const def = POWERUPS[nearShop.defId], can = runState.scrap >= nearShop.cost;
+      const msg = `[E]  ${def.name} — ${def.blurb}   (${nearShop.cost} scrap)`;
+      ctx.font = THEME.shop.labelFont;
+      ctx.textAlign = "center";
+      const w = ctx.measureText(msg).width + 18;
+      ctx.fillStyle = THEME.shop.label;
+      ctx.fillRect(VIEW_W / 2 - w / 2, VIEW_H - 72, w, 24);
+      ctx.fillStyle = can ? THEME.shop.afford : THEME.shop.broke;
+      ctx.fillText(msg, VIEW_W / 2, VIEW_H - 55);
+      ctx.textAlign = "left";
+    }
     if (outcome) {
       ctx.fillStyle = THEME.overlay.bg;
       ctx.fillRect(0, VIEW_H / 2 - 50, VIEW_W, 100);
@@ -543,7 +674,9 @@ export function createRunScene(ctx, input, seed, weaponId) {
     }
   }
 
-  return { update, render, get restart() { return state.restart; }, nextSeed: seed + 1 };
+  // `runState` is exposed for the run-summary scene (spec 15 RunResult: scrap/kills/
+  // held powerups are dropped with the run, read once at the end).
+  return { update, render, get restart() { return state.restart; }, runState, nextSeed: seed + 1 };
 }
 
 function disc(ctx, x, y, r, color) {
@@ -557,6 +690,14 @@ function ring(ctx, x, y, r, color) {
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.stroke();
+}
+// A centered single-character icon (pickup/shop markers).
+function glyph(ctx, ch, x, y, color, font) {
+  ctx.fillStyle = color;
+  ctx.font = font;
+  ctx.textAlign = "center";
+  ctx.fillText(ch, x, y);
+  ctx.textAlign = "left";
 }
 // A centered status bar (HP/mana): dark backing + a `frac`-wide fill.
 function bar(ctx, cx, y, frac, fill) {
