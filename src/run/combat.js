@@ -4,6 +4,10 @@
 // `faction`, and the health/mana component. These functions don't care whose bag
 // they're handed — one code path, not one for the hero and one for the horde.
 
+// The four base stats, in order — the single list every stat-folding path
+// (powerups, meta upgrades) iterates over when adding deltas.
+export const STAT_KEYS = ["speed", "constitution", "strength", "magic"];
+
 // Recompute the derived cache from base stats. Runs on spawn (and would run after
 // any stat change: level-up, powerup). HP/mana are clamped by callers to the new
 // maxima. `C` is BALANCE.derive.

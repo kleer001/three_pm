@@ -49,7 +49,8 @@ export function createMetaScene(ctx, input, nextSeed) {
     ctx.font = M.creditsFont;
     ctx.fillText(`${blob.credits} credits   ·   run ${blob.runCount}   ·   ${blob.stats.wins} home`, VIEW_W / 2, 98);
 
-    const rowH = 56, gap = 6, rowW = 560, x = (VIEW_W - rowW) / 2;
+    const rowH = 56, exitH = 44, gap = 6, rowW = 560, x = (VIEW_W - rowW) / 2;
+    ctx.lineWidth = 2; // shared by every row's active border
     let y = 132;
     for (let n = 0; n < upgradeIds.length; n++) {
       const id = upgradeIds[n], def = UPGRADES[HERO][id], active = n === i;
@@ -58,7 +59,6 @@ export function createMetaScene(ctx, input, nextSeed) {
       ctx.fillRect(x, y, rowW, rowH);
       if (active) {
         ctx.strokeStyle = M.border;
-        ctx.lineWidth = 2;
         ctx.strokeRect(x + 1, y + 1, rowW - 2, rowH - 2);
       }
       ctx.textAlign = "left";
@@ -79,14 +79,13 @@ export function createMetaScene(ctx, input, nextSeed) {
       y += rowH + gap;
     }
 
-    // The exit item, styled as a row.
+    // The exit item, styled as a shorter row.
     const contActive = i === upgradeIds.length;
     ctx.fillStyle = contActive ? M.rowActive : M.row;
-    ctx.fillRect(x, y, rowW, 44);
+    ctx.fillRect(x, y, rowW, exitH);
     if (contActive) {
       ctx.strokeStyle = M.border;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x + 1, y + 1, rowW - 2, 42);
+      ctx.strokeRect(x + 1, y + 1, rowW - 2, exitH - 2);
     }
     ctx.textAlign = "center";
     ctx.fillStyle = M.cont;

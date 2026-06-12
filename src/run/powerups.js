@@ -9,9 +9,7 @@
 // Acquisition is the spec's two channels: world drops (rolled on enemy death from
 // the `loot` RNG sub-stream, kept independent of gen/spawns) and shops (spend
 // `runState.scrap`). Both end in the same `applyHeld` rebuild.
-import { recomputeDerived } from "./combat.js";
-
-const STAT_KEYS = ["speed", "constitution", "strength", "magic"];
+import { recomputeDerived, STAT_KEYS } from "./combat.js";
 
 // Powerup registry (spec-07 `powerups.json`, as a synchronous ES module — the
 // slice ships no build step or fetch(), same call balance.js makes). `kind: stat`

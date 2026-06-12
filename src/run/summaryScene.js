@@ -4,7 +4,7 @@
 // from the pre-commit blob so the numbers are exact. Then it shows the payout
 // breakdown and waits for a single confirm to advance to META.
 import { THEME } from "./balance.js";
-import { load, save, recordRun, computePayout } from "../meta/save.js";
+import { load, save, recordRun, computePayout, PAYOUT } from "../meta/save.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 
@@ -17,9 +17,22 @@ export function createSummaryScene(ctx, input, result, nextSeed) {
   const newUnlocks = after.unlockedHeroes.filter((id) => !before.unlockedHeroes.includes(id));
   const bestBeaten = result.distanceFraction > before.stats.bestDistance && !result.won;
 
-  const distCredits = Math.round(result.distanceFraction * 100); // PAYOUT.distance = 100
-  const killCredits = result.kills * 2;                          // PAYOUT.perKill = 2
-  const distPct = Math.round(result.distanceFraction * 100);
+  const S = THEME.summary;
+  const distCredits = Math.round(result.distanceFraction * PAYOUT.distance);
+  const killCredits = result.kills * PAYOUT.perKill;
+  const distPct = Math.round(result.distanceFraction * 100); // a percentage, not the payout
+
+  // Payout breakdown rows, built once (the screen is static). [label, value, color];
+  // a null label renders the divider rule instead of a text row.
+  const rows = [
+    ["Distance", `+${distCredits}`, S.plus],
+    [`Kills (${result.kills})`, `+${killCredits}`, S.plus],
+  ];
+  if (result.won) rows.push(["Made it home", `+${PAYOUT.win}`, S.plus]);
+  rows.push([null, "", ""]);
+  rows.push(["Earned", `+${payout}`, S.plus]);
+  if (!result.won) rows.push(["Scrap lost", `${result.scrapDiscarded}`, S.lost]);
+  rows.push(["Banked", `${after.credits}`, S.value]);
 
   let armed = false, done = false; // require confirm release before accepting (held
   // SPACE from firing at the moment of death must not instantly skip the screen)
@@ -30,7 +43,6 @@ export function createSummaryScene(ctx, input, result, nextSeed) {
   }
 
   function render() {
-    const S = THEME.summary;
     ctx.fillStyle = S.bg;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
@@ -49,20 +61,12 @@ export function createSummaryScene(ctx, input, result, nextSeed) {
       ctx.fillText(`Got ${distPct}% of the way${result.cause ? " — " + result.cause : ""}.`, VIEW_W / 2, 158);
     }
 
-    // Left-aligned monospaced payout table, centered as a block.
-    const rows = [["Distance", `+${distCredits}`, S.plus]];
-    rows.push([`Kills (${result.kills})`, `+${killCredits}`, S.plus]);
-    if (result.won) rows.push(["Made it home", "+150", S.plus]);
-    rows.push(["__rule__", "", ""]);
-    rows.push(["Earned", `+${payout}`, S.plus]);
-    if (!result.won) rows.push(["Scrap lost", `${result.scrapDiscarded}`, S.lost]);
-    rows.push(["Banked", `${after.credits}`, S.value]);
-
+    // Left-aligned monospaced payout table, centered as a block (rows built once).
     ctx.font = S.rowFont;
     const labelX = VIEW_W / 2 - 150, valueX = VIEW_W / 2 + 150;
     let y = 220;
     for (const [label, value, color] of rows) {
-      if (label === "__rule__") {
+      if (label === null) {
         ctx.strokeStyle = S.rule;
         ctx.beginPath();
         ctx.moveTo(labelX, y - 6);

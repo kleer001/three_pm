@@ -27,7 +27,7 @@ const TILE_COLOR = THEME.tile; // indexed by tile id (see TILE in levelgen.js)
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
-export function createRunScene(ctx, input, seed, weaponId, saveBlob) {
+export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   const level = generate(seed, {
     w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS,
     wallScaleX: BALANCE.wall.scaleX, wallScaleY: BALANCE.wall.scaleY, wallDensity: BALANCE.wall.density,
@@ -58,12 +58,19 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob) {
   };
   // Meta upgrades (spec 08) fold into base stats before derive — permanent boosts
   // bought between runs, applied once at run start (vs. powerups, applied mid-run).
-  applyHeroUpgrades(hero, "marvin", saveBlob, BALANCE.derive);
+  applyHeroUpgrades(hero, heroId, saveBlob, BALANCE.derive);
   hero.hp = hero.derived.maxHp;
   hero.mana = hero.derived.maxMana;
 
-  // Rebuild hero + weapon from base after every acquisition (spec 07 applyHeld).
-  const rebuild = () => applyHeld(hero, weapon, base, runState.powerups, BALANCE.derive, LOOT);
+  // Rebuild hero + weapon from base after every acquisition (spec 07 applyHeld), and
+  // refresh the cached HUD tally so render doesn't rebuild it every frame.
+  let heldLine = "";
+  function rebuild() {
+    applyHeld(hero, weapon, base, runState.powerups, BALANCE.derive, LOOT);
+    const counts = {};
+    for (const id of runState.powerups) counts[id] = (counts[id] || 0) + 1;
+    heldLine = Object.keys(counts).map((id) => POWERUPS[id].name + (counts[id] > 1 ? ` ×${counts[id]}` : "")).join(",  ");
+  }
 
   const pickups = []; // powerup drops lying on the ground, awaiting hero overlap
   const shops = placeShops();
@@ -77,6 +84,8 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob) {
   const heroTargets = [hero]; // the player-faction target list enemy shots resolve against
   let outcome = null;
   let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
+  // One place to end the run as a loss with its cause — every lethal path routes here.
+  const loseRun = (cause) => { outcome = "lose"; deathCause = cause; };
   let prevBuy = false;  // edge-trigger for the shop buy key (one press = one buy)
   let nearShop = null;  // shop the hero is standing on this frame (drives the buy prompt)
 
@@ -180,7 +189,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob) {
     applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
     if (kbMult) knockback(t, kdx, kdy, attacker.derived.knockback * kbMult);
     if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
-    if (t === hero && hero.dead) { outcome = "lose"; deathCause = attacker.def ? attacker.def.name : null; }
+    if (t === hero && hero.dead) loseRun(attacker.def ? attacker.def.name : null);
     else if (t.def && t.dead && !t.looted) onEnemyDeath(t);
   }
 
@@ -219,7 +228,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob) {
   // entity; the run-loss is the hero-specific consequence layered on top.
   function hurtHero(amount, srcName) {
     applyDamage(hero, amount);
-    if (hero.dead) { outcome = "lose"; deathCause = srcName; }
+    if (hero.dead) loseRun(srcName);
   }
 
   // Spec 06's four behavior archetypes, one function per family — the frozen
@@ -512,7 +521,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob) {
     const minY = cam.y + MARGIN;
     if (hero.y < minY) {
       hero.y = minY;
-      if (boxBlocked(level, hero)) { outcome = "lose"; deathCause = "left behind by the dark"; }
+      if (boxBlocked(level, hero)) loseRun("left behind by the dark");
     }
     hero.y = clamp(hero.y, minY, cam.y + VIEW_H - MARGIN);
     cam.x = clamp(hero.x - VIEW_W / 2, 0, mapW - VIEW_W);
@@ -637,15 +646,13 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob) {
     ctx.fillStyle = THEME.hud.text;
     ctx.fillText(hud, 12, 21);
 
-    // Held powerups, tallied (stacks shown ×N) — the run's accumulating build.
-    if (runState.powerups.length) {
-      const counts = {};
-      for (const id of runState.powerups) counts[id] = (counts[id] || 0) + 1;
-      const line = Object.keys(counts).map((id) => POWERUPS[id].name + (counts[id] > 1 ? ` ×${counts[id]}` : "")).join(",  ");
+    // Held powerups, tallied (stacks shown ×N) — the run's accumulating build. The
+    // string is cached in rebuild(); render only draws it.
+    if (heldLine) {
       ctx.fillStyle = THEME.hud.box;
-      ctx.fillRect(6, 32, ctx.measureText(line).width + 12, 20);
+      ctx.fillRect(6, 32, ctx.measureText(heldLine).width + 12, 20);
       ctx.fillStyle = THEME.hud.text;
-      ctx.fillText(line, 12, 46);
+      ctx.fillText(heldLine, 12, 46);
     }
 
     // Shop prompt: name + price, colored by whether the hero can afford it.
@@ -675,7 +682,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob) {
       return {
         distanceFraction: outcome === "win" ? 1 : distanceFraction(hero, level, TS),
         kills: runState.kills, won: outcome === "win",
-        cause: deathCause, heroId: "marvin", seed, scrapDiscarded: runState.scrap,
+        cause: deathCause, heroId, seed, scrapDiscarded: runState.scrap,
       };
     },
   };

@@ -8,11 +8,10 @@
 // Like balance.js and powerups.js, the tuning/content (PAYOUT coefficients, the
 // UPGRADES trees, unlock gates) lives here as a synchronous ES module rather than
 // a fetched JSON file — the slice ships no build step.
-import { recomputeDerived } from "../run/combat.js";
+import { recomputeDerived, STAT_KEYS } from "../run/combat.js";
 
 export const KEY = "threepm:save";
 const VERSION = 1;
-const STAT_KEYS = ["speed", "constitution", "strength", "magic"];
 
 // Payout coefficients (spec 08) — tuning, not contract.
 export const PAYOUT = { distance: 100, perKill: 2, win: 150 };
@@ -114,7 +113,7 @@ export function recordRun(blob, result) {
 export function purchaseUpgrade(blob, heroId, upgradeId) {
   const def = UPGRADES[heroId] && UPGRADES[heroId][upgradeId];
   if (!def) return blob;
-  const rank = (blob.heroUpgrades[heroId] && blob.heroUpgrades[heroId][upgradeId]) || 0;
+  const rank = upgradeRank(blob, heroId, upgradeId);
   if (rank >= def.maxRank) return blob;
   const cost = def.costCurve[rank];
   if (blob.credits < cost) return blob;
@@ -124,15 +123,16 @@ export function purchaseUpgrade(blob, heroId, upgradeId) {
   return blob;
 }
 
-// The current cost to advance an upgrade one rank, or null if maxed — for the META
-// screen's price column.
-export function nextCost(blob, heroId, upgradeId) {
-  const def = UPGRADES[heroId][upgradeId];
-  const rank = (blob.heroUpgrades[heroId] && blob.heroUpgrades[heroId][upgradeId]) || 0;
-  return rank >= def.maxRank ? null : def.costCurve[rank];
-}
+// Current purchased rank of an upgrade (0 = unbought) — the one lookup the helpers
+// and the META screen share.
 export function upgradeRank(blob, heroId, upgradeId) {
   return (blob.heroUpgrades[heroId] && blob.heroUpgrades[heroId][upgradeId]) || 0;
+}
+// The cost to advance an upgrade one rank, or null if maxed — for the price column.
+export function nextCost(blob, heroId, upgradeId) {
+  const def = UPGRADES[heroId][upgradeId];
+  const rank = upgradeRank(blob, heroId, upgradeId);
+  return rank >= def.maxRank ? null : def.costCurve[rank];
 }
 
 // Fold a hero's purchased upgrades into its run-start stats, then derive (spec 08).
