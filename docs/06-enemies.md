@@ -75,6 +75,10 @@ deployable.
 - **shooter** — let `d` = distance to target. If `d > range`, intent toward; if
   `d < range*backoff`, intent away (kite); else intent ≈ 0 (hold). When
   `d ≤ range` and the attack is off cooldown, `useAttack(self, 'shot', aimAtTarget)`.
+  If the def sets `static: true`, the brain holds intent at 0 unconditionally — the
+  shooter never advances or kites, it roots and zones a fixed spot (e.g. a downed
+  Power Line, a Sprinkler Head). `static` is a movement modifier on the shooter
+  behavior, not a fifth behavior; only `shooter` defs read it.
 - **charger** — phases tracked in scratch fields on `entity.brain` (a plain
   object the function owns): `approach` until within lunge range → `telegraph`
   for a fixed windup (intent 0, sprite tell) → `lunge` (intent locked at the
@@ -89,6 +93,7 @@ enemies.json = {
   "<id>": {
     name, family, tier,                  // tier: 1 = weakest variant of the family
     behavior,                            // chaser | shooter | charger | swarmer
+    static?,                             // shooter only: if true, roots in place (no advance/kite)
     stats: { speed, constitution, strength, magic },   // 1–10
     contactDamage,                       // damage on overlap (chaser/swarmer; 0 if none)
     attack?: Attack,                     // spec 04 descriptor; shooter/charger only
@@ -204,7 +209,8 @@ not in front of their eyes. Same seed → same spawn sequence.
 - `enemies.json` entry schema above; `family` / `tier` / `threatValue` /
   `distanceBand` fields.
 - `spawn('enemy:<id>')` builds an enemy (brain via `brainFor`, `contactDamage`,
-  optional `attack` under the brain's attack id, `mana` iff `manaCost > 0`).
+  optional `attack` under the brain's attack id, `mana` iff `manaCost > 0`); a
+  `static: true` shooter holds movement intent at 0 (roots/zones).
 - Director contract: `budget(f)` monotonic in distance fraction `f`,
   `distanceBand` eligibility gate, off-screen region placement, `spawns` RNG
   sub-stream. Enemies enter only via the director into `Level.regions`.

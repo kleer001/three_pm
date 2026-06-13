@@ -16,6 +16,12 @@ no new combat machinery and no new AI: every enemy is still one of the four spec
   peaks on the home stretch, so difficulty rises *diegetically* as you descend.
 - **Enemies are dumb mobs.** A short looping sprite, a behavior, and at most one
   weapon (contact, ranged, or a melee lunge). They emit nothing and gain nothing.
+- **Ambulatory vs static.** Each family is either **ambulatory** (moves per its
+  behavior) or **static** (rooted — never repositions, only aims and fires).
+  Static is a movement modifier on the `shooter` behavior, not a new behavior: a
+  static shooter pins its move-intent to 0 and zones a fixed spot (e.g. a downed
+  Power Line). `chaser` / `swarmer` / `charger` are always ambulatory. Each table
+  marks the family's **Move** state.
 - **Tiers are numbers, not new art** (spec 06: tiers never change behavior). One
   global rule for every family:
   - **Tier 1** — 80% size, base palette. Spawns from the top.
@@ -40,12 +46,12 @@ nightfall at home). Streetlights punch light-pools in the dark; outside them ene
 sprites dim and get harder to track, so the pools read as safer lanes. Render-layer
 only.
 
-| Family | Behavior | What it is | Weapon | Tiers |
-|---|---|---|---|---|
-| **Were-Coyote** | `chaser` | SoCal coyote, turned; lopes at you | contact | 3 |
-| **Sprinkler Head** | `shooter` | pops from lawns, sweep-fires water-bolts | ranged | 3 |
-| **Garden Gnome** | `swarmer` | animated ceramic gnomes in a pack | contact | 2 |
-| **Ice Cream Truck** | `charger` | distant jingle, then barrels at you | melee ram | 2 |
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Were-Coyote** | `chaser` | ambulatory | SoCal coyote, turned; lopes at you | contact | 3 |
+| **Sprinkler Head** | `shooter` | static | pops from lawns, sweep-fires water-bolts | ranged | 3 |
+| **Garden Gnome** | `swarmer` | ambulatory | animated ceramic gnomes in a pack | contact | 2 |
+| **Ice Cream Truck** | `charger` | ambulatory | distant jingle, then barrels at you | melee ram | 2 |
 
 ---
 
@@ -58,12 +64,12 @@ glowstick smears on rotted stucco, blacklight purple-on-black.
 lit; you read threats as floating glows. Ramps with `f` (dimmest near home).
 Render-layer only.
 
-| Family | Behavior | What it is | Weapon | Tiers |
-|---|---|---|---|---|
-| **Glowstick Ghoul** | `chaser` | neon ghoul, walks at you | contact | 3 |
-| **The Decks** | `shooter` | floating spectre over a turntable | ranged sound-bolt | 3 |
-| **Kandi** | `swarmer` | little bead-things in packs | contact | 2 |
-| **Subwoofer** | `charger` | speaker on legs, lunges | melee slam | 2 |
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Glowstick Ghoul** | `chaser` | ambulatory | neon ghoul, walks at you | contact | 3 |
+| **The Decks** | `shooter` | static | spectre rooted at a turntable | ranged sound-bolt | 3 |
+| **Kandi** | `swarmer` | ambulatory | little bead-things in packs | contact | 2 |
+| **Subwoofer** | `charger` | ambulatory | speaker on legs, lunges | melee slam | 2 |
 
 ---
 
@@ -78,12 +84,12 @@ tract homes, palms under frost. Whiteout, not dusk.
 momentum and slide instead of stopping. Gets glassier as `f` climbs, so the home
 stretch is a skating rink. A friction term in the movement integrator.
 
-| Family | Behavior | What it is | Weapon | Tiers |
-|---|---|---|---|---|
-| **Snowman** | `chaser` | animated snowman, slides at you | contact | 3 |
-| **Frost Wisp** | `shooter` | floating frost spirit, lobs icicles | ranged shard | 3 |
-| **Snowball** | `swarmer` | rolling snowballs in packs | contact | 2 |
-| **Yeti** | `charger` | hulking beast, lunges | melee slam | 2 |
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Snowman** | `chaser` | ambulatory | animated snowman, slides at you | contact | 3 |
+| **Frost Wisp** | `shooter` | ambulatory | floating frost spirit, lobs icicles | ranged shard | 3 |
+| **Snowball** | `swarmer` | ambulatory | rolling snowballs in packs | contact | 2 |
+| **Yeti** | `charger` | ambulatory | hulking beast, lunges | melee slam | 2 |
 
 ---
 
@@ -99,12 +105,12 @@ enemies, *and projectiles* — shots curve with or against it, so aiming changes
 the whole run. Direction is set per-day by seed; strength ramps with `f`. A wind
 vector in the movement integrator.
 
-| Family | Behavior | What it is | Weapon | Tiers |
-|---|---|---|---|---|
-| **Cinder Ghoul** | `chaser` | charred husk, stumbles at you | contact | 3 |
-| **Ash Wraith** | `shooter` | floating smoke spirit, lobs fireballs | ranged ember | 3 |
-| **Sparks** | `swarmer` | swarm of flying embers | contact | 2 |
-| **Burning Tumbleweed** | `charger` | flaming tumbleweed, hurled at you | melee roll | 2 |
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Cinder Ghoul** | `chaser` | ambulatory | charred husk, stumbles at you | contact | 3 |
+| **Ash Wraith** | `shooter` | ambulatory | floating smoke spirit, lobs fireballs | ranged ember | 3 |
+| **Sparks** | `swarmer` | ambulatory | swarm of flying embers | contact | 2 |
+| **Burning Tumbleweed** | `charger` | ambulatory | flaming tumbleweed, hurled at you | melee roll | 2 |
 
 ---
 
@@ -120,9 +126,30 @@ half-submerged cars, palms dripping, debris everywhere.
 **FX — "downpour":** a full-screen rain overlay and slick, waterlogged ground tiles
 that darken as `f` climbs. Purely cosmetic render-layer — no movement effect.
 
-| Family | Behavior | What it is | Weapon | Tiers |
-|---|---|---|---|---|
-| **Drowned** | `chaser` | waterlogged ghoul, shambles at you | contact | 3 |
-| **Storm Cloud** | `shooter` | floating cloud, spits rain-bolts | ranged bolt | 3 |
-| **Piranha** | `swarmer` | fish drifting through the streets in packs | contact | 2 |
-| **Shark** | `charger` | a fin gliding the streets, lunges | melee bite | 2 |
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Drowned** | `chaser` | ambulatory | waterlogged ghoul, shambles at you | contact | 3 |
+| **Storm Cloud** | `shooter` | ambulatory | floating cloud, spits rain-bolts | ranged bolt | 3 |
+| **Piranha** | `swarmer` | ambulatory | fish drifting through the streets in packs | contact | 2 |
+| **Shark** | `charger` | ambulatory | a fin gliding the streets, lunges | melee bite | 2 |
+
+---
+
+## Biome 06 — Earthquake / The Big One
+
+The ground itself betrays you.
+
+**Looks:** buckled streets, split asphalt, toppled fences, sagging power lines, dust
+haze, houses slumped off their foundations.
+
+**FX — "aftershocks":** the screen periodically shakes and fissures crack open
+across the ground — brief hazard gaps to route around. Quakes hit harder and
+fissures open wider/longer as `f` climbs. Telegraphed dodge pressure (rumble + a
+crack appearing), not a movement-feel change.
+
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Rubble Golem** | `chaser` | ambulatory | animated heap of debris, lurches at you | contact | 3 |
+| **Power Line** | `shooter` | static | downed live wire, whips electric bolts | ranged zap | 3 |
+| **Gravel** | `swarmer` | ambulatory | skittering chunks of broken road in packs | contact | 2 |
+| **Boulder** | `charger` | ambulatory | dislodged rock, rolls you down | melee roll | 2 |
