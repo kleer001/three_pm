@@ -16,6 +16,10 @@ no new combat machinery and no new AI: every enemy is still one of the four spec
   peaks on the home stretch, so difficulty rises *diegetically* as you descend.
 - **Enemies are dumb mobs.** A short looping sprite, a behavior, and at most one
   weapon (contact, ranged, or a melee lunge). They emit nothing and gain nothing.
+- **One sprite, 4 frames, flip-only.** Every enemy is a 4-frame looping sprite,
+  oriented solely by horizontal flip to face the player — no sprite rotation. A
+  roll/tumble reads as a 4-frame spin *loop*, never a transform; nothing tips,
+  topples, or pivots.
 - **Ambulatory vs static.** Each family is either **ambulatory** (moves per its
   behavior) or **static** (rooted — never repositions, only aims and fires).
   Static is a movement modifier on the `shooter` behavior, not a new behavior: a
@@ -200,3 +204,28 @@ swimming. Render-layer only; no movement effect.
 
 **Twists:** the static **Idol** arrives as an **escort** behind a wall of Deep Ones;
 its tier-3 spits a **spread** of green bolts.
+
+---
+
+## Biome 08 — Dead Mall
+
+The half-abandoned commercial strip the kids cut through every day, gone feral
+after 3pm.
+
+**Looks:** a cracked-asphalt parking lot and a row of failed storefronts —
+soaped-over windows, a dead fountain, flickering signage, shopping carts adrift, a
+sun-bleached anchor-store husk.
+
+**FX — "power surges":** the dying grid browns out and spikes — the level dims to
+emergency-red, then signage and sparks flare too-bright in pulses. Surges hit harder
+and the dark stretches longer as `f` climbs. Render-layer only; nothing syncs to it.
+
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Mannequin** | `chaser` | ambulatory | display dummy, jerks toward you | contact | 3 |
+| **Gumball Machine** | `shooter` | static | rooted globe, spits gumballs | ranged | 3 |
+| **Rats** | `swarmer` | ambulatory | mall rats, scurry in packs | contact | 2 |
+| **Soda Machine** | `charger` | ambulatory | rushes you and slams (upright, never tips) | melee slam | 2 |
+
+**Twists:** the static **Gumball Machine** arrives as an **escort** behind a
+Mannequin screen; its tier-3 coughs a **spread** of gumballs.
