@@ -106,7 +106,10 @@ export const BALANCE = {
     bat:    { name: "Bat",    shape: "melee-arc", cd: 0.8,  radius: 67, arc: 110, freeze: false, manaCost: 0, knockback: 1,   damage: { scaling: "strength", base: 6.8, ratio: 1.19, pctMax: 0.068, pctCur: 0 }, desc: "wide swing" },
     cleave: { name: "Cleave", shape: "melee-arc", cd: 0.9,  radius: 64, arc: 130, freeze: false, manaCost: 0, knockback: 2.5, damage: { scaling: "strength", base: 14, ratio: 1.8, pctMax: 0.10, pctCur: 0 }, desc: "heavy hit + big knockback" },
     spear:  { name: "Spear",  shape: "melee-arc", cd: 0.45, radius: 84, arc: 45,  freeze: false, manaCost: 0, knockback: 1,   damage: { scaling: "strength", base: 7,  ratio: 1.2, pctMax: 0.06, pctCur: 0 }, desc: "long narrow thrust" },
-    whirl:  { name: "Whirl",  shape: "melee-arc", cd: 0.8,  radius: 60, arc: 360, freeze: false, manaCost: 0, knockback: 1.5, damage: { scaling: "strength", base: 9,  ratio: 1.3, pctMax: 0.09, pctCur: 0 }, desc: "360° spin around you" },
+    // `autofire: "cooldown"` (default is "range", i.e. only fire when a target is
+    // in reach/range) — Whirl is free, aimless, and centered on you, so it spins
+    // every cooldown as constant area denial rather than waiting for contact.
+    whirl:  { name: "Whirl",  shape: "melee-arc", cd: 0.8,  radius: 60, arc: 360, freeze: false, manaCost: 0, knockback: 1.5, autofire: "cooldown", damage: { scaling: "strength", base: 9,  ratio: 1.3, pctMax: 0.09, pctCur: 0 }, desc: "360° spin around you" },
   },
 
   // Enemy roster — spec 06's four families × tiers, now on the spec-03 stat model:
@@ -218,6 +221,9 @@ export const THEME = {
     label: "rgba(0,0,0,0.7)", labelText: "#fff", labelFont: "13px system-ui, sans-serif", afford: "#3ddc97", broke: "#e57373" },
   bar: { back: "rgba(0,0,0,0.5)", hp: "#e74c3c", mana: "#3498db", tapped: "rgba(52,152,219,0.25)", w: 26, h: 3, gap: 2 },
   hud: { font: "14px system-ui, sans-serif", box: "rgba(255,255,255,0.75)", text: "#111" },
+  // Floating touch joystick: a faint ring at the press origin + a dot at the finger,
+  // drawn only while a drag is live. Minimal, non-skeuomorphic.
+  joystick: { ring: "rgba(255,255,255,0.25)", knob: "rgba(255,255,255,0.55)", knobR: 16 },
   // Floating damage numbers: rise `rise` px/s, live `dur` s, fade out. `alpha` caps
   // opacity so they read as ghosted, not solid. White for every hit, for legibility.
   hitNumber: { font: "bold 15px system-ui, sans-serif", color: "#fff", rise: 36, dur: 0.7, alpha: 0.8 },
