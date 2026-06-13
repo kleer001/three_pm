@@ -27,6 +27,13 @@ export const POWERUPS = {
 
   needle_tip:    { name: "Needle Tip",    blurb: "shots pierce the line", rarity: "rare", kind: "weapon", mods: { pierce: true }, cost: 44 },
   cold_snap:     { name: "Cold Snap",     blurb: "hits freeze", rarity: "rare", kind: "weapon", mods: { freeze: true }, cost: 48 },
+
+  // Timed buffs (docs/19) — not held mods but a live, expiring effect the run applies
+  // directly (see runScene `acquire`/`activeBuffs`), so they never enter applyHeld.
+  // `effect` picks the channel: "speed" multiplies the head's move speed, "time"
+  // scales the whole sim (bullet-time, the head stays fast). `duration` in seconds.
+  bpm_boost:     { name: "BPM Boost", blurb: "burst of speed", rarity: "uncommon", kind: "buff", effect: "speed", mult: 1.6, duration: 6, cost: 26 },
+  slow_jam:      { name: "Slow Jam",  blurb: "bullet-time",    rarity: "rare",     kind: "buff", effect: "time",  mult: 0.5, duration: 5, cost: 46 },
 };
 
 // Synergies (spec-07 `synergies.json`): a combo gated on a held-set. `requires` ids

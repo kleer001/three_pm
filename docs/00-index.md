@@ -60,6 +60,7 @@ with new heroes **unlocked by run count**. Win = reach the south home band.
 | 14 | Story & tone bible | Premise, watch lore, cartoon-terror | None (content/tone reference only); dresses specs 01/02/05/06/09/10–13 |
 | 15 | Run summary: DEATH/VICTORY | The two resolution scenes | `RunResult` shape, commit-once flow (`save(recordRun(load(),result))` guarded by `_committed`), end-reason mapping, payout breakdown lines, `(DEATH\|VICTORY)→META` wiring |
 | 16 | Title, menus, scene flow | Completes the scene FSM | Full scene graph, `HERO-SELECT` (sole commit path into `RUN.enter()`) + `PAUSE` overlay, TITLE/SETTINGS items + gain sliders, added-scene music, shared menu focus model |
+| 19 | Roster: the nine | 9-hero music-genre cast + signatures | Nine heroes (one per genre), per-hero signature names + mechanics, conga-train signature constraint, BPM Boost / Slow Jam powerups, net-new effect primitives (slow/confuse/DoT/passive-heal/turret/charge/time-scale); supersedes spec 05's five-hero cast |
 
 ## Frozen-interface cross-reference
 Each major engine contract and the spec that owns it. Consumers must route

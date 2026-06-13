@@ -9,6 +9,7 @@
 // UPGRADES trees, unlock gates) lives here as a synchronous ES module rather than
 // a fetched JSON file — the slice ships no build step.
 import { recomputeDerived, STAT_KEYS } from "../run/combat.js";
+import { BALANCE } from "../run/balance.js";
 
 export const KEY = "threepm:save";
 const VERSION = 1;
@@ -16,9 +17,9 @@ const VERSION = 1;
 // Payout coefficients (spec 08) — tuning, not contract.
 export const PAYOUT = { distance: 100, perKill: 2, win: 150 };
 
-// Hero unlock gates: runCount ≥ value (spec 05). The slice ships only Marvin; the
-// gate machinery is here for forward-compat with the rest of the roster.
-export const HERO_UNLOCKS = { marvin: 0 };
+// Hero unlock gates: runCount ≥ value (spec 05), read straight off the cast roster
+// (balance.js) so the data has one home. Adding/regating a character is a roster edit.
+export const HERO_UNLOCKS = Object.fromEntries(BALANCE.roster.map((c) => [c.id, c.unlockAtRuns]));
 
 // Per-hero permanent upgrade trees (spec 08 upgrades.json). `apply` mirrors the
 // spec-07 stat payload: deltas on the hero's base stats, scaled by purchased rank,

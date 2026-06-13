@@ -35,25 +35,49 @@ export const BALANCE = {
   // mana regen) and faction live here.
   hero: { stats: { speed: 5, constitution: 5, strength: 5, magic: 5 }, faction: "player", iframeDur: 0.8, r: 13, manaRegen: 8 },
 
-  // Follower train (spec-18 party, slice stand-in): hero clones that trail one tile
-  // back, auto-fire their own weapon, and permadie (HP gone or crushed by the dark).
+  // Follower-train physics (spec-18 party, slice stand-in): hero clones that trail one
+  // tile back, auto-fire their own weapon, and permadie (HP gone or crushed by the dark).
   // `iframeDur` is shorter than the hero's 0.8s so they chip faster — but non-zero,
   // because enemy contact damage applies every frame on overlap and would otherwise
-  // instakill. `gapTiles` is the center-to-center spacing along the trail.
-  //
-  // `roster` is pure data: one entry per follower (the player's head is separate),
-  // each a `weaponId` into `weapons` and a body `color`. The render and combat code
-  // reads it generically, so resizing the train or re-skinning it is a data edit
-  // only. These four + the player's head make the five-strong party (the docs' cast),
-  // spanning a weapon-shape spread (melee-arc, projectile, pierce, nova) for testing.
-  follower: {
-    iframeDur: 0.4, gapTiles: 1, manaRegen: 8,
-    roster: [
-      { weaponId: "bat",       color: "#1abc9c" },
-      { weaponId: "slingshot", color: "#e84393" },
-      { weaponId: "beam",      color: "#ff7675" },
-      { weaponId: "nova",      color: "#ecf0f1" },
-    ],
+  // instakill. `gapTiles` is the center-to-center spacing along the trail. (The party
+  // itself is chosen from `roster` below — these are just the trailing knobs.)
+  follower: { iframeDur: 0.4, gapTiles: 1, manaRegen: 8 },
+
+  // The nine (docs/19): one hero per electronic genre, the merged cast. `weaponId`
+  // is the basic (auto-fired); `signatureId` keys the genre signature (own cooldown,
+  // fired from the hero/segment). `stats` are 1–10 (5 = Marvin baseline); `color` is
+  // the body disc until sprites land (matches the look-bible portrait field). The five
+  // carried-over heroes unlock at 0; the four new ones gate by run count. The party-
+  // select reads this generically; the chosen party is the in-run head (party[0]) + train.
+  partyMax: 5,
+  roster: [
+    { id: "marvin",    name: "Marvin",    genre: "House",      color: "#f5c518", weaponId: "slingshot", signatureId: "good_vibes",   stats: { speed: 5, constitution: 5, strength: 5, magic: 5 }, unlockAtRuns: 0 },
+    { id: "chad",      name: "Chad",      genre: "Industrial", color: "#e8743b", weaponId: "cleave",    signatureId: "mosh_pit",     stats: { speed: 5, constitution: 8, strength: 8, magic: 2 }, unlockAtRuns: 0 },
+    { id: "dash",      name: "Dash",      genre: "Psytrance",  color: "#d6336c", weaponId: "spear",     signatureId: "redline",      stats: { speed: 9, constitution: 3, strength: 5, magic: 3 }, unlockAtRuns: 0 },
+    { id: "wendolyn",  name: "Wendolyn",  genre: "Dubtechno",  color: "#0b7285", weaponId: "hex",       signatureId: "deep_freeze",  stats: { speed: 5, constitution: 3, strength: 2, magic: 9 }, unlockAtRuns: 0 },
+    { id: "eugene",    name: "Eugene",    genre: "Techno",     color: "#4dabf7", weaponId: "slingshot", signatureId: "drum_machine", stats: { speed: 4, constitution: 5, strength: 3, magic: 7 }, unlockAtRuns: 0 },
+    { id: "jess",      name: "Jess",      genre: "Trance",     color: "#e64980", weaponId: "hex",       signatureId: "the_drop",     stats: { speed: 5, constitution: 5, strength: 4, magic: 7 }, unlockAtRuns: 1 },
+    { id: "zigzag",    name: "ZigZag",    genre: "Acid",       color: "#82c91e", weaponId: "hex",       signatureId: "bad_trip",     stats: { speed: 6, constitution: 4, strength: 3, magic: 7 }, unlockAtRuns: 2 },
+    { id: "jasper",    name: "Jasper",    genre: "Ambient",    color: "#b197fc", weaponId: "hex",       signatureId: "chill_zone",   stats: { speed: 4, constitution: 6, strength: 3, magic: 6 }, unlockAtRuns: 3 },
+    { id: "valentine", name: "Valentine", genre: "Synthwave",  color: "#cc5de8", weaponId: "slingshot", signatureId: "flashback",    stats: { speed: 6, constitution: 5, strength: 4, magic: 6 }, unlockAtRuns: 4 },
+  ],
+
+  // Hero signatures (docs/19): one genre kit each, auto-fired from the hero/segment on
+  // its own cooldown (`sigCd`), separate from the basic weapon. Same spec-04 attack
+  // schema as `weapons` plus net-new shapes: `heal` (passive HP regen, no fire),
+  // `deploy` (drop a persistent turret), `confuse` (turn enemies on each other),
+  // `charge` (build a meter from damage, release a nova). `slow`/`slowDur` add the
+  // enemy move-speed debuff; `fuse` delays a bomb's detonation.
+  signatures: {
+    mosh_pit:     { name: "Mosh Pit",     shape: "nova", cd: 3.5, radius: 120, freeze: false, manaCost: 0,  knockback: 3, damage: { scaling: "strength", base: 7, ratio: 0.8, pctMax: 0.08, pctCur: 0 } },
+    redline:      { name: "Redline",      shape: "projectile", cd: 0.14, speed: 540, range: 360, shotR: 4, life: 0.8, freeze: false, manaCost: 0, knockback: 0, damage: { scaling: "strength", base: 1, ratio: 0.3, pctMax: 0, pctCur: 0 } },
+    deep_freeze:  { name: "Deep Freeze",  shape: "nova", cd: 6, radius: 130, freeze: true, manaCost: 12, knockback: 1, damage: { scaling: "magic", base: 3, ratio: 0.3, pctMax: 0, pctCur: 0 } },
+    flashback:    { name: "Flashback",    shape: "bomb", cd: 2.2, speed: 300, range: 440, shotR: 6, life: 1.4, radius: 150, fuse: 1.6, freeze: false, manaCost: 6, knockback: 1, impact: { scaling: "magic", base: 2, ratio: 0.2 }, damage: { scaling: "magic", base: 6, ratio: 0.7, pctMax: 0.12, pctCur: 0 } },
+    chill_zone:   { name: "Chill Zone",   shape: "field", cd: 6, range: 360, radius: 112, lifespan: 4.5, tickInterval: 0.5, slow: 0.5, slowDur: 0.9, freeze: false, manaCost: 14, knockback: 0, damage: { scaling: "magic", base: 1, ratio: 0.25, pctMax: 0.03, pctCur: 0 } },
+    good_vibes:   { name: "Good Vibes",   shape: "heal", hpPerSec: 1.6 },
+    drum_machine: { name: "Drum Machine", shape: "deploy", cd: 4, manaCost: 16, maxActive: 3, life: 8, turretId: "slingshot" },
+    bad_trip:     { name: "Bad Trip",     shape: "confuse", cd: 6, radius: 150, confuseDur: 2.5, manaCost: 14 },
+    the_drop:     { name: "The Drop",     shape: "charge", radius: 150, threshold: 55, freeze: false, manaCost: 0, knockback: 4, takenScale: 0.8, damage: { scaling: "magic", base: 4, ratio: 0.4, pctMax: 0, pctCur: 0 } },
   },
 
   // Player arsenal — all are offered on the select screen each run; one is fired
@@ -174,12 +198,17 @@ export const THEME = {
   corpse: "#2b2622",
   enemyShot: { r: 5, color: "#145a32" },
   weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6", beam: "#1abc9c", bomb: "#e67e22", nova: "#f5d76e", field: "#8e44ad",
-    bat: "#bdc3c7", cleave: "#e74c3c", spear: "#95a5a6", whirl: "#f39c12" }, // weapon color (shot + select swatch), keyed by id
+    bat: "#bdc3c7", cleave: "#e74c3c", spear: "#95a5a6", whirl: "#f39c12",
+    redline: "#ff6b6b", flashback: "#cc5de8" }, // weapon color (shot + select swatch), keyed by id
   blast: { ring: "rgba(255,240,200,0.85)", dur: 0.28 }, // expanding ring for nova/bomb detonations
   beam: { width: 16 }, // max stroke width of a piercing shot drawn as a beam (thin→thick→fade over its life)
   melee: { swing: "rgba(255,255,255,0.7)", dur: 0.15 }, // quick wedge flash for melee swings
   field: { fill: "rgba(155,89,182,0.16)", ring: "rgba(155,89,182,0.45)" }, // lingering zone disc
   freeze: { fill: "rgba(150,205,255,0.55)", ring: "rgba(190,230,255,0.9)", ringPad: 2 },
+  slow: { fill: "rgba(140,150,255,0.20)" },                                    // Chill Zone debuff tint
+  confuse: { fill: "rgba(190,120,255,0.45)", ring: "rgba(215,160,255,0.9)" },  // Bad Trip tint
+  deploy: { fill: "#34506e", ring: "#6aa9ff" },                               // Drum Machine turret
+  charge: { fill: "#f5d76e" },                                                 // The Drop meter fill
   rangedTelegraph: { ring: "rgba(39,174,96,0.9)", line: "rgba(39,174,96,0.5)", ringPad: 5 },
   chargerTelegraph: { ring: "rgba(231,76,60,0.85)", line: "rgba(231,76,60,0.6)", lunge: "rgba(255,120,90,0.9)", ringPad: 6 },
   hero: { hit: "#7fb3ff", normal: "#2d6cdf" },
@@ -201,4 +230,9 @@ export const THEME = {
     titleFont: "34px system-ui, sans-serif", subFont: "16px system-ui, sans-serif", rowFont: "16px ui-monospace, monospace", ctaFont: "16px system-ui, sans-serif" },
   meta: { bg: "#121417", title: "#fff", credits: "#f5d76e", row: "#222630", rowActive: "#313947", border: "#6aa9ff", name: "#fff", blurb: "#9aa3af", rank: "#cfd6df", cost: "#7ed6a5", broke: "#c97b6a", maxed: "#6f7782", cont: "#7ed6a5", hint: "#7a818c",
     titleFont: "28px system-ui, sans-serif", creditsFont: "18px system-ui, sans-serif", nameFont: "18px system-ui, sans-serif", blurbFont: "13px system-ui, sans-serif", costFont: "15px ui-monospace, monospace", hintFont: "14px system-ui, sans-serif" },
+  // Party-select grid (the cast picker). Cards carry the placeholder portrait + weapon;
+  // `badge` is the selection-order chip, `lockTint` veils a still-gated character.
+  party: { bg: "#161616", title: "#fff", card: "#242424", cardActive: "#3a3a3a", border: "#6aa9ff", name: "#fff", weapon: "#bbb", hint: "#999",
+    badge: "#6aa9ff", badgeText: "#0c0c0c", lockTint: "rgba(20,20,20,0.66)", lockText: "#888", start: "#7ed6a5", startOff: "#5b6b60",
+    titleFont: "28px system-ui, sans-serif", nameFont: "16px system-ui, sans-serif", weaponFont: "13px system-ui, sans-serif", badgeFont: "bold 15px system-ui, sans-serif", lockFont: "13px system-ui, sans-serif", hintFont: "14px system-ui, sans-serif" },
 };

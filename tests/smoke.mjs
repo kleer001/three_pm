@@ -11,7 +11,7 @@ import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgra
 import { BALANCE, THEME } from "../src/run/balance.js";
 
 const freshBlob = () => ({
-  version: 1, credits: 0, runCount: 0, unlockedHeroes: ["marvin"], heroUpgrades: {},
+  version: 1, credits: 0, runCount: 0, unlockedHeroes: recomputeUnlocks(0), heroUpgrades: {},
   stats: { wins: 0, bestDistance: 0, totalKills: 0 },
 });
 
@@ -252,7 +252,7 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
 
   // Every registry entry is well-formed (the loader contract, validated up front).
   for (const [id, d] of Object.entries(POWERUPS)) {
-    ok(d.kind === "stat" || d.kind === "weapon", `powerup ${id}: known kind`);
+    ok(d.kind === "stat" || d.kind === "weapon" || d.kind === "buff", `powerup ${id}: known kind`);
     ok(typeof d.cost === "number" && d.cost > 0, `powerup ${id}: has a shop cost`);
     ok(L.rarityWeight[d.rarity], `powerup ${id}: rarity has a drop weight`);
   }
@@ -345,9 +345,14 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   ok(hero.stats[k] === 5 + def.apply[k] * 2, "applyHeroUpgrades scales stat delta by rank");
   ok(hero.derived && hero.derived.maxHp > 0, "applyHeroUpgrades derives after folding stats");
 
-  // Unlock gate: runCount >= unlockAtRuns; Marvin always unlocked.
-  ok(recomputeUnlocks(0).includes("marvin"), "marvin unlocked from the first load");
-  ok(isHeroUnlocked(freshBlob(), "marvin"), "isHeroUnlocked: marvin");
+  // Unlock gate: runCount >= unlockAtRuns. A run-0 character is always available; a
+  // later-gated one is locked early and opens once runCount reaches its gate.
+  const day0 = BALANCE.roster.find((c) => c.unlockAtRuns === 0).id;
+  const gated = BALANCE.roster.find((c) => c.unlockAtRuns > 0);
+  ok(recomputeUnlocks(0).includes(day0), "run-0 character unlocked from the first load");
+  ok(isHeroUnlocked(freshBlob(), day0), "isHeroUnlocked: run-0 character");
+  ok(!recomputeUnlocks(gated.unlockAtRuns - 1).includes(gated.id), "gated character locked before its run");
+  ok(recomputeUnlocks(gated.unlockAtRuns).includes(gated.id), "gated character unlocks at its run");
 }
 
 console.log(failures === 0

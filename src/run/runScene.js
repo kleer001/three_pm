@@ -27,7 +27,7 @@ const TILE_COLOR = THEME.tile; // indexed by tile id (see TILE in levelgen.js)
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
-export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
+export function createRunScene(ctx, input, seed, party, saveBlob) {
   const level = generate(seed, {
     w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS,
     wallScaleX: BALANCE.wall.scaleX, wallScaleY: BALANCE.wall.scaleY, wallDensity: BALANCE.wall.density,
@@ -43,8 +43,24 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // Run-scoped progression (spec 07 runState): held powerup ids (repeats = stacks)
   // and the single in-run currency. `base` is the normalized rebuild snapshot the
   // hero + weapon are replayed from on every acquisition.
+  // The chosen party (ids, head first): party[0] is the controllable head, the rest
+  // trail as the follower train. Resolve to roster defs (slice stub: baseline stats +
+  // one weapon + a color per character; real per-hero data lands later).
+  const ROSTER = Object.fromEntries(BALANCE.roster.map((c) => [c.id, c]));
+  const head = ROSTER[party[0]];
+  const followerDefs = party.slice(1).map((id) => ROSTER[id]);
+
+  // Resolve a signature id (docs/19) to a live per-entity copy; deep-copy its damage so
+  // per-entity mods / The Drop's charge math don't mutate the shared def.
+  const resolveSig = (id) => {
+    if (!id) return null;
+    const s = BALANCE.signatures[id];
+    return { id, ...s, damage: s.damage ? { ...s.damage } : undefined };
+  };
+
   const runState = { scrap: 0, powerups: [], kills: 0 };
-  const base = snapshotBase(HERO.stats, { id: weaponId, ...BALANCE.weapons[weaponId] });
+  const activeBuffs = []; // live timed buffs (BPM Boost / Slow Jam); tick on unscaled time
+  const base = snapshotBase(head.stats || HERO.stats, { id: head.weaponId, ...BALANCE.weapons[head.weaponId] });
   const weapon = { ...base.weapon, damage: { ...base.weapon.damage } };
 
   // Hero shares the full spec-03 entity shape (stats + derived + faction + the
@@ -53,29 +69,30 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   const hero = {
     x: level.start.x * TS + TS / 2, y: level.start.y * TS + TS / 2,
     w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
-    stats: { ...HERO.stats }, faction: HERO.faction,
+    stats: { ...(head.stats || HERO.stats) }, faction: HERO.faction, color: head.color,
     iframes: 0, iframeDur: HERO.iframeDur, manaRegen: HERO.manaRegen, dead: false, cd: 0,
+    sigCd: 0, signature: resolveSig(head.signatureId), charge: 0, damageTaken: 0,
   };
   // Meta upgrades (spec 08) fold into base stats before derive — permanent boosts
   // bought between runs, applied once at run start (vs. powerups, applied mid-run).
-  applyHeroUpgrades(hero, heroId, saveBlob, BALANCE.derive);
+  applyHeroUpgrades(hero, head.id, saveBlob, BALANCE.derive);
   hero.hp = hero.derived.maxHp;
   hero.mana = hero.derived.maxMana;
 
   // Follower train (spec-18 party, slice stand-in): hero clones that trail one tile
-  // back, auto-fire their own weapon, take full combat damage, and permadie. Built
-  // from the pure-data `BALANCE.follower.roster`; `trail` is the hero's breadcrumb
-  // polyline they retrace.
+  // back, auto-fire their own weapon, take full combat damage, and permadie. Built from
+  // the chosen party (party[1..]); `trail` is the hero's breadcrumb polyline they retrace.
   const FOLLOWER = BALANCE.follower;
   const trail = []; // hero positions, newest first, with the head at trail[0]
   const gap = FOLLOWER.gapTiles * TS;
-  const followers = FOLLOWER.roster.map((def) => {
+  const followers = followerDefs.map((def) => {
     const w = BALANCE.weapons[def.weaponId];
     const f = {
       x: hero.x, y: hero.y, w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
-      stats: { ...HERO.stats }, faction: "player", color: def.color,
+      stats: { ...(def.stats || HERO.stats) }, faction: "player", color: def.color,
       iframes: 0, iframeDur: FOLLOWER.iframeDur, manaRegen: FOLLOWER.manaRegen, dead: false, cd: 0,
       weapon: { id: def.weaponId, ...w, damage: { ...w.damage } },
+      sigCd: 0, signature: resolveSig(def.signatureId), charge: 0, damageTaken: 0,
     };
     recomputeDerived(f, BALANCE.derive);
     f.hp = f.derived.maxHp;
@@ -93,6 +110,14 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     heldLine = Object.keys(counts).map((id) => POWERUPS[id].name + (counts[id] > 1 ? ` ×${counts[id]}` : "")).join(",  ");
   }
 
+  // Route an acquired powerup id: timed `buff` kinds (BPM Boost / Slow Jam) start a live
+  // timer; everything else joins the held set and rebuilds hero+weapon from base.
+  function acquire(defId) {
+    const def = POWERUPS[defId];
+    if (def.kind === "buff") activeBuffs.push({ id: defId, kind: def.effect, mult: def.mult, t: def.duration });
+    else { runState.powerups.push(defId); rebuild(); }
+  }
+
   const pickups = []; // powerup drops lying on the ground, awaiting hero overlap
   const shops = placeShops();
 
@@ -102,6 +127,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   const blasts = [];      // transient AoE rings (nova/bomb detonations), visual only
   const swings = [];      // transient melee swing wedges, visual only
   const fields = [];      // lingering damage zones (field weapon)
+  const deployables = []; // placed turrets (Eugene's Drum Machine) — hold world position
   const floaters = [];    // rising damage numbers, one per landed hit, visual only
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   let outcome = null;
@@ -125,6 +151,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       def, stats: def.stats, faction: "enemy",
       x: tx * TS + TS / 2, y: ty * TS + TS / 2, w: def.r * 2, h: def.r * 2, r: def.r,
       manaRegen: def.manaRegen || 0, freezeCount: 0, frozenT: 0, pauseT: 0, staggerT: 0, dead: false,
+      slowT: 0, slowMult: 1, confuseT: 0, confuseTarget: null,
       path: null, pi: 0, repathT: 0, state: null, timer: 0, lockAim: null,
     };
     recomputeDerived(e, BALANCE.derive);
@@ -191,6 +218,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       faction: attacker.faction, attacker, damage: o.damage,
       freeze: o.freeze, knockback: o.knockback, shotR: o.shotR, color: o.color,
       shape: o.shape || "projectile", radius: o.radius, pierce: o.pierce, hits: o.pierce ? new Set() : null,
+      fuse: o.fuse != null ? o.fuse : null, impact: o.impact, planted: false,
     });
   }
 
@@ -222,7 +250,9 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // when it ramps from a near-stop back to full over its stagger window.
   function moveSpeedOf(e) {
     if (e.pauseT > 0) return 0; // dead stop right after a shove, before the ramp
-    return e.staggerT > 0 ? e.derived.moveSpeed * (1 - e.staggerT / e.staggerMax) : e.derived.moveSpeed;
+    const slow = e.slowT > 0 ? e.slowMult : 1; // Chill Zone debuff
+    const base = e.staggerT > 0 ? e.derived.moveSpeed * (1 - e.staggerT / e.staggerMax) : e.derived.moveSpeed;
+    return base * slow;
   }
   // A landed hit's HP loss, surfaced as a rising number at the target (spec: honest hits).
   function spawnHitNumber(t, dealt) {
@@ -246,7 +276,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // (and so every enemy death routes through one loot roll).
   function applyHit(attacker, t, damage, kbMult, kdx, kdy, freeze) {
     const dealt = applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
-    if (dealt > 0) spawnHitNumber(t, dealt);
+    if (dealt > 0) { spawnHitNumber(t, dealt); creditCharge(attacker, dealt, false); if (t.signature) creditCharge(t, dealt, true); }
     if (kbMult) knockback(t, kdx, kdy, attacker.derived.knockback * kbMult);
     if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
     if (t === hero && hero.dead) loseRun(attacker.def ? attacker.def.name : null);
@@ -301,8 +331,8 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // Fire `attacker`'s weapon `w` at the nearest enemy `near` ({e,d}) when its cooldown
   // and mana allow, branching on `w.shape` for delivery. One fire path for the hero
   // (gated by SPACE) and every follower (auto). Sets cooldown + spends mana on a fire.
-  function fireWeapon(attacker, w, near) {
-    if (attacker.cd > 0 || !canCast(attacker, w.manaCost)) return false;
+  function fireWeapon(attacker, w, near, cdKey = "cd") {
+    if (attacker[cdKey] > 0 || !canCast(attacker, w.manaCost || 0)) return false;
     let fired = false;
     if (w.shape === "nova") {
       if (near && near.d <= w.radius) {
@@ -312,7 +342,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       }
     } else if (w.shape === "field") {
       if (near && near.d <= w.range) {
-        fields.push({ x: attacker.x, y: attacker.y, r: w.radius, life: w.lifespan, tick: 0, weapon: w });
+        fields.push({ x: attacker.x, y: attacker.y, r: w.radius, life: w.lifespan, tick: 0, weapon: w, attacker });
         fired = true;
       }
     } else if (w.shape === "melee-arc") {
@@ -325,13 +355,105 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
         fireShot(attacker, Math.cos(a) * w.speed, Math.sin(a) * w.speed, {
           damage: w.damage, life: w.life, shotR: w.shotR,
           color: THEME.weaponShot[w.id], freeze: w.freeze, knockback: w.knockback,
-          shape: w.shape, radius: w.radius, pierce: w.pierce,
+          shape: w.shape, radius: w.radius, pierce: w.pierce, fuse: w.fuse, impact: w.impact,
         });
       }
       fired = true;
     }
-    if (fired) { attacker.cd = w.cd; spendMana(attacker, w.manaCost); }
+    if (fired) { attacker[cdKey] = w.cd; spendMana(attacker, w.manaCost || 0); }
     return fired;
+  }
+
+  // --- Signatures (docs/19) -------------------------------------------------
+  // Credit a charge-signature bearer (The Drop) for damage dealt or taken; only
+  // `taken` damage scales the eventual release.
+  function creditCharge(e, amount, taken) {
+    if (!e || !e.signature || e.signature.shape !== "charge") return;
+    e.charge += amount;
+    if (taken) e.damageTaken += amount;
+  }
+
+  // Deploy a turret at the bearer's spot: a stationary player-faction entity that
+  // auto-fires `turretId` and holds world position as the camera scrolls past, expiring
+  // after `life`. Capped per owner (oldest culled). Reuses the whole fireWeapon path.
+  function deployTurret(owner, sig) {
+    const mine = deployables.filter((d) => d.owner === owner && !d.dead);
+    while (mine.length >= sig.maxActive) { mine.shift().dead = true; }
+    const w = BALANCE.weapons[sig.turretId];
+    deployables.push({
+      x: owner.x, y: owner.y, r: 10, owner, faction: "player",
+      stats: owner.stats, derived: owner.derived, mana: Infinity, manaRegen: 0,
+      cd: 0, life: sig.life, dead: false,
+      weapon: { id: sig.turretId, ...w, manaCost: 0, damage: { ...w.damage } },
+    });
+    return true;
+  }
+
+  // Confuse every enemy in radius for confuseDur — it then chases and contact-damages
+  // the nearest OTHER enemy instead of the party (handled in the enemy step).
+  function confuseBurst(attacker, sig) {
+    let any = false;
+    for (const e of enemies) {
+      if (e.dead || dist(e.x, e.y, attacker.x, attacker.y) > sig.radius + e.r) continue;
+      e.confuseT = sig.confuseDur; e.confuseTarget = null; any = true;
+    }
+    blasts.push({ x: attacker.x, y: attacker.y, r: sig.radius, t: 0 });
+    return any;
+  }
+
+  // Release a charge signature (The Drop) once its meter fills: a nova whose flat damage
+  // is bumped by the damage taken while charging, then reset.
+  function releaseCharge(attacker, sig) {
+    if (attacker.charge < sig.threshold) return;
+    const dmg = { ...sig.damage, base: sig.damage.base + attacker.damageTaken * sig.takenScale };
+    blast(attacker.x, attacker.y, sig.radius, attacker, dmg, sig.knockback, sig.freeze);
+    blasts.push({ x: attacker.x, y: attacker.y, r: sig.radius, t: 0 });
+    attacker.charge = 0; attacker.damageTaken = 0;
+  }
+
+  // Resolve a bearer's signature each tick. `heal` is passive (ticked in the entity
+  // loop); `charge` releases on its meter; the rest reuse fireWeapon on their own
+  // `sigCd`, or the net-new deploy/confuse helpers.
+  function fireSignature(attacker, near) {
+    const sig = attacker.signature;
+    if (!sig || sig.shape === "heal") return;
+    if (sig.shape === "charge") { releaseCharge(attacker, sig); return; }
+    if (attacker.sigCd > 0 || !canCast(attacker, sig.manaCost || 0)) return;
+    let fired = false;
+    if (sig.shape === "deploy") fired = deployTurret(attacker, sig);
+    else if (sig.shape === "confuse") fired = confuseBurst(attacker, sig);
+    else { fireWeapon(attacker, sig, near, "sigCd"); return; } // sets sigCd + mana itself
+    if (fired) { attacker.sigCd = sig.cd; spendMana(attacker, sig.manaCost || 0); }
+  }
+
+  // Passive HP regen for a `heal` signature (Good Vibes).
+  function tickHeal(e, dt) {
+    if (e.signature && e.signature.shape === "heal" && !e.dead)
+      e.hp = Math.min(e.derived.maxHp, e.hp + e.signature.hpPerSec * dt);
+  }
+
+  // Nearest living enemy to `self`, excluding itself — confused-enemy targeting.
+  function nearestOtherEnemy(self) {
+    let best = null, bd = Infinity;
+    for (const e of enemies) {
+      if (e.dead || e === self) continue;
+      const d = dist(e.x, e.y, self.x, self.y);
+      if (d < bd) { bd = d; best = e; }
+    }
+    return best;
+  }
+
+  // A confused enemy chases and contact-damages the nearest other enemy — the only
+  // enemy-on-enemy damage path (Bad Trip).
+  function stepConfused(e, dt) {
+    const t = nearestOtherEnemy(e);
+    if (!t) return;
+    const dx = t.x - e.x, dy = t.y - e.y, d = Math.hypot(dx, dy) || 1;
+    moveAndCollide(level, e, (dx / d) * moveSpeedOf(e) * dt, (dy / d) * moveSpeedOf(e) * dt);
+    if (d < e.r + t.r && e.def.contactDamage) {
+      const dealt = applyDamage(t, e.def.contactDamage);
+      if (dealt > 0) { spawnHitNumber(t, dealt); if (t.dead && !t.looted) onEnemyDeath(t); }
+    }
   }
 
   // Point on the hero's breadcrumb trail `back` world-units behind the head, walking
@@ -354,7 +476,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   // entity; the run-loss is the hero-specific consequence layered on top.
   function hurtHero(amount, srcName) {
     const dealt = applyDamage(hero, amount);
-    if (dealt > 0) spawnHitNumber(hero, dealt);
+    if (dealt > 0) { spawnHitNumber(hero, dealt); creditCharge(hero, dealt, true); }
     if (hero.dead) loseRun(srcName);
   }
 
@@ -518,8 +640,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       const it = items[shopSel];
       if (!it.bought && runState.scrap >= it.cost) {
         runState.scrap -= it.cost;
-        runState.powerups.push(it.defId);
-        rebuild();
+        acquire(it.defId);
         it.bought = true;
       }
     }
@@ -537,9 +658,19 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
   function update(dt) {
     if (outcome) return; // run is over; main hands off to the summary scene (spec 15)
     if (shopOpen) { stepShop(); return; } // paused at a stall — only the modal runs
+    // Timed buffs tick on UNSCALED time: Slow Jam scales the whole sim (bullet-time),
+    // BPM Boost speeds the head. The head keeps real-time movement (rawDt below) so
+    // bullet-time makes it nimble rather than sluggish.
+    const rawDt = dt;
+    let timeScale = 1, bpm = 1;
+    for (const b of activeBuffs) { b.t -= rawDt; if (b.kind === "time") timeScale = Math.min(timeScale, b.mult); else if (b.kind === "speed") bpm *= b.mult; }
+    for (let i = activeBuffs.length - 1; i >= 0; i--) if (activeBuffs[i].t <= 0) activeBuffs.splice(i, 1);
+    dt *= timeScale;
     hero.cd = Math.max(0, hero.cd - dt);
+    hero.sigCd = Math.max(0, hero.sigCd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
     regenMana(hero, dt); // same mana code the enemy casters use
+    tickHeal(hero, dt);
 
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
     const minY = cam.y + MARGIN; // the advancing crush line; fatal to whoever crosses it
@@ -548,7 +679,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     director.update(dt, hero, enemies, spawnEnemy);
 
     const intent = input.intent();
-    heroMove(intent.x * hero.derived.moveSpeed * dt, intent.y * hero.derived.moveSpeed * dt);
+    heroMove(intent.x * hero.derived.moveSpeed * bpm * rawDt, intent.y * hero.derived.moveSpeed * bpm * rawDt);
 
     // Breadcrumb the hero's path (newest first) for the follower train to retrace,
     // sampling only on real movement and keeping just enough length for the whole train.
@@ -565,14 +696,18 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     // Selected weapon: SPACE fires through the shared resolver (cooldown + mana gated
     // inside), auto-aimed at the nearest enemy. The follower train fires the same way.
     if (input.down("Space")) fireWeapon(hero, weapon, nearestEnemy());
+    fireSignature(hero, nearestEnemy()); // signature auto-fires from the head
 
     // Enemy brains (skip dead/frozen; cull far enemies on the long map)
     const heroTile = tileOf(hero);
     const activeY = cam.y + VIEW_H / 2;
     for (const e of enemies) {
       if (e.dead) continue;
+      if (e.slowT > 0) e.slowT -= dt; // Chill Zone debuff fades; slow never skips the brain
       if (e.frozenT > 0) { e.frozenT -= dt; continue; }
-      if (Math.abs(e.y - activeY) < VIEW_H) stepEnemy(e, dt, heroTile);
+      if (Math.abs(e.y - activeY) >= VIEW_H) continue;
+      if (e.confuseT > 0) { e.confuseT -= dt; stepConfused(e, dt); } // Bad Trip: turn on its own kind
+      else stepEnemy(e, dt, heroTile);
     }
 
     // Queued knockback rides out here, after brains — a frozen or mid-attack enemy
@@ -591,14 +726,18 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     for (let i = 0; i < followers.length; i++) {
       const f = followers[i];
       f.cd = Math.max(0, f.cd - dt);
+      f.sigCd = Math.max(0, f.sigCd - dt);
       f.iframes = Math.max(0, f.iframes - dt);
       regenMana(f, dt);
+      tickHeal(f, dt);
       const p = trailPointBack((i + 1) * gap);
       if (p) { f.x = p.x; f.y = p.y; }
       // Mirror the hero's crush rule (below): riding the advancing edge is fine,
       // but being pinned against a wall there is fatal — that's "left behind".
       if (f.y < minY) { f.y = minY; if (boxBlocked(level, f)) { f.dead = true; continue; } }
-      fireWeapon(f, f.weapon, nearestEnemyTo(f.x, f.y)); // auto-fire its own weapon
+      const near = nearestEnemyTo(f.x, f.y);
+      fireWeapon(f, f.weapon, near); // auto-fire its own weapon
+      fireSignature(f, near);        // and its genre signature
     }
     // Enemy contact damage to followers (the BEHAVIORS only target the hero); each
     // follower's i-frames throttle the per-frame overlap so it chips, not instakills.
@@ -607,7 +746,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       for (const f of followers) {
         if (f.dead || dist(e.x, e.y, f.x, f.y) >= f.r + e.r) continue;
         const dealt = applyDamage(f, e.def.contactDamage);
-        if (dealt > 0) spawnHitNumber(f, dealt);
+        if (dealt > 0) { spawnHitNumber(f, dealt); creditCharge(f, dealt, true); }
       }
     }
 
@@ -616,8 +755,14 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     // hit each enemy once; the rest hit the first enemy and die.
     for (const p of projectiles) {
       if (p.dead) continue;
+      if (p.planted) { // Flashback: stuck where it hit, counting down to its area blast
+        p.fuse -= dt;
+        if (p.fuse <= 0) { detonate(p); p.dead = true; }
+        continue;
+      }
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life <= 0 || !isWalkable(level, Math.floor(p.x / TS), Math.floor(p.y / TS))) {
+        if (p.fuse != null) { p.planted = true; p.vx = 0; p.vy = 0; continue; } // plant, then fuse
         if (p.shape === "bomb") detonate(p); // lob that fizzles still bursts where it lands
         p.dead = true; continue;
       }
@@ -625,6 +770,10 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       for (const t of (p.faction === "player" ? enemies : heroTargets)) {
         if (t.dead) continue;
         if (dist(p.x, p.y, t.x, t.y) < p.shotR + t.r + pad) {
+          if (p.fuse != null) { // Flashback: small impact hit, then plant + fuse to the big blast
+            applyHit(p.attacker, t, p.impact || p.damage, 0, p.vx, p.vy, false);
+            p.planted = true; p.vx = 0; p.vy = 0; break;
+          }
           if (p.shape === "bomb") { detonate(p); p.dead = true; break; }
           if (p.pierce) { // beam: hit each enemy once, keep flying
             if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze); p.hits.add(t); }
@@ -642,7 +791,21 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       // Field ticks never knock back — a lingering zone that flung enemies out (once
       // a knockback powerup folds into the weapon) would just cycle them in and out for
       // repeat ticks. Pass 0 regardless of the weapon's knockback.
-      if (f.tick <= 0) { blast(f.x, f.y, f.r, hero, f.weapon.damage, 0, f.weapon.freeze); f.tick = f.weapon.tickInterval; }
+      if (f.tick <= 0) {
+        blast(f.x, f.y, f.r, f.attacker || hero, f.weapon.damage, 0, f.weapon.freeze);
+        if (f.weapon.slow) for (const e of enemies) // Chill Zone also slows everything inside
+          if (!e.dead && dist(e.x, e.y, f.x, f.y) <= f.r + e.r) { e.slowT = f.weapon.slowDur; e.slowMult = f.weapon.slow; }
+        f.tick = f.weapon.tickInterval;
+      }
+    }
+
+    // Turrets (Drum Machine): hold world position, auto-fire, expire — the descent
+    // leaves them behind, which is the intended trade.
+    for (const d of deployables) {
+      if (d.dead) continue;
+      d.life -= dt; d.cd = Math.max(0, d.cd - dt);
+      if (d.life <= 0 || d.y < minY) { d.dead = true; continue; }
+      fireWeapon(d, d.weapon, nearestEnemyTo(d.x, d.y));
     }
     for (const b of blasts) b.t += dt; // visual rings expand then expire
     for (const s of swings) s.t += dt; // melee wedges flash then expire
@@ -665,8 +828,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       if (p.dead) continue;
       p.t += dt;
       if (dist(p.x, p.y, hero.x, hero.y) < hero.r + p.r) {
-        runState.powerups.push(p.defId);
-        rebuild();
+        acquire(p.defId);
         p.dead = true;
       }
     }
@@ -682,6 +844,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
     for (let i = pickups.length - 1; i >= 0; i--) if (pickups[i].dead) pickups.splice(i, 1);
     for (let i = fields.length - 1; i >= 0; i--) if (fields[i].life <= 0) fields.splice(i, 1);
+    for (let i = deployables.length - 1; i >= 0; i--) if (deployables[i].dead) deployables.splice(i, 1);
     for (let i = blasts.length - 1; i >= 0; i--) if (blasts[i].t >= THEME.blast.dur) blasts.splice(i, 1);
     for (let i = swings.length - 1; i >= 0; i--) if (swings[i].t >= THEME.melee.dur) swings.splice(i, 1);
     for (let i = floaters.length - 1; i >= 0; i--) if (floaters[i].t >= THEME.hitNumber.dur) floaters.splice(i, 1);
@@ -787,6 +950,13 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       ring(ctx, f.x - cam.x, f.y - cam.y, f.r, THEME.field.ring);
     }
 
+    // Deployed turrets (Drum Machine) hold position as the train moves on.
+    for (const d of deployables) {
+      if (d.dead) continue;
+      disc(ctx, d.x - cam.x, d.y - cam.y, d.r, THEME.deploy.fill);
+      ring(ctx, d.x - cam.x, d.y - cam.y, d.r + 2, THEME.deploy.ring);
+    }
+
     // Corpses (drawn under everything live)
     for (const e of enemies)
       if (e.dead) disc(ctx, e.x - cam.x, e.y - cam.y, e.r, THEME.corpse);
@@ -822,6 +992,8 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       if (e.dead) continue;
       const sx = e.x - cam.x, sy = e.y - cam.y, k = e.def;
       disc(ctx, sx, sy, e.r, k.color);
+      if (e.confuseT > 0) { disc(ctx, sx, sy, e.r, THEME.confuse.fill); ring(ctx, sx, sy, e.r + 2, THEME.confuse.ring); }
+      else if (e.slowT > 0) disc(ctx, sx, sy, e.r, THEME.slow.fill);
       if (e.frozenT > 0) {
         disc(ctx, sx, sy, e.r, THEME.freeze.fill);
         ring(ctx, sx, sy, e.r + THEME.freeze.ringPad, THEME.freeze.ring);
@@ -874,10 +1046,12 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
     for (const f of followers) {
       const fx = f.x - cam.x, fy = f.y - cam.y, B = THEME.bar;
       disc(ctx, fx, fy, f.r, f.iframes > 0 ? THEME.follower.hit : f.color);
-      bar(ctx, fx, fy - f.r - B.gap - B.h, f.hp / f.derived.maxHp, B.hp);
+      let by = fy - f.r - B.gap - B.h;
+      bar(ctx, fx, by, f.hp / f.derived.maxHp, B.hp);
+      if (f.signature && f.signature.shape === "charge") { by -= B.h + 1; bar(ctx, fx, by, f.charge / f.signature.threshold, THEME.charge.fill); }
     }
 
-    disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : THEME.hero.normal);
+    disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : hero.color);
 
     // Status bars above the hero, mirroring the enemies: HP always, plus a mana bar
     // when the chosen weapon spends mana (dim when too dry to fire).
@@ -888,6 +1062,10 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       if (weapon.manaCost > 0) {
         by -= B.h + 1;
         bar(ctx, hx, by, hero.mana / hero.derived.maxMana, hero.mana >= weapon.manaCost ? B.mana : B.tapped);
+      }
+      if (hero.signature && hero.signature.shape === "charge") {
+        by -= B.h + 1;
+        bar(ctx, hx, by, hero.charge / hero.signature.threshold, THEME.charge.fill);
       }
     }
 
@@ -947,7 +1125,7 @@ export function createRunScene(ctx, input, seed, weaponId, saveBlob, heroId) {
       return {
         distanceFraction: outcome === "win" ? 1 : distanceFraction(hero, level, TS),
         kills: runState.kills, won: outcome === "win",
-        cause: deathCause, heroId, seed, scrapDiscarded: runState.scrap,
+        cause: deathCause, heroId: head.id, seed, scrapDiscarded: runState.scrap,
       };
     },
   };
