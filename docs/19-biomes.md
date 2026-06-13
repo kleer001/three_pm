@@ -153,3 +153,28 @@ crack appearing), not a movement-feel change.
 | **Power Line** | `shooter` | static | downed live wire, whips electric bolts | ranged zap | 3 |
 | **Gravel** | `swarmer` | ambulatory | skittering chunks of broken road in packs | contact | 2 |
 | **Boulder** | `charger` | ambulatory | dislodged rock, rolls you down | melee roll | 2 |
+
+---
+
+## Biome 07 — Innsmouth-on-Sea
+
+A rotted boardwalk town where the wrong things came in with the tide. Cosmic
+horror at a Saturday-morning-cartoon level (spec 14) — too many eyes, never gore.
+
+**Looks:** a barnacled pier-and-tackle town under a wrong-colored green-black sky,
+tentacles curling out of storm drains, googly eyes blinking in the tide pools,
+slime-slick boardwalk, fish-shacks sagging into the water, marine-layer fog over it
+all.
+
+**FX — "fog & the deep watching":** a tight marine-layer fog collapses sight-range
+to a radius around the hero (enemies loom out of the gray), *and* the view warps —
+the horizon bows, colors slide to sickly hues, the screen edges ripple as if seen
+through water. Both intensify as `f` climbs, so the home stretch is near-blind and
+swimming. Render-layer only; no movement effect.
+
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Deep One** | `chaser` | ambulatory | fish-folk, shambles at you | contact | 3 |
+| **Idol** | `shooter` | static | carved fish-god idol, spits green bolts | ranged bolt | 3 |
+| **Spawn** | `swarmer` | ambulatory | tentacled larvae swarming in packs | contact | 2 |
+| **Tentacle** | `charger` | ambulatory | erupts from the ground and slams | melee slam | 2 |
