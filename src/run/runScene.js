@@ -12,6 +12,7 @@ import { makeDirector, distanceFraction } from "./director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
 import { POWERUPS, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weightedPick } from "./powerups.js";
 import { applyHeroUpgrades } from "../meta/save.js";
+import { hitRect } from "../input/input.js";
 import { BALANCE, THEME } from "./balance.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -671,11 +672,12 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     prevBuy = buy;
 
     // Touch: tap a row to select + buy it; tap outside the panel to leave.
+    const lay = shopLayout();
+    const panel = { x: lay.px, y: lay.py, w: lay.panelW, h: lay.panelH };
     for (let tap; (tap = input.consumeTap()); ) {
-      const lay = shopLayout();
-      const hit = lay.rows.find((r) => tap.x >= r.x && tap.x <= r.x + r.w && tap.y >= r.y && tap.y <= r.y + r.h);
+      const hit = lay.rows.find((r) => hitRect(tap, r));
       if (hit) { shopSel = hit.index; buyItem(hit.index); }
-      else if (tap.x < lay.px || tap.x > lay.px + lay.panelW || tap.y < lay.py || tap.y > lay.py + lay.panelH) { leaveShop(); break; }
+      else if (!hitRect(tap, panel)) { leaveShop(); break; }
     }
     if (!shopOpen) return; // a tap already left the stall
 

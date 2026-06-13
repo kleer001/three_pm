@@ -6,6 +6,7 @@
 // The slice ships only Marvin, so this lists Marvin's tree directly; the save API
 // is hero-keyed, ready for the rest of the roster.
 import { THEME } from "../run/balance.js";
+import { hitRect } from "../input/input.js";
 import { load, save, purchaseUpgrade, UPGRADES, upgradeRank, nextCost } from "./save.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -49,8 +50,9 @@ export function createMetaScene(ctx, input, nextSeed) {
     prevConfirm = confirm;
 
     // Touch: tap an upgrade row to buy it, or the exit row to head out.
+    const { rows } = layout();
     for (let tap; (tap = input.consumeTap()); ) {
-      const hit = layout().rows.find((r) => tap.x >= r.x && tap.x <= r.x + r.w && tap.y >= r.y && tap.y <= r.y + r.h);
+      const hit = rows.find((r) => hitRect(tap, r));
       if (hit) { i = hit.index; activate(hit.index); }
     }
   }

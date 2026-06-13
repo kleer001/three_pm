@@ -4,6 +4,7 @@
 // as the follower train). Locked characters are gated by run count and can't be chosen.
 // No level is generated here — the scene only carries the `seed` through to the run.
 import { BALANCE, THEME } from "./balance.js";
+import { hitRect } from "../input/input.js";
 import { isHeroUnlocked } from "../meta/save.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -76,13 +77,11 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
     // Touch: tap a card to toggle it into/out of the party; tap Start to begin.
     // Taps are fresh-press edge events, so a held touch can't auto-confirm — no arming.
+    const { cards, start } = layout();
     for (let tap; (tap = input.consumeTap()); ) {
-      const { cards, start } = layout();
-      const card = cards.find((r) => tap.x >= r.x && tap.x <= r.x + r.w && tap.y >= r.y && tap.y <= r.y + r.h);
+      const card = cards.find((r) => hitRect(tap, r));
       if (card) { i = card.index; toggle(roster[card.index]); }
-      else if (tap.x >= start.x && tap.x <= start.x + start.w && tap.y >= start.y && tap.y <= start.y + start.h) {
-        i = START; if (party.length) confirmed = true;
-      }
+      else if (hitRect(tap, start)) { i = START; if (party.length) confirmed = true; }
     }
   }
 

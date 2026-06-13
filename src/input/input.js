@@ -3,6 +3,10 @@
 const BLOCK = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"]);
 const JOY_RADIUS = 60, JOY_DEADZONE = 8; // logical px: stick travel and slack
 
+// Point-in-rect test for tap hit-testing: `p` is a {x,y} tap, `r` an {x,y,w,h}
+// rect (both in logical canvas px). Shared by every tappable menu scene.
+export const hitRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+
 export function createInput(canvas) {
   const keys = new Set();
   let mx = 0, my = 0, firing = false;
@@ -100,6 +104,8 @@ export function createInput(canvas) {
     },
     touchActive: () => touchActive,
     joystick: () => (joyOrigin && { origin: joyOrigin, cur: joyCur, radius: JOY_RADIUS }),
+    // Each scene must drain this in its update() (loop until null) — undrained taps
+    // back up and flush into the next scene, causing spurious clicks.
     consumeTap: () => tapQueue.shift() || null,
   };
 }
