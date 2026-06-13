@@ -27,6 +27,12 @@ no new combat machinery and no new AI: every enemy is still one of the four spec
   - **Tier 1** — 80% size, base palette. Spawns from the top.
   - **Tier 2** — 100% size, palette swap. More HP/damage, eligible deeper.
   - **Tier 3** — 120% size, palette swap. Deepest `distanceBand`.
+  A shooter family may additionally upgrade its **attack shape** at a higher tier
+  (e.g. tier 3 gains a spread) — attack data, still no behavior change.
+- **Modifiers** (spec 06) layer onto any roster: **`exploder`** (a charger that
+  detonates an all-faction blast — hits the hero *and* nearby enemies), **spread**
+  and **grenade** (shooter attack variants), and **escort** spawn-formations. Each
+  biome lists its own under **Twists**.
 - **Enemies are inhuman.** Undead, beasts, or animated objects only — never a
   plain human — so destroying them stays guilt-free and on-tone (spec 14).
 - **No rhythm.** Nothing in any biome syncs to music or a beat. FX pulses, if
@@ -53,6 +59,8 @@ only.
 | **Garden Gnome** | `swarmer` | ambulatory | animated ceramic gnomes in a pack | contact | 2 |
 | **Ice Cream Truck** | `charger` | ambulatory | distant jingle, then barrels at you | melee ram | 2 |
 
+**Twists:** the tier-3 Sprinkler (Rain Bird) widens its sweep into a **spread** fan.
+
 ---
 
 ## Biome 02 — Rave-Gone-Wrong
@@ -70,6 +78,10 @@ Render-layer only.
 | **The Decks** | `shooter` | static | spectre rooted at a turntable | ranged sound-bolt | 3 |
 | **Kandi** | `swarmer` | ambulatory | little bead-things in packs | contact | 2 |
 | **Subwoofer** | `charger` | ambulatory | speaker on legs, lunges | melee slam | 2 |
+
+**Twists:** **Subwoofer** is an **exploder** — its lunge detonates a knockback blast
+that hits everyone in range, hero and enemies alike; the tier-3 Decks (Headliner)
+fires a **spread**.
 
 ---
 
@@ -111,6 +123,10 @@ vector in the movement integrator.
 | **Ash Wraith** | `shooter` | ambulatory | floating smoke spirit, lobs fireballs | ranged ember | 3 |
 | **Sparks** | `swarmer` | ambulatory | swarm of flying embers | contact | 2 |
 | **Burning Tumbleweed** | `charger` | ambulatory | flaming tumbleweed, hurled at you | melee roll | 2 |
+
+**Twists:** **Burning Tumbleweed** is an **exploder** (bursts into a fire-blast on
+contact, hero and enemies alike); **Ash Wraith** lobs **grenades** — arcing
+fire-bombs that burst where they land.
 
 ---
 
@@ -154,6 +170,9 @@ crack appearing), not a movement-feel change.
 | **Gravel** | `swarmer` | ambulatory | skittering chunks of broken road in packs | contact | 2 |
 | **Boulder** | `charger` | ambulatory | dislodged rock, rolls you down | melee roll | 2 |
 
+**Twists:** the static **Power Line** arrives as an **escort** — Rubble Golems and
+Boulders bodyguard it, so you can't just walk up and silence it.
+
 ---
 
 ## Biome 07 — Innsmouth-on-Sea
@@ -178,3 +197,6 @@ swimming. Render-layer only; no movement effect.
 | **Idol** | `shooter` | static | carved fish-god idol, spits green bolts | ranged bolt | 3 |
 | **Spawn** | `swarmer` | ambulatory | tentacled larvae swarming in packs | contact | 2 |
 | **Tentacle** | `charger` | ambulatory | erupts from the ground and slams | melee slam | 2 |
+
+**Twists:** the static **Idol** arrives as an **escort** behind a wall of Deep Ones;
+its tier-3 spits a **spread** of green bolts.

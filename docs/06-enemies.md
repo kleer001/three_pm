@@ -87,6 +87,24 @@ deployable.
 - **swarmer** — like chaser but higher `moveSpeed` and a small per-entity heading
   jitter so packs spread instead of stacking on one pixel. Contact damage only.
 
+## Modifiers (orthogonal to behavior)
+Small flags / attack-data that ride on a behavior and combine across families —
+variety without new AI. `static` (above) is the first; the rest:
+
+- **`exploder`** (charger) — instead of surviving its lunge, it detonates an AoE on
+  contact/death. The blast is **all-faction**: it damages every entity in radius —
+  the hero *and* other enemies — an explicit exception to the spec 04
+  opposite-faction rule. So an exploder can be baited into a pack.
+- **spread** (shooter attack) — fires multiple projectiles in a fan via the spec 05
+  `projectile.count`/`spread` fields. A shooter family may *introduce* spread at a
+  higher tier — a tier upgrading attack shape, not just numbers.
+- **grenade** (shooter attack) — `Attack.shape: "lob"`: an arcing projectile that
+  bursts in an AoE where it lands, instead of a flat shot. Normal faction (hits the
+  player side only).
+- **escort** (director formation) — not an entity flag: the director may spend on a
+  group that pairs a `static` / slow zoner with a `charger` / `chaser` bodyguard, so
+  threat arrives protected. See the director section.
+
 ## `enemies.json` definition schema
 ```
 enemies.json = {
@@ -94,6 +112,7 @@ enemies.json = {
     name, family, tier,                  // tier: 1 = weakest variant of the family
     behavior,                            // chaser | shooter | charger | swarmer
     static?,                             // shooter only: if true, roots in place (no advance/kite)
+    exploder?,                           // charger only: detonates an all-faction AoE on contact (hits hero + enemies); no lunge survival
     stats: { speed, constitution, strength, magic },   // 1–10
     contactDamage,                       // damage on overlap (chaser/swarmer; 0 if none)
     attack?: Attack,                     // spec 04 descriptor; shooter/charger only
@@ -197,6 +216,11 @@ the full roster is in play.
 3. `spawn('enemy:<id>')` at a `walkable` tile inside that region; subtract its
    `threatValue` from the spend.
 
+**Escort formation.** A spend may buy a **group** rather than a single enemy: a
+`static`/slow zoner placed with one or more `charger`/`chaser` bodyguards in the
+same region, so the protected threat arrives as a unit. The group's combined
+`threatValue` is what's debited.
+
 Spawns are gated to off-screen regions so threat materializes around the player,
 not in front of their eyes. Same seed → same spawn sequence.
 
@@ -210,7 +234,9 @@ not in front of their eyes. Same seed → same spawn sequence.
   `distanceBand` fields.
 - `spawn('enemy:<id>')` builds an enemy (brain via `brainFor`, `contactDamage`,
   optional `attack` under the brain's attack id, `mana` iff `manaCost > 0`); a
-  `static: true` shooter holds movement intent at 0 (roots/zones).
+  `static: true` shooter holds movement intent at 0 (roots/zones); an
+  `exploder: true` charger detonates an all-faction AoE on contact instead of
+  surviving its lunge.
 - Director contract: `budget(f)` monotonic in distance fraction `f`,
   `distanceBand` eligibility gate, off-screen region placement, `spawns` RNG
   sub-stream. Enemies enter only via the director into `Level.regions`.
