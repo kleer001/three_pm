@@ -25,6 +25,21 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
   const byId = (id) => roster.find((c) => c.id === id);
 
+  // Card grid + Start button geometry in logical canvas px — shared by render (draw)
+  // and update (tap hit-testing) so taps land exactly where the cards are drawn.
+  function layout() {
+    const cardW = 200, cardH = 112, gx = 20, gy = 10, portH = 62;
+    const gridW = COLS * cardW + (COLS - 1) * gx;
+    const x0 = (VIEW_W - gridW) / 2, y0 = 62;
+    const cards = [];
+    for (let n = 0; n < GRID; n++) {
+      cards.push({ x: x0 + (n % COLS) * (cardW + gx), y: y0 + Math.floor(n / COLS) * (cardH + gy), w: cardW, h: cardH, index: n });
+    }
+    const dy = y0 + 3 * (cardH + gy) + 2, dh = 64;
+    const start = { x: x0, y: dy + dh + 8, w: gridW, h: 34 };
+    return { cardW, cardH, portH, gridW, x0, y0, cards, dy, dh, start };
+  }
+
   function toggle(c) {
     if (!unlocked(c)) return;
     const at = party.indexOf(c.id);
@@ -58,6 +73,17 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     const clear = input.down("KeyC");
     if (clear && !pClear) party = []; // C wipes the whole selection
     pClear = clear;
+
+    // Touch: tap a card to toggle it into/out of the party; tap Start to begin.
+    // Taps are fresh-press edge events, so a held touch can't auto-confirm — no arming.
+    for (let tap; (tap = input.consumeTap()); ) {
+      const { cards, start } = layout();
+      const card = cards.find((r) => tap.x >= r.x && tap.x <= r.x + r.w && tap.y >= r.y && tap.y <= r.y + r.h);
+      if (card) { i = card.index; toggle(roster[card.index]); }
+      else if (tap.x >= start.x && tap.x <= start.x + start.w && tap.y >= start.y && tap.y <= start.y + start.h) {
+        i = START; if (party.length) confirmed = true;
+      }
+    }
   }
 
   // Placeholder portrait: a flat color block in the character's hue. Isolated so a real
@@ -77,14 +103,11 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     ctx.font = P.titleFont;
     ctx.fillText("Pick your party for the walk home", VIEW_W / 2, 42);
 
-    const cardW = 200, cardH = 112, gx = 20, gy = 10, portH = 62;
-    const gridW = COLS * cardW + (COLS - 1) * gx;
-    const x0 = (VIEW_W - gridW) / 2, y0 = 62;
+    const { cardW, cardH, portH, gridW, x0, cards, dy, dh, start } = layout();
 
     for (let n = 0; n < GRID; n++) {
       const c = roster[n], active = n === i, free = unlocked(c);
-      const cx = x0 + (n % COLS) * (cardW + gx);
-      const cy = y0 + Math.floor(n / COLS) * (cardH + gy);
+      const cx = cards[n].x, cy = cards[n].y;
 
       ctx.fillStyle = active ? P.cardActive : P.card;
       ctx.fillRect(cx, cy, cardW, cardH);
@@ -128,24 +151,23 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
     // Hover detail: the highlighted character's full readout below the grid (or a
     // head→tail party summary when the Start button is focused).
-    const dy = y0 + 3 * (cardH + gy) + 2, dh = 64;
     ctx.fillStyle = P.card;
     ctx.fillRect(x0, dy, gridW, dh);
     renderDetail(x0, dy, gridW, dh);
 
     // Start button below the detail panel, dimmed until the party has a head.
-    const ready = party.length > 0, sy = dy + dh + 8, sh = 34;
+    const ready = party.length > 0;
     ctx.fillStyle = i === START ? P.cardActive : P.card;
-    ctx.fillRect(x0, sy, gridW, sh);
-    if (i === START) { ctx.strokeStyle = P.border; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, sy + 1, gridW - 2, sh - 2); }
+    ctx.fillRect(start.x, start.y, start.w, start.h);
+    if (i === START) { ctx.strokeStyle = P.border; ctx.lineWidth = 2; ctx.strokeRect(start.x + 1, start.y + 1, start.w - 2, start.h - 2); }
     ctx.textAlign = "center";
     ctx.fillStyle = ready ? P.start : P.startOff;
     ctx.font = P.nameFont;
-    ctx.fillText(ready ? `› Start the walk home  (${party.length})` : "Pick at least one", VIEW_W / 2, sy + 23);
+    ctx.fillText(ready ? `› Start the walk home  (${party.length})` : "Pick at least one", VIEW_W / 2, start.y + 23);
 
     ctx.fillStyle = P.hint;
     ctx.font = P.hintFont;
-    ctx.fillText("←↑↓→ move    SPACE pick / start    C clear    (first pick leads)", VIEW_W / 2, VIEW_H - 14);
+    ctx.fillText("←↑↓→ or tap    SPACE / tap to pick · start    C clear    (first pick leads)", VIEW_W / 2, VIEW_H - 14);
     ctx.textAlign = "left";
   }
 

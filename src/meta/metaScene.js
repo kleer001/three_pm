@@ -18,6 +18,23 @@ export function createMetaScene(ctx, input, nextSeed) {
   let i = 0, done = false;
   let armed = false, prevUp = false, prevDown = false, prevConfirm = false;
 
+  // Upgrade-row + exit-row geometry in logical canvas px — shared by render (draw)
+  // and update (tap hit-testing). Each rect carries its `items` index.
+  function layout() {
+    const rowH = 56, exitH = 44, gap = 6, rowW = 560, x = (VIEW_W - rowW) / 2;
+    const rows = [];
+    let y = 132;
+    for (let n = 0; n < upgradeIds.length; n++) { rows.push({ x, y, w: rowW, h: rowH, index: n }); y += rowH + gap; }
+    rows.push({ x, y, w: rowW, h: exitH, index: upgradeIds.length });
+    return { rowH, exitH, rowW, x, rows };
+  }
+
+  // Act on item `n`: the exit row continues; an upgrade row buys (no-op if maxed/broke).
+  function activate(n) {
+    if (items[n] === "__continue__") done = true;
+    else blob = save(purchaseUpgrade(load(), HERO, items[n]));
+  }
+
   function update() {
     if (!input.down("Space") && !input.down("Enter")) armed = true;
 
@@ -28,11 +45,14 @@ export function createMetaScene(ctx, input, nextSeed) {
     prevUp = up; prevDown = down;
 
     const confirm = input.down("Space") || input.down("Enter");
-    if (armed && confirm && !prevConfirm) {
-      if (items[i] === "__continue__") done = true;
-      else blob = save(purchaseUpgrade(load(), HERO, items[i])); // buy (no-op if maxed/broke)
-    }
+    if (armed && confirm && !prevConfirm) activate(i);
     prevConfirm = confirm;
+
+    // Touch: tap an upgrade row to buy it, or the exit row to head out.
+    for (let tap; (tap = input.consumeTap()); ) {
+      const hit = layout().rows.find((r) => tap.x >= r.x && tap.x <= r.x + r.w && tap.y >= r.y && tap.y <= r.y + r.h);
+      if (hit) { i = hit.index; activate(hit.index); }
+    }
   }
 
   function render() {
@@ -49,11 +69,10 @@ export function createMetaScene(ctx, input, nextSeed) {
     ctx.font = M.creditsFont;
     ctx.fillText(`${blob.credits} credits   ·   run ${blob.runCount}   ·   ${blob.stats.wins} home`, VIEW_W / 2, 98);
 
-    const rowH = 56, exitH = 44, gap = 6, rowW = 560, x = (VIEW_W - rowW) / 2;
+    const { rowH, exitH, rowW, x, rows } = layout();
     ctx.lineWidth = 2; // shared by every row's active border
-    let y = 132;
     for (let n = 0; n < upgradeIds.length; n++) {
-      const id = upgradeIds[n], def = UPGRADES[HERO][id], active = n === i;
+      const id = upgradeIds[n], def = UPGRADES[HERO][id], active = n === i, y = rows[n].y;
       const rank = upgradeRank(blob, HERO, id), cost = nextCost(blob, HERO, id);
       ctx.fillStyle = active ? M.rowActive : M.row;
       ctx.fillRect(x, y, rowW, rowH);
@@ -76,25 +95,24 @@ export function createMetaScene(ctx, input, nextSeed) {
       ctx.font = M.costFont;
       if (cost === null) { ctx.fillStyle = M.maxed; ctx.fillText("MAX", x + rowW - 16, y + 44); }
       else { ctx.fillStyle = blob.credits >= cost ? M.cost : M.broke; ctx.fillText(`${cost} cr`, x + rowW - 16, y + 44); }
-      y += rowH + gap;
     }
 
     // The exit item, styled as a shorter row.
-    const contActive = i === upgradeIds.length;
+    const contActive = i === upgradeIds.length, ey = rows[upgradeIds.length].y;
     ctx.fillStyle = contActive ? M.rowActive : M.row;
-    ctx.fillRect(x, y, rowW, exitH);
+    ctx.fillRect(x, ey, rowW, exitH);
     if (contActive) {
       ctx.strokeStyle = M.border;
-      ctx.strokeRect(x + 1, y + 1, rowW - 2, exitH - 2);
+      ctx.strokeRect(x + 1, ey + 1, rowW - 2, exitH - 2);
     }
     ctx.textAlign = "center";
     ctx.fillStyle = M.cont;
     ctx.font = M.nameFont;
-    ctx.fillText("› Head out for the day", VIEW_W / 2, y + 28);
+    ctx.fillText("› Head out for the day", VIEW_W / 2, ey + 28);
 
     ctx.fillStyle = M.hint;
     ctx.font = M.hintFont;
-    ctx.fillText("↑/↓ choose    SPACE buy / continue", VIEW_W / 2, VIEW_H - 28);
+    ctx.fillText("↑/↓ or tap    SPACE / tap to buy · continue", VIEW_W / 2, VIEW_H - 28);
     ctx.textAlign = "left";
   }
 
