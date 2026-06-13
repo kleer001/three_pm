@@ -1,0 +1,128 @@
+# Spec 19 — Biomes: per-day looks, FX, and enemy rosters
+
+Each day's seed dresses the one suburban map (spec 02) in a **biome**: a coherent
+look, **one** dominant screen-effect, and a four-family enemy roster. Biomes
+change *feel*, never the frozen contracts — they dress the world (spec 02), the
+director's family selection (spec 06), and presentation (spec 09). This spec adds
+no new combat machinery and no new AI: every enemy is still one of the four spec
+06 behaviors (`chaser` / `shooter` / `charger` / `swarmer`).
+
+## Conventions in force
+
+- **A biome = looks + one FX + four enemy families.** Nothing more. The four
+  families fill one behavior each (a natural chaser, shooter, swarmer, charger).
+- **The FX ramps with `f`** — the director's distance fraction (0 at the north
+  start, 1 at the south home band, spec 06). The effect is weakest up top and
+  peaks on the home stretch, so difficulty rises *diegetically* as you descend.
+- **Enemies are dumb mobs.** A short looping sprite, a behavior, and at most one
+  weapon (contact, ranged, or a melee lunge). They emit nothing and gain nothing.
+- **Tiers are numbers, not new art** (spec 06: tiers never change behavior). One
+  global rule for every family:
+  - **Tier 1** — 80% size, base palette. Spawns from the top.
+  - **Tier 2** — 100% size, palette swap. More HP/damage, eligible deeper.
+  - **Tier 3** — 120% size, palette swap. Deepest `distanceBand`.
+- **Enemies are inhuman.** Undead, beasts, or animated objects only — never a
+  plain human — so destroying them stays guilt-free and on-tone (spec 14).
+- **No rhythm.** Nothing in any biome syncs to music or a beat. FX pulses, if
+  any, are pure visuals with no timing role.
+
+---
+
+## Biome 01 — Suburbia After Dark *(baseline)*
+
+The default dusk; every other biome is a variation of its light-ramp.
+
+**Looks:** empty cul-de-sacs and tract homes at golden hour sliding into night —
+long raking shadows, buzzing streetlights, dead lawns.
+
+**FX — "the light dying":** a darkness overlay ramps with `f` (golden hour up top,
+nightfall at home). Streetlights punch light-pools in the dark; outside them enemy
+sprites dim and get harder to track, so the pools read as safer lanes. Render-layer
+only.
+
+| Family | Behavior | What it is | Weapon | Tiers |
+|---|---|---|---|---|
+| **Were-Coyote** | `chaser` | SoCal coyote, turned; lopes at you | contact | 3 |
+| **Sprinkler Head** | `shooter` | pops from lawns, sweep-fires water-bolts | ranged | 3 |
+| **Garden Gnome** | `swarmer` | animated ceramic gnomes in a pack | contact | 2 |
+| **Ice Cream Truck** | `charger` | distant jingle, then barrels at you | melee ram | 2 |
+
+---
+
+## Biome 02 — Rave-Gone-Wrong
+
+**Looks:** a desert/warehouse rave bled into the cul-de-sac — laser fans, fog,
+glowstick smears on rotted stucco, blacklight purple-on-black.
+
+**FX — "blacklight":** the world goes near-black and only enemies and drops stay
+lit; you read threats as floating glows. Ramps with `f` (dimmest near home).
+Render-layer only.
+
+| Family | Behavior | What it is | Weapon | Tiers |
+|---|---|---|---|---|
+| **Glowstick Ghoul** | `chaser` | neon ghoul, walks at you | contact | 3 |
+| **The Decks** | `shooter` | floating spectre over a turntable | ranged sound-bolt | 3 |
+| **Kandi** | `swarmer` | little bead-things in packs | contact | 2 |
+| **Subwoofer** | `charger` | speaker on legs, lunges | melee slam | 2 |
+
+---
+
+## Biome 03 — Freak Winter
+
+A SoCal suburb buried under snow that should not exist.
+
+**Looks:** snow-choked lawns and streets, gray-white sky, frozen pools, icicle-hung
+tract homes, palms under frost. Whiteout, not dusk.
+
+**FX — "ice-slick":** the streets have no traction — the hero and enemies carry
+momentum and slide instead of stopping. Gets glassier as `f` climbs, so the home
+stretch is a skating rink. A friction term in the movement integrator.
+
+| Family | Behavior | What it is | Weapon | Tiers |
+|---|---|---|---|---|
+| **Snowman** | `chaser` | animated snowman, slides at you | contact | 3 |
+| **Frost Wisp** | `shooter` | floating frost spirit, lobs icicles | ranged shard | 3 |
+| **Snowball** | `swarmer` | rolling snowballs in packs | contact | 2 |
+| **Yeti** | `charger` | hulking beast, lunges | melee slam | 2 |
+
+---
+
+## Biome 04 — Brushfire / Santa Ana
+
+The hills and the suburb gone up — wildfire season turned apocalyptic.
+
+**Looks:** orange smoke-choked sky, ash falling like snow, charred palms, embers
+drifting, houses glowing from inside.
+
+**FX — "Santa Ana wind":** a constant directional gust shoves the hero, the
+enemies, *and projectiles* — shots curve with or against it, so aiming changes for
+the whole run. Direction is set per-day by seed; strength ramps with `f`. A wind
+vector in the movement integrator.
+
+| Family | Behavior | What it is | Weapon | Tiers |
+|---|---|---|---|---|
+| **Cinder Ghoul** | `chaser` | charred husk, stumbles at you | contact | 3 |
+| **Ash Wraith** | `shooter` | floating smoke spirit, lobs fireballs | ranged ember | 3 |
+| **Sparks** | `swarmer` | swarm of flying embers | contact | 2 |
+| **Burning Tumbleweed** | `charger` | flaming tumbleweed, hurled at you | melee roll | 2 |
+
+---
+
+## Biome 05 — Flood / El Niño
+
+The rains came and never stopped — the suburb looks drowned. (Cosmetic only:
+there is **no** reactive water simulation. Rain overlay + waterlogged-looking
+ground tiles; movement is unchanged.)
+
+**Looks:** rain sheeting over everything, waterlogged dark ground tiles,
+half-submerged cars, palms dripping, debris everywhere.
+
+**FX — "downpour":** a full-screen rain overlay and slick, waterlogged ground tiles
+that darken as `f` climbs. Purely cosmetic render-layer — no movement effect.
+
+| Family | Behavior | What it is | Weapon | Tiers |
+|---|---|---|---|---|
+| **Drowned** | `chaser` | waterlogged ghoul, shambles at you | contact | 3 |
+| **Storm Cloud** | `shooter` | floating cloud, spits rain-bolts | ranged bolt | 3 |
+| **Piranha** | `swarmer` | fish drifting through the streets in packs | contact | 2 |
+| **Shark** | `charger` | a fin gliding the streets, lunges | melee bite | 2 |
