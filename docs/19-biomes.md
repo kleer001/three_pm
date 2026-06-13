@@ -253,3 +253,27 @@ render-layer haze, no movement effect.
 
 **Twists:** **BBQ Grill** lobs **grenades** — arcing coal-bombs that burst on
 landing; tier-3 Wasps come thicker.
+
+---
+
+## Biome 10 — Freeway / The 405
+
+The stalled, cratered interchange the whole suburb feeds into — concrete, exhaust,
+and stranded steel as far as you can see.
+
+**Looks:** an abandoned freeway interchange — dead cars in every lane, overpasses,
+jersey barriers, buzzing sodium lights, graffiti, smog haze.
+
+**FX — "cross-traffic":** ghost-cars streak across the lanes as telegraphed moving
+hazards (headlights flaring = the tell) — you time the gaps to cross. They come
+faster and more often as `f` climbs. Dodge pressure, not a movement-feel change.
+
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Air Dancer** | `chaser` | ambulatory | inflatable tube man, flails toward you | contact | 3 |
+| **Traffic Light** | `shooter` | static | rooted signal, fires red-light beams | ranged beam | 3 |
+| **Traffic Cones** | `swarmer` | ambulatory | orange cones skittering in packs | contact | 2 |
+| **Tire** | `charger` | ambulatory | runaway truck tire, rolls you down | melee roll | 2 |
+
+**Twists:** static **Traffic Light** arrives as an **escort**; its tier-3 fires a
+red/yellow/green **spread**.
