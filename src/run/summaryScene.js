@@ -40,6 +40,9 @@ export function createSummaryScene(ctx, input, result, nextSeed) {
   function update() {
     if (!input.down("Space") && !input.down("Enter")) armed = true;
     if (armed && (input.down("Space") || input.down("Enter"))) done = true;
+    // Touch: any tap advances. A fresh touchstart only queues after the death-fire
+    // finger lifts, so a held touch can't instantly skip the screen (no arming needed).
+    while (input.consumeTap()) done = true;
   }
 
   function render() {
@@ -99,7 +102,7 @@ export function createSummaryScene(ctx, input, result, nextSeed) {
 
     ctx.fillStyle = S.cta;
     ctx.font = S.ctaFont;
-    ctx.fillText(result.won ? "› head to tomorrow   [SPACE]" : "› try another day   [SPACE]", VIEW_W / 2, VIEW_H - 48);
+    ctx.fillText(result.won ? "› head to tomorrow   [SPACE / tap]" : "› try another day   [SPACE / tap]", VIEW_W / 2, VIEW_H - 48);
     ctx.textAlign = "left";
   }
 

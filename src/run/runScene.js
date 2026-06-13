@@ -12,6 +12,7 @@ import { makeDirector, distanceFraction } from "./director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
 import { POWERUPS, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weightedPick } from "./powerups.js";
 import { applyHeroUpgrades } from "../meta/save.js";
+import { hitRect } from "../input/input.js";
 import { BALANCE, THEME } from "./balance.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -320,8 +321,11 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   // blast in reach plus its visual. Returns whether it connected. Shared by the
   // hero's SPACE fire and the follower train.
   function meleeSwing(attacker, w, near) {
-    if (!near || near.d > w.radius + near.e.r) return false;
-    const dx = near.e.x - attacker.x, dy = near.e.y - attacker.y, m = Math.hypot(dx, dy) || 1;
+    // `autofire: "cooldown"` weapons (Whirl) spin every cooldown even with nothing
+    // in reach — free, aimless area denial. The default still gates on reach.
+    const inReach = near && near.d <= w.radius + near.e.r;
+    if (!inReach && w.autofire !== "cooldown") return false;
+    const dx = near ? near.e.x - attacker.x : 0, dy = near ? near.e.y - attacker.y : 0, m = Math.hypot(dx, dy) || 1;
     const aim = w.arc >= 360 ? null : { x: dx / m, y: dy / m, cosHalf: Math.cos((w.arc * Math.PI) / 360) };
     blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.knockback, w.freeze, aim);
     swings.push({ x: attacker.x, y: attacker.y, r: w.radius, ax: dx / m, ay: dy / m, arc: w.arc, t: 0 });
@@ -627,6 +631,34 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   // Standing on a shop freezes the world: the player browses the stall's stock and
   // buys what they want without the descent crushing them. World sim is skipped while
   // this returns true (update() returns early), so only the modal's keys are read.
+  // Shop panel/row geometry in logical canvas px — one source of truth for the
+  // renderer (draw) and stepShop (tap hit-testing). Rows carry their item index.
+  function shopLayout() {
+    const items = nearShop.items;
+    const panelW = 520, rowH = 56, gap = 8;
+    const panelH = 132 + items.length * (rowH + gap);
+    const px = (VIEW_W - panelW) / 2, py = (VIEW_H - panelH) / 2;
+    const rows = [];
+    let y = py + 92;
+    for (let n = 0; n < items.length; n++) {
+      rows.push({ x: px + 20, y, w: panelW - 40, h: rowH, index: n });
+      y += rowH + gap;
+    }
+    return { items, px, py, panelW, panelH, rowH, gap, rows };
+  }
+
+  function buyItem(n) {
+    const it = nearShop.items[n];
+    if (it.bought || runState.scrap < it.cost) return;
+    runState.scrap -= it.cost;
+    acquire(it.defId);
+    it.bought = true;
+  }
+
+  function leaveShop() {
+    shopOpen = false; shopLatch = true; nearShop = null;
+  }
+
   function stepShop() {
     const items = nearShop.items;
     const up = input.down("ArrowUp") || input.down("KeyW") || input.down("KeyK");
@@ -636,28 +668,31 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     prevUp = up; prevDown = down;
 
     const buy = input.down("KeyE") || input.down("Enter");
-    if (buy && !prevBuy) {
-      const it = items[shopSel];
-      if (!it.bought && runState.scrap >= it.cost) {
-        runState.scrap -= it.cost;
-        acquire(it.defId);
-        it.bought = true;
-      }
-    }
+    if (buy && !prevBuy) buyItem(shopSel);
     prevBuy = buy;
+
+    // Touch: tap a row to select + buy it; tap outside the panel to leave.
+    const lay = shopLayout();
+    const panel = { x: lay.px, y: lay.py, w: lay.panelW, h: lay.panelH };
+    for (let tap; (tap = input.consumeTap()); ) {
+      const hit = lay.rows.find((r) => hitRect(tap, r));
+      if (hit) { shopSel = hit.index; buyItem(hit.index); }
+      else if (!hitRect(tap, panel)) { leaveShop(); break; }
+    }
+    if (!shopOpen) return; // a tap already left the stall
 
     const leave = input.down("KeyQ") || input.down("Escape");
     // Close on leave, or once the stall is cleared out. Latch so the still-overlapping
     // hero doesn't reopen it; the latch clears when they step off (in update()).
-    if ((leave && !prevLeave) || items.every((it) => it.bought)) {
-      shopOpen = false; shopLatch = true; nearShop = null;
-    }
+    if ((leave && !prevLeave) || items.every((it) => it.bought)) leaveShop();
     prevLeave = leave;
   }
 
   function update(dt) {
     if (outcome) return; // run is over; main hands off to the summary scene (spec 15)
     if (shopOpen) { stepShop(); return; } // paused at a stall — only the modal runs
+    while (input.consumeTap()) { /* gameplay has no tap actions — drain so taps don't
+      back up and flush all at once when a shop opens (touch drives movement, not taps) */ }
     // Timed buffs tick on UNSCALED time: Slow Jam scales the whole sim (bullet-time),
     // BPM Boost speeds the head. The head keeps real-time movement (rawDt below) so
     // bullet-time makes it nimble rather than sluggish.
@@ -693,9 +728,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       }
     }
 
-    // Selected weapon: SPACE fires through the shared resolver (cooldown + mana gated
-    // inside), auto-aimed at the nearest enemy. The follower train fires the same way.
-    if (input.down("Space")) fireWeapon(hero, weapon, nearestEnemy());
+    // Selected weapon: SPACE (or auto-fire on touch) fires through the shared resolver
+    // (cooldown + mana + reach/range gated inside, per the weapon's own `autofire`),
+    // auto-aimed at the nearest enemy. The follower train fires the same way.
+    if (input.down("Space") || input.touchActive()) fireWeapon(hero, weapon, nearestEnemy());
     fireSignature(hero, nearestEnemy()); // signature auto-fires from the head
 
     // Enemy brains (skip dead/frozen; cull far enemies on the long map)
@@ -872,12 +908,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   // The paused stall: a centered card list of the shop's stock. Reuses the
   // select-screen palette; cost is colored by affordability (dimmed once sold).
   function renderShop() {
-    const items = nearShop.items, S = THEME.select;
+    const S = THEME.select;
+    const { items, px, py, panelW, panelH, rows, rowH } = shopLayout();
     ctx.fillStyle = THEME.overlay.bg;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    const panelW = 520, rowH = 56, gap = 8;
-    const panelH = 132 + items.length * (rowH + gap);
-    const px = (VIEW_W - panelW) / 2, py = (VIEW_H - panelH) / 2;
     ctx.fillStyle = S.bg;
     ctx.fillRect(px, py, panelW, panelH);
 
@@ -887,9 +921,8 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     ctx.fillStyle = S.hint; ctx.font = S.hintFont;
     ctx.fillText(`scrap ${runState.scrap}`, VIEW_W / 2, py + 70);
 
-    let y = py + 92;
     for (let n = 0; n < items.length; n++) {
-      const it = items[n], def = POWERUPS[it.defId], active = n === shopSel;
+      const it = items[n], def = POWERUPS[it.defId], active = n === shopSel, y = rows[n].y;
       const can = runState.scrap >= it.cost;
       ctx.fillStyle = active ? S.cardActive : S.card;
       ctx.fillRect(px + 20, y, panelW - 40, rowH);
@@ -903,12 +936,11 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       ctx.fillStyle = it.bought ? S.hint : can ? THEME.shop.afford : THEME.shop.broke;
       ctx.font = S.nameFont;
       ctx.fillText(it.bought ? "—" : `${it.cost}`, px + panelW - 40, y + 34);
-      y += rowH + gap;
     }
 
     ctx.textAlign = "center";
     ctx.fillStyle = S.hint; ctx.font = S.hintFont;
-    ctx.fillText("↑/↓ pick    E buy    Q leave", VIEW_W / 2, py + panelH - 18);
+    ctx.fillText("↑/↓ or tap to pick    E buy    Q / tap outside to leave", VIEW_W / 2, py + panelH - 18);
     ctx.textAlign = "left";
   }
 
@@ -1106,6 +1138,14 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       ctx.fillRect(6, 58, ctx.measureText(heldLine).width + 12, 20);
       ctx.fillStyle = THEME.hud.text;
       ctx.fillText(heldLine, 12, 72);
+    }
+
+    // Floating touch joystick: faint ring at the press origin + a dot at the finger,
+    // only while a drag is live. Coords are already logical canvas px. Under the shop.
+    const joy = input.joystick();
+    if (joy) {
+      ring(ctx, joy.origin.x, joy.origin.y, joy.radius, THEME.joystick.ring);
+      disc(ctx, joy.cur.x, joy.cur.y, THEME.joystick.knobR, THEME.joystick.knob);
     }
 
     // Paused shop modal: the frozen world shows behind a dimmed panel listing the
