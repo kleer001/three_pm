@@ -229,3 +229,27 @@ and the dark stretches longer as `f` climbs. Render-layer only; nothing syncs to
 
 **Twists:** the static **Gumball Machine** arrives as an **escort** behind a
 Mannequin screen; its tier-3 coughs a **spread** of gumballs.
+
+---
+
+## Biome 09 — Backyard / Block Party
+
+The chain-link maze of everyone's backyards at dusk — cozy turned predatory.
+
+**Looks:** patchy fence-lined yards, sagging trampolines, a scummed-over
+above-ground pool, tipped patio umbrellas, dark string lights, a smoking abandoned
+grill.
+
+**FX — "swarm of the air":** clouds of gnats and mosquitoes drift across the screen,
+fogging your view in patches you push through; thickens as `f` climbs. Drifting
+render-layer haze, no movement effect.
+
+| Family | Behavior | Move | What it is | Weapon | Tiers |
+|---|---|---|---|---|---|
+| **Lawn Flamingo** | `chaser` | ambulatory | plastic flamingo, stalks toward you | contact | 3 |
+| **BBQ Grill** | `shooter` | static | rooted grill, spits hot coals | ranged | 3 |
+| **Wasps** | `swarmer` | ambulatory | wasp nest spilling out in packs | contact | 2 |
+| **Beach Ball** | `charger` | ambulatory | bounds across the yard and slams | melee slam | 2 |
+
+**Twists:** **BBQ Grill** lobs **grenades** — arcing coal-bombs that burst on
+landing; tier-3 Wasps come thicker.
