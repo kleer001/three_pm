@@ -8,6 +8,8 @@ html, body {
   background: #fafafa;
   color: #1a1a1a;
   font-family: system-ui, sans-serif;
+  overflow: hidden;            /* no rubber-band scroll behind the canvas on mobile */
+  overscroll-behavior: none;
 }
 
 #app {
@@ -20,4 +22,10 @@ html, body {
   background: #ffffff;
   border: 1px solid #ddd;
   image-rendering: pixelated;
+  /* Scale the display size to fit the viewport, preserve 4:3, never upscale past
+     native on desktop. Internal resolution stays 800x600. */
+  width: min(100vw, calc(100vh * 8 / 6));
+  height: auto;
+  max-width: 800px;
+  touch-action: none;          /* suppress browser scroll/zoom on touch drags */
 }
