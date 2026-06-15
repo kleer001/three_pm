@@ -126,6 +126,9 @@ const stubCtx = new Proxy({}, { get: () => NOOP }); // never drawn; update() nev
 function runOne(party, seed, maxFrames, navMode) {
   const bot = makeBot(navMode);
   const scene = createRunScene(stubCtx, bot, seed, party, load());
+  // Scale the head's move speed in place (the train retraces its trail, so this scales the
+  // whole party's traversal). The bot never buys powerups, so nothing recomputes it away.
+  if (heroSpeedMult !== 1) scene._probe.hero.derived.moveSpeed *= heroSpeedMult;
   let frames = 0;
   while (!scene.finished && frames < maxFrames) {
     bot.tick(scene._probe);
@@ -156,11 +159,32 @@ function distOf(scene) {
 const seeds = Number(process.argv[2] || 20);
 const maxFrames = Math.round(Number(process.argv[3] || 200) * 60);
 const navMode = process.argv[4] === "greedy" ? "greedy" : "flow";
+
+// Knob overrides for lever experiments: argv[5] = "iframe=0.3,heal=0,threat=0.5".
+// Mutates BALANCE before any scene is built, so the sweep grades that setting.
+const KNOBS = {
+  iframe: (v) => { BALANCE.hero.iframeDur = v; BALANCE.follower.iframeDur = v; },
+  heal: (v) => { BALANCE.signatures.good_vibes.hpPerSec = v; },
+  threat: (v) => { BALANCE.director.partyThreatScale = v; },
+  cd: (v) => { BALANCE.heroFireCooldownMult = v; },
+  base: (v) => { BALANCE.director.baseThreat = v; },
+  slope: (v) => { BALANCE.director.threatSlope = v; },
+  maxlive: (v) => { BALANCE.director.maxLive = v; },
+};
+let heroSpeedMult = 1; // hspeed: scales the head's (and thus the train's) move speed
+const overrides = (process.argv[5] || "").split(",").filter(Boolean);
+for (const o of overrides) {
+  const [k, val] = o.split("=");
+  if (k === "hspeed") { heroSpeedMult = Number(val); continue; }
+  if (!KNOBS[k]) { console.error(`unknown knob "${k}" (have: hspeed, ${Object.keys(KNOBS).join(", ")})`); process.exit(1); }
+  KNOBS[k](Number(val));
+}
 const blob = load();
 const unlocked = BALANCE.roster.filter((c) => isHeroUnlocked(blob, c.id)).map((c) => c.id);
 const MAX = Math.min(BALANCE.partyMax, unlocked.length);
 
-console.log(`Gauntlet — ${seeds} seeds/size, nav=${navMode} (no enemy dodge)\n` +
+console.log(`Gauntlet — ${seeds} seeds/size, nav=${navMode} (no enemy dodge)` +
+  `${overrides.length ? `  overrides: ${overrides.join(" ")}` : ""}\n` +
   `party drawn from unlocked prefix: ${unlocked.slice(0, MAX).join(", ")}\n`);
 console.log("size  win%   meanDist  meanKills  headHP%  follLost  topCause");
 console.log("----  -----  --------  ---------  -------  --------  --------");
