@@ -1163,12 +1163,16 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     for (const f of followers) {
       const fx = f.x - cam.x, fy = f.y - cam.y, B = THEME.bar;
       disc(ctx, fx, fy, f.r, f.iframes > 0 ? THEME.follower.hit : f.color);
+      // Followers fire only their signature; show its recharge (heal/charge have no cd).
+      if (f.signature && f.signature.cd) cdDot(ctx, fx, fy, f.r, f.sigCd / (f.signature.cd * BALANCE.heroFireCooldownMult));
       let by = fy - f.r - B.gap - B.h;
       bar(ctx, fx, by, f.hp / f.derived.maxHp, B.hp);
       if (f.signature && f.signature.shape === "charge") { by -= B.h + 1; bar(ctx, fx, by, f.charge / f.signature.threshold, THEME.charge.fill); }
     }
 
     disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : hero.color);
+    // The head fires only its active weapon; show its recharge on the body.
+    if (weapon.cd) cdDot(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.cd / (weapon.cd * BALANCE.heroFireCooldownMult));
 
     // Status bars above the hero, mirroring the enemies: HP always, plus a mana bar
     // when the chosen weapon spends mana (dim when too dry to fire).
@@ -1272,6 +1276,17 @@ function disc(ctx, x, y, r, color) {
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+// Cooldown readout drawn ON the body: a dark dot whose radius tracks the remaining
+// cooldown fraction (1 = just fired → big dot, 0 = ready → gone). Universal across heroes
+// and reads cleanly under a sprite later. `remain` is the 0..1 remaining-cooldown fraction.
+function cdDot(ctx, x, y, r, remain) {
+  const ir = remain * r * 0.72;
+  if (ir < 0.6) return; // ready (or nearly): draw nothing
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.beginPath();
+  ctx.arc(x, y, ir, 0, Math.PI * 2);
   ctx.fill();
 }
 function ring(ctx, x, y, r, color) {
