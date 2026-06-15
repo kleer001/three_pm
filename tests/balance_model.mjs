@@ -1,16 +1,22 @@
 // Closed-form balance report for the slice — the "spreadsheet layer" (industry
 // tier 1: analytic DPS/TTK/TTD, no simulation, no bot). Reads the same BALANCE
 // data and combat resolver the game runs, so the numbers are the game's numbers,
-// not a re-derivation that can drift. Run: node tests/balance_model.mjs
+// not a re-derivation that can drift.
 //
-// What it CAN see: per-weapon kill speed, mana sustain, per-enemy threat pricing,
-// and the i-frame-capped survivability that decides whether a band is "tense but
-// winnable". What it CANNOT see: spatial/emergent play — kiting, swarm geometry,
-// freeze uptime under movement, the auto-scroll crush. Those need the sim layer.
-// Treat outlier flags here as "look at this", not "this is wrong".
+// Run: node tests/balance_model.mjs [heroId]   (default: marvin; any roster id)
+// Meta upgrades are folded from the on-disk save via applyHeroUpgrades; in node
+// (no localStorage) that's a fresh blob, so pass nothing to see the bare hero.
+//
+// What it CAN see: per-weapon kill speed (single-target AND a coarse multi-target
+// estimate for AoE/pierce), mana sustain, per-enemy threat pricing, and the
+// i-frame-capped survivability that decides whether a band is "tense but winnable".
+// What it CANNOT see: spatial/emergent play — kiting, swarm geometry, freeze uptime
+// under movement, the auto-scroll crush, follower-train offense. Those need the sim
+// layer. Treat outlier flags here as "look at this", not "this is wrong".
 
 import { BALANCE } from "../src/run/balance.js";
 import { recomputeDerived, weaponDamage } from "../src/run/combat.js";
+import { load, applyHeroUpgrades } from "../src/meta/save.js";
 
 const C = BALANCE.derive;
 const HERO_IFRAME = BALANCE.hero.iframeDur;       // 0.8s — the global hero-damage gate
@@ -21,11 +27,19 @@ const TS = 24 * 2, VIEW_H = 600;
 const RUN_LEN = (BALANCE.mapH * TS - VIEW_H) / BALANCE.scroll;
 
 // --- actors ----------------------------------------------------------------
-// The hero exactly as the run builds Marvin at baseline (no party stats, no
-// meta upgrades, no powerups). Those only shift the hero rightward; the baseline
-// is the floor the game must be balanced for.
-const hero = { stats: { ...BALANCE.hero.stats } };
-recomputeDerived(hero, C);
+// The hero exactly as the run builds it: roster stats for the chosen head + any
+// owned meta upgrades folded in via the same applyHeroUpgrades the run uses, so
+// the actor here can't drift from the actor in play. Default Marvin-at-baseline is
+// the floor the game must be balanced for; pass a heroId to model another pick.
+const heroId = process.argv[2] || "marvin";
+const heroDef = BALANCE.roster.find((c) => c.id === heroId);
+if (!heroDef) {
+  console.error(`unknown hero "${heroId}" — choose one of: ${BALANCE.roster.map((c) => c.id).join(", ")}`);
+  process.exit(1);
+}
+const saveBlob = load();                          // node: fresh blob (no upgrades)
+const hero = { stats: { ...heroDef.stats }, faction: "player" };
+applyHeroUpgrades(hero, heroId, saveBlob, C);     // folds owned ranks, then recomputeDerived
 
 // Each enemy def → the gameplay values the resolver actually uses.
 const enemyProfile = (def) => {
@@ -69,6 +83,15 @@ const isManaBound = (w) =>
   (w.shape === "field" ? w.manaCost / w.cd > HERO_REGEN : w.manaCost / HERO_REGEN > w.cd);
 
 const isAoe = (w) => ["nova", "bomb", "field"].includes(w.shape) || (w.shape === "melee-arc" && w.arc >= 180);
+
+// A weapon that lands on more than one enemy per activation — area shapes plus the
+// piercing line. The single-target DPS/TTK below understates these: in a swarm one
+// cast clears a cluster. CLUSTER_N is a flat, coarse "typical enemies caught per hit"
+// stand-in (the real number is spatial — sim-layer territory); it exists only so
+// area/pierce weapons aren't mis-flagged "weak" against single-target peers.
+const CLUSTER_N = 3;
+const isCluster = (w) => isAoe(w) || !!w.pierce;
+const clusterHits = (w) => (isCluster(w) ? CLUSTER_N : 1);
 
 // First-hit damage vs a neutral 50-HP / 0-resist dummy — a single comparable
 // scalar across weapons (percent-of-HP terms resolve against the dummy's 50).
@@ -159,26 +182,29 @@ const median = (xs) => { const s = [...xs].sort((a, b) => a - b); const m = s.le
 const LO = 0.6, HI = 1.6; // outlier band: flag anything outside [0.6, 1.6]× the median
 
 console.log(`\n=== three_pm balance model (closed-form) ===`);
+console.log(`actor: ${heroDef.name} (${heroDef.genre})  stats ${JSON.stringify(hero.stats)}`);
 console.log(`hero: maxHp ${hero.derived.maxHp}  resist ${(hero.derived.dmgResist * 100).toFixed(0)}%  mana ${hero.derived.maxMana}/+${HERO_REGEN}  AP ${hero.derived.abilityPower}  i-frame ${HERO_IFRAME}s`);
 console.log(`run length: ~${RUN_LEN.toFixed(0)}s descent (${BALANCE.mapH} tiles @ ${BALANCE.scroll}px/s)\n`);
 
-// Weapons.
-console.log(`--- WEAPONS  (DPS vs 50hp/0-resist dummy; * = mana-bound, A = AoE) ---`);
-console.log(`${padr("weapon", 10)} ${pad("cd", 5)} ${pad("mana", 5)} ${pad("hit", 6)} ${pad("DPS", 7)}  flags`);
-const wRows = Object.entries(BALANCE.weapons).map(([id, w]) => ({ id, w, dps: sustainedDps(w) }));
-for (const { id, w, dps } of wRows) {
-  const flags = [w.freeze ? "freeze" : "", isAoe(w) ? "A" : "", isManaBound(w) ? "*mana" : ""].filter(Boolean).join(" ");
-  console.log(`${padr(w.name, 10)} ${pad(w.cd, 5)} ${pad(w.manaCost, 5)} ${pad(firstHit(w).toFixed(1), 6)} ${pad(dps.toFixed(1), 7)}  ${flags}`);
+// Weapons. effDPS = single-target DPS × cluster hits — the number outliers flag off,
+// so a Nova that catches a swarm isn't penalised against a single-target peer.
+console.log(`--- WEAPONS  (DPS vs 50hp/0-resist dummy; effDPS = ×${CLUSTER_N} for cluster; * = mana-bound, A = AoE, P = pierce) ---`);
+console.log(`${padr("weapon", 10)} ${pad("cd", 5)} ${pad("mana", 5)} ${pad("hit", 6)} ${pad("DPS", 7)} ${pad("effDPS", 7)}  flags`);
+const wRows = Object.entries(BALANCE.weapons).map(([id, w]) => ({ id, w, dps: sustainedDps(w), effDps: sustainedDps(w) * clusterHits(w) }));
+for (const { id, w, dps, effDps } of wRows) {
+  const flags = [w.freeze ? "freeze" : "", isAoe(w) ? "A" : "", w.pierce ? "P" : "", isManaBound(w) ? "*mana" : ""].filter(Boolean).join(" ");
+  console.log(`${padr(w.name, 10)} ${pad(w.cd, 5)} ${pad(w.manaCost, 5)} ${pad(firstHit(w).toFixed(1), 6)} ${pad(dps.toFixed(1), 7)} ${pad(effDps.toFixed(1), 7)}  ${flags}`);
 }
-const wMed = median(wRows.map((r) => r.dps));
-console.log(`median DPS ${wMed.toFixed(1)} — outliers (<${LO}× or >${HI}×):`);
-for (const { w, dps } of wRows) {
-  const r = dps / wMed;
-  if (r < LO || r > HI) console.log(`  ${padr(w.name, 10)} ${dps.toFixed(1)} DPS = ${r.toFixed(2)}× median  ${r > HI ? "↑ strong" : "↓ weak"}`);
+const wMed = median(wRows.map((r) => r.effDps));
+console.log(`median effDPS ${wMed.toFixed(1)} — outliers (<${LO}× or >${HI}×):`);
+for (const { w, effDps } of wRows) {
+  const r = effDps / wMed;
+  if (r < LO || r > HI) console.log(`  ${padr(w.name, 10)} ${effDps.toFixed(1)} effDPS = ${r.toFixed(2)}× median  ${r > HI ? "↑ strong" : "↓ weak"}`);
 }
 
-// TTK matrix.
-console.log(`\n--- TTK (seconds to kill, burst, hero baseline) ---`);
+// TTK matrix. Cells are time to kill the targeted enemy; a cluster weapon (A/P)
+// kills CLUSTER_N at once, so its effective per-enemy clear time is roughly cell ÷ CLUSTER_N.
+console.log(`\n--- TTK (seconds to kill, burst, hero baseline; A/P clear ~${CLUSTER_N}× at once) ---`);
 const eShort = enemies.map((p) => p.name.slice(0, 4));
 console.log(`${padr("weapon", 10)} ${eShort.map((s) => pad(s, 5)).join("")}`);
 for (const { w } of wRows) {
