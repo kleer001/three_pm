@@ -372,7 +372,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       }
       fired = true;
     }
-    if (fired) { attacker[cdKey] = w.cd; spendMana(attacker, w.manaCost || 0); }
+    if (fired) { attacker[cdKey] = w.cd * BALANCE.heroFireCooldownMult; spendMana(attacker, w.manaCost || 0); }
     return fired;
   }
 
@@ -435,7 +435,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     if (sig.shape === "deploy") fired = deployTurret(attacker, sig);
     else if (sig.shape === "confuse") fired = confuseBurst(attacker, sig);
     else { fireWeapon(attacker, sig, near, "sigCd"); return; } // sets sigCd + mana itself
-    if (fired) { attacker.sigCd = sig.cd; spendMana(attacker, sig.manaCost || 0); }
+    if (fired) { attacker.sigCd = sig.cd * BALANCE.heroFireCooldownMult; spendMana(attacker, sig.manaCost || 0); }
   }
 
   // Passive HP regen for a `heal` signature (Good Vibes).
@@ -484,12 +484,25 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     return trail[trail.length - 1];
   }
 
-  // Hero damage flows through the shared resolver (i-frames + death) like any
-  // entity; the run-loss is the hero-specific consequence layered on top.
-  function hurtHero(amount, srcName) {
-    const dealt = applyDamage(hero, amount);
-    if (dealt > 0) { spawnHitNumber(hero, dealt); creditCharge(hero, dealt, true); }
-    if (hero.dead) loseRun(srcName);
+  // Party-member damage flows through the shared resolver (i-frames + death) like any
+  // entity; only the head's death ends the run — a follower just permadies and is reaped.
+  function hurtMember(m, amount, srcName) {
+    const dealt = applyDamage(m, amount);
+    if (dealt > 0) { spawnHitNumber(m, dealt); creditCharge(m, dealt, true); }
+    if (m === hero && hero.dead) loseRun(srcName);
+  }
+
+  // Enemies spread their aggro across the whole train, not just the head. Each enemy
+  // locks onto a living party member (random, so the followers trailing north actually
+  // draw fire — nearest would always resolve to the head leading the descent south) and
+  // keeps it until that member dies, then re-rolls. This is what makes a big party
+  // costly to field: every extra hero is another body the enemies will hunt.
+  function targetFor(e) {
+    if (e.target && !e.target.dead) return e.target;
+    const party = hero.dead ? [] : [hero];
+    for (const f of followers) if (!f.dead) party.push(f);
+    e.target = party.length ? rng.pick(party) : hero;
+    return e.target;
   }
 
   // Spec 06's four behavior archetypes, one function per family — the frozen
@@ -499,34 +512,34 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   // slice's. Only chargers carry scratch state beyond the shared state machine.
   const BEHAVIORS = {
     // Shamblers — chase straight in, contact damage on overlap. No telegraph.
-    chaser(e, dt, heroTile) {
-      const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
-      if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
+    chaser(e, dt, tgt, tgtTile) {
+      const k = e.def, d = dist(e.x, e.y, tgt.x, tgt.y);
+      if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, tgtTile[0], tgtTile[1]);
       followPath(e, moveSpeedOf(e), dt);
-      if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
+      if (d < tgt.r + e.r) hurtMember(tgt, k.contactDamage, k.name);
     },
 
     // Imps — chaser, but faster with a random per-step drift so packs fan out
     // instead of stacking on a single pixel. Only a threat in numbers.
-    swarmer(e, dt, heroTile) {
-      const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
-      if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
+    swarmer(e, dt, tgt, tgtTile) {
+      const k = e.def, d = dist(e.x, e.y, tgt.x, tgt.y);
+      if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, tgtTile[0], tgtTile[1]);
       followPath(e, moveSpeedOf(e), dt);
       const a = rng.next() * Math.PI * 2, j = k.jitter * moveSpeedOf(e) * dt;
       moveAndCollide(level, e, Math.cos(a) * j, Math.sin(a) * j);
-      if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
+      if (d < tgt.r + e.r) hurtMember(tgt, k.contactDamage, k.name);
     },
 
     // Cultists — hold a preferred range: approach, aim (telegraph), fire a bolt
-    // (costs mana), then cool down and kite if the hero closes. Mana regenerates
+    // (costs mana), then cool down and kite if the target closes. Mana regenerates
     // every tick; a tapped-out caster can't start an aim, so it holds and kites
     // until the pool refills — positioning lets you wait one out.
-    shooter(e, dt, heroTile) {
-      const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
+    shooter(e, dt, tgt, tgtTile) {
+      const k = e.def, d = dist(e.x, e.y, tgt.x, tgt.y);
       regenMana(e, dt); // same mana code the hero's weapons use
       const kite = () => {
         if (d < k.prefRange * k.retreatFrac) {
-          const dx = e.x - hero.x, dy = e.y - hero.y, m = Math.hypot(dx, dy) || 1;
+          const dx = e.x - tgt.x, dy = e.y - tgt.y, m = Math.hypot(dx, dy) || 1;
           moveAndCollide(level, e, (dx / m) * moveSpeedOf(e) * dt, (dy / m) * moveSpeedOf(e) * dt);
         }
       };
@@ -537,12 +550,12 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
           kite(); // in range but dry — hold and regen
           return;
         }
-        if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
+        if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, tgtTile[0], tgtTile[1]);
         followPath(e, moveSpeedOf(e), dt);
       } else if (e.state === "aim") {
         e.timer -= dt;
         if (e.timer <= 0) {
-          const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
+          const dx = tgt.x - e.x, dy = tgt.y - e.y, m = Math.hypot(dx, dy) || 1;
           fireShot(e, (dx / m) * k.shot, (dy / m) * k.shot, {
             damage: k.attack, life: BALANCE.enemyShotLife, shotR: THEME.enemyShot.r,
             color: THEME.enemyShot.color, freeze: false, knockback: 0,
@@ -560,44 +573,46 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     // Brutes — approach to lunge range, telegraph (intent frozen, the counterplay
     // window), then dash along the aim captured at telegraph start. A sidestep
     // during the wind-up dodges the lunge because the aim is locked, not tracked.
-    charger(e, dt, heroTile) {
-      const k = e.def, d = dist(e.x, e.y, hero.x, hero.y);
+    charger(e, dt, tgt, tgtTile) {
+      const k = e.def, d = dist(e.x, e.y, tgt.x, tgt.y);
       e.state = e.state || "approach";
       if (e.state === "approach") {
         if (d <= k.lungeRange) {
-          const dx = hero.x - e.x, dy = hero.y - e.y, m = Math.hypot(dx, dy) || 1;
+          const dx = tgt.x - e.x, dy = tgt.y - e.y, m = Math.hypot(dx, dy) || 1;
           e.lockAim = { x: dx / m, y: dy / m };
           e.state = "telegraph"; e.timer = k.telegraph;
           return;
         }
-        if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, heroTile[0], heroTile[1]);
+        if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, tgtTile[0], tgtTile[1]);
         followPath(e, moveSpeedOf(e), dt);
-        if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
+        if (d < tgt.r + e.r) hurtMember(tgt, k.contactDamage, k.name);
       } else if (e.state === "telegraph") {
         e.timer -= dt; // hold still and tell the lunge
         if (e.timer <= 0) { e.state = "lunge"; e.timer = k.lungeDur; e.lunged = false; }
       } else if (e.state === "lunge") {
         e.timer -= dt;
         moveAndCollide(level, e, e.lockAim.x * k.lungeSpeed * dt, e.lockAim.y * k.lungeSpeed * dt);
-        if (!e.lunged && d < hero.r + e.r) { // strength-scaled slam + heavy knockback
-          hurtHero(weaponDamage(k.attack, e, hero.derived.maxHp, hero.hp), k.name);
-          knockback(hero, hero.x - e.x, hero.y - e.y, e.derived.knockback * k.attack.knockback);
+        if (!e.lunged && d < tgt.r + e.r) { // strength-scaled slam + heavy knockback
+          hurtMember(tgt, weaponDamage(k.attack, e, tgt.derived.maxHp, tgt.hp), k.name);
+          knockback(tgt, tgt.x - e.x, tgt.y - e.y, e.derived.knockback * k.attack.knockback);
           e.lunged = true;
         }
         if (e.timer <= 0) { e.state = "cooldown"; e.timer = k.cooldown; }
       } else {
         e.timer -= dt;
-        if (d < hero.r + e.r) hurtHero(k.contactDamage, k.name);
+        if (d < tgt.r + e.r) hurtMember(tgt, k.contactDamage, k.name);
         if (e.timer <= 0) e.state = "approach";
       }
     },
   };
 
   // brainFor: pick the def's behavior. repathT ticks here so every brain shares
-  // one repath clock (spec 06: behavior is selected by def.behavior).
-  function stepEnemy(e, dt, heroTile) {
+  // one repath clock (spec 06: behavior is selected by def.behavior). The enemy's
+  // chosen party member (head or a follower) and its tile are resolved here.
+  function stepEnemy(e, dt) {
     e.repathT -= dt;
-    BEHAVIORS[e.def.behavior](e, dt, heroTile);
+    const tgt = targetFor(e);
+    BEHAVIORS[e.def.behavior](e, dt, tgt, tileOf(tgt));
   }
 
   // Soft body collision: shift `e` (and optionally `o`) so circles stop overlapping,
@@ -743,7 +758,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     fireSignature(hero, nearestEnemy()); // signature auto-fires from the head
 
     // Enemy brains (skip dead/frozen; cull far enemies on the long map)
-    const heroTile = tileOf(hero);
     const activeY = cam.y + VIEW_H / 2;
     for (const e of enemies) {
       if (e.dead) continue;
@@ -751,7 +765,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       if (e.frozenT > 0) { e.frozenT -= dt; continue; }
       if (Math.abs(e.y - activeY) >= VIEW_H) continue;
       if (e.confuseT > 0) { e.confuseT -= dt; stepConfused(e, dt); } // Bad Trip: turn on its own kind
-      else stepEnemy(e, dt, heroTile);
+      else stepEnemy(e, dt);
     }
 
     // Queued knockback rides out here, after brains — a frozen or mid-attack enemy
@@ -765,8 +779,9 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     applyKb(hero);
 
     // Follower train: snap each to its breadcrumb a fixed arc-length back, auto-swing
-    // its bat, and permadie when crushed against the advancing edge. Enemy projectiles
-    // already hit them (heroTargets); their contact damage is applied below.
+    // its bat, and permadie when crushed against the advancing edge. Contact damage to
+    // a follower is dealt by the enemies that target it (BEHAVIORS, via hurtMember);
+    // enemy projectiles already hit followers through the shared heroTargets faction.
     for (let i = 0; i < followers.length; i++) {
       const f = followers[i];
       f.cd = Math.max(0, f.cd - dt);
@@ -782,16 +797,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       const near = nearestEnemyTo(f.x, f.y);
       fireWeapon(f, f.weapon, near); // auto-fire its own weapon
       fireSignature(f, near);        // and its genre signature
-    }
-    // Enemy contact damage to followers (the BEHAVIORS only target the hero); each
-    // follower's i-frames throttle the per-frame overlap so it chips, not instakills.
-    for (const e of enemies) {
-      if (e.dead || !e.def.contactDamage) continue;
-      for (const f of followers) {
-        if (f.dead || dist(e.x, e.y, f.x, f.y) >= f.r + e.r) continue;
-        const dealt = applyDamage(f, e.def.contactDamage);
-        if (dealt > 0) { spawnHitNumber(f, dealt); creditCharge(f, dealt, true); }
-      }
     }
 
     // Projectiles (hero + enemy): resolve each against the opposite faction via the
@@ -1168,6 +1173,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   // are display-only. `finished` flips once and tells main to hand off to the summary.
   return {
     update, render, runState, nextSeed: seed + 1,
+    // Read-only live-state handle for the headless gauntlet harness (tests/gauntlet.mjs):
+    // lets a bot read the hero position + map to steer, and taps run metrics. Not used
+    // by the game itself.
+    get _probe() { return { hero, level, enemies, cam, followers }; },
     get finished() { return outcome !== null; },
     get result() {
       return {

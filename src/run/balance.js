@@ -50,6 +50,10 @@ export const BALANCE = {
   // carried-over heroes unlock at 0; the four new ones gate by run count. The party-
   // select reads this generically; the chosen party is the in-run head (party[0]) + train.
   partyMax: 5,
+  // Global throttle on every player-side fire rate (head, followers, deployed turrets):
+  // each weapon/signature `cd` is multiplied by this when it fires. >1 slows the party's
+  // collective DPS so a big auto-firing train doesn't trivially out-pace the director.
+  heroFireCooldownMult: 1.2,
   roster: [
     { id: "marvin",    name: "Marvin",    genre: "House",      color: "#f5c518", weaponId: "slingshot", signatureId: "good_vibes",   stats: { speed: 5, constitution: 5, strength: 5, magic: 5 }, unlockAtRuns: 0 },
     { id: "chad",      name: "Chad",      genre: "Industrial", color: "#e8743b", weaponId: "cleave",    signatureId: "mosh_pit",     stats: { speed: 5, constitution: 8, strength: 8, magic: 2 }, unlockAtRuns: 0 },
@@ -147,7 +151,7 @@ export const BALANCE = {
   // the party's aggregate-HP strength (see director.threatMult). 0 = ignore party
   // state (flat baseline); higher = steeper ramp up when healthy / off when hurt.
   // partyThreatFloor caps how far a battered party can drop the threat.
-  director: { baseThreat: 4, threatSlope: 16, tickInterval: 0.5, spawnBandTiles: 8, maxLive: 40, partyThreatScale: 0.5, partyThreatFloor: 0.6 },
+  director: { baseThreat: 4, threatSlope: 16, tickInterval: 0.5, spawnBandTiles: 8, maxLive: 40, partyThreatScale: 1.0, partyThreatFloor: 0.6 },
 
   // In-run powerups (spec 07): kills pay scrap and may drop a powerup pickup; scrap
   // is spent at shop spots. Drops/stock roll on the `loot` RNG sub-stream so they're
