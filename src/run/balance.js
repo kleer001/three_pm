@@ -70,14 +70,14 @@ export const BALANCE = {
   // enemy move-speed debuff; `fuse` delays a bomb's detonation.
   signatures: {
     mosh_pit:     { name: "Mosh Pit",     shape: "nova", cd: 3.5, radius: 120, freeze: false, manaCost: 0,  knockback: 3, damage: { scaling: "strength", base: 7, ratio: 0.8, pctMax: 0.08, pctCur: 0 } },
-    redline:      { name: "Redline",      shape: "projectile", cd: 0.14, speed: 540, range: 360, shotR: 4, life: 0.8, freeze: false, manaCost: 0, knockback: 0, damage: { scaling: "strength", base: 1, ratio: 0.3, pctMax: 0, pctCur: 0 } },
+    redline:      { name: "Redline",      shape: "projectile", cd: 0.20, speed: 540, range: 360, shotR: 4, life: 0.8, freeze: false, manaCost: 0, knockback: 0, damage: { scaling: "strength", base: 1, ratio: 0.3, pctMax: 0, pctCur: 0 } },
     deep_freeze:  { name: "Deep Freeze",  shape: "nova", cd: 6, radius: 130, freeze: true, manaCost: 12, knockback: 1, damage: { scaling: "magic", base: 3, ratio: 0.3, pctMax: 0, pctCur: 0 } },
     flashback:    { name: "Flashback",    shape: "bomb", cd: 2.2, speed: 300, range: 440, shotR: 6, life: 1.4, radius: 150, fuse: 1.6, freeze: false, manaCost: 6, knockback: 1, impact: { scaling: "magic", base: 2, ratio: 0.2 }, damage: { scaling: "magic", base: 6, ratio: 0.7, pctMax: 0.12, pctCur: 0 } },
     chill_zone:   { name: "Chill Zone",   shape: "field", cd: 6, range: 360, radius: 112, lifespan: 4.5, tickInterval: 0.5, slow: 0.5, slowDur: 0.9, freeze: false, manaCost: 14, knockback: 0, damage: { scaling: "magic", base: 1, ratio: 0.25, pctMax: 0.03, pctCur: 0 } },
     good_vibes:   { name: "Good Vibes",   shape: "heal", hpPerSec: 1.6 },
-    drum_machine: { name: "Drum Machine", shape: "deploy", cd: 4, manaCost: 16, maxActive: 3, life: 8, turretId: "slingshot" },
+    drum_machine: { name: "Drum Machine", shape: "deploy", cd: 4, manaCost: 16, maxActive: 2, life: 8, turretId: "slingshot" },
     bad_trip:     { name: "Bad Trip",     shape: "confuse", cd: 6, radius: 150, confuseDur: 2.5, manaCost: 14 },
-    the_drop:     { name: "The Drop",     shape: "charge", radius: 150, threshold: 55, freeze: false, manaCost: 0, knockback: 4, takenScale: 0.8, damage: { scaling: "magic", base: 4, ratio: 0.4, pctMax: 0, pctCur: 0 } },
+    the_drop:     { name: "The Drop",     shape: "charge", radius: 150, threshold: 38, freeze: false, manaCost: 0, knockback: 4, takenScale: 0.8, damage: { scaling: "magic", base: 4, ratio: 0.4, pctMax: 0, pctCur: 0 } },
   },
 
   // Player arsenal — all are offered on the select screen each run; one is fired
@@ -143,7 +143,11 @@ export const BALANCE = {
   // Director: spends a depth-scaled live-threat budget on off-screen spawns.
   // budget(f) = baseThreat + f*threatSlope, monotonic in distance fraction f, so
   // threat density rises toward home. maxLive caps concurrent enemies (perf).
-  director: { baseThreat: 4, threatSlope: 16, tickInterval: 0.5, spawnBandTiles: 8, maxLive: 40 },
+  // partyThreatScale: adaptive-difficulty sensitivity — how hard the budget leans on
+  // the party's aggregate-HP strength (see director.threatMult). 0 = ignore party
+  // state (flat baseline); higher = steeper ramp up when healthy / off when hurt.
+  // partyThreatFloor caps how far a battered party can drop the threat.
+  director: { baseThreat: 4, threatSlope: 16, tickInterval: 0.5, spawnBandTiles: 8, maxLive: 40, partyThreatScale: 0.5, partyThreatFloor: 0.6 },
 
   // In-run powerups (spec 07): kills pay scrap and may drop a powerup pickup; scrap
   // is spent at shop spots. Drops/stock roll on the `loot` RNG sub-stream so they're

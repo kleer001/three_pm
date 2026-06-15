@@ -187,9 +187,17 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     return out;
   }
 
+  // Adaptive difficulty: the director scales its threat budget by the party's current
+  // aggregate HP relative to the head's max — bigger/healthier party → more threat,
+  // injured/dwindling → less (see director.threatMult).
+  const partyStrength = () => {
+    let now = hero.dead ? 0 : hero.hp;
+    for (const f of followers) if (!f.dead) now += f.hp;
+    return now / hero.derived.maxHp;
+  };
   const director = makeDirector({
     level, rng, defs: Object.values(ENEMIES), cam, viewH: VIEW_H,
-    cfg: BALANCE.director, ts: TS,
+    cfg: BALANCE.director, ts: TS, partyStrength,
   });
 
   const tileOf = (e) => [Math.floor(e.x / TS), Math.floor(e.y / TS)];

@@ -22,6 +22,16 @@ export function budget(f, cfg) {
   return cfg.baseThreat + f * cfg.threatSlope;
 }
 
+// Adaptive difficulty multiplier on the budget. `strength` is the party's current
+// aggregate HP divided by the head's max HP: solo-at-full = 1 (the tuned baseline),
+// a larger/healthier party > 1, an injured or dwindling one < 1. Threat leans in when
+// the party is doing well and eases off when it's hurting — and since dead followers
+// and lost HP both pull `strength` down, it also breaks death spirals. Floored so a
+// near-dead run is still pressured, not a walkover.
+export function threatMult(strength, cfg) {
+  return Math.max(cfg.partyThreatFloor, 1 + (strength - 1) * cfg.partyThreatScale);
+}
+
 // Defs spawnable at distance f: deeper bands unlock higher tiers and the
 // ranged/charger families. `defs` is an array of enemy defs.
 export function eligible(defs, f) {
@@ -32,7 +42,7 @@ export function eligible(defs, f) {
 // camera rect (cam.y mutates each frame); `cfg` is BALANCE.director; `ts` the
 // tile size. `update` runs each frame with the live `enemies` array and a
 // `spawnEnemy(def, tx, ty)` callback that builds and pushes the entity.
-export function makeDirector({ level, rng, defs, cam, viewH, cfg, ts }) {
+export function makeDirector({ level, rng, defs, cam, viewH, cfg, ts, partyStrength }) {
   let acc = 0;
 
   function update(dt, hero, enemies, spawnEnemy) {
@@ -43,7 +53,8 @@ export function makeDirector({ level, rng, defs, cam, viewH, cfg, ts }) {
     const f = distanceFraction(hero, level, ts);
     let live = 0, liveThreat = 0;
     for (const e of enemies) if (!e.dead) { live++; liveThreat += e.def.threatValue; }
-    let spend = budget(f, cfg) - liveThreat;
+    const mult = threatMult(partyStrength ? partyStrength() : 1, cfg);
+    let spend = budget(f, cfg) * mult - liveThreat;
 
     const pool = eligible(defs, f);
     if (!pool.length) return;
