@@ -1,0 +1,111 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>3pm — tile mapping compare</title>
+<style>
+  body { background:#fafafa; color:#1a1a1a; font:14px/1.4 system-ui, sans-serif; margin:24px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  p.sub { color:#555; margin:0 0 20px; }
+  .grid { display:flex; flex-wrap:wrap; gap:24px; }
+  .panel { background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .panel h2 { font-size:14px; margin:0 0 2px; }
+  .panel .map { color:#666; font-size:12px; margin:0 0 8px; white-space:pre; font-family:ui-monospace, monospace; }
+  canvas { image-rendering:pixelated; display:block; border:1px solid #eee; }
+</style>
+<h1>Tile → material mapping compare</h1>
+<p class="sub">Same 8×8 suburb slice rendered every way. Grass is always the base. Give notes by panel name.</p>
+<div class="grid" id="grid"></div>
+
+<script type="module">
+const desc = await fetch("../assets/tiles.json").then(r => r.json());
+const sheet = await new Promise((res, rej) => {
+  const img = new Image();
+  img.onload = () => res(img);
+  img.onerror = () => rej(new Error("tiles.png failed to load"));
+  img.src = "../assets/tiles.png";
+});
+
+const CELL = desc.cell;                 // 48
+const MATS = Object.keys(desc.materials); // hedge, brick, crater, road (draw order = priority)
+const blit = (ctx, fid, dx, dy) => {
+  const f = desc.frames[fid];
+  ctx.drawImage(sheet, f.x, f.y, f.w, f.h, dx, dy, f.w, f.h);
+};
+
+// --- game tile ids (mirror src/run/levelgen.js TILE) ---
+const STREET=0, SIDEWALK=1, YARD=2, ALLEY=3, FLOOR=4, WALL=5, RUBBLE=6;
+const CHAR = { ".":YARD, S:STREET, s:SIDEWALK, A:ALLEY, F:FLOOR, W:WALL, R:RUBBLE };
+// 8x8 hand-authored descent slice: vertical street w/ sidewalks, a house
+// (walls + floor + door) top-right, alley + rubble bottom-left, rubble patch SE.
+const ROWS = [
+  ". s S s . W W W",
+  ". s S s . W F W",
+  ". s S s . F F W",
+  ". s S s . W W W",
+  ". s S s . . . .",
+  "A s S s . . . .",
+  "R s S s . . . R",
+  "R s S s . . R R",
+];
+const GRID = ROWS.map(r => r.split(" ").map(c => CHAR[c]));
+const GH = GRID.length, GW = GRID[0].length;
+const tileAt = (x, y) => (x < 0 || y < 0 || x >= GW || y >= GH) ? null : GRID[y][x];
+
+// flat-color baseline (mirror balance.js THEME.tile + obstacleDarken)
+const TILE_COLOR = ["#5a5a5a","#9a9a9a","#6f9a55","#4a4a4a","#caa37a","#2e2e2e","#7c6a55"];
+const WALKABLE = new Set([STREET,SIDEWALK,YARD,ALLEY,FLOOR]);
+
+// --- dual-grid render given a mapping fn id->materialName|null ---
+function renderDual(ctx, mapFn) {
+  for (let y = 0; y < GH; y++)
+    for (let x = 0; x < GW; x++) blit(ctx, desc.ground, x*CELL, y*CELL); // grass base
+  const matAt = (x, y) => { const t = tileAt(x, y); return t == null ? null : mapFn(t, x, y); };
+  for (const m of MATS) {
+    const tiles = desc.materials[m];
+    for (let y = -1; y < GH; y++)
+      for (let x = -1; x < GW; x++) {
+        const c = (matAt(x,y)===m?1:0) | (matAt(x+1,y)===m?2:0) | (matAt(x+1,y+1)===m?4:0) | (matAt(x,y+1)===m?8:0);
+        if (c) blit(ctx, tiles[c], x*CELL + CELL/2, y*CELL + CELL/2);
+      }
+  }
+}
+function renderFlat(ctx) {
+  for (let y = 0; y < GH; y++)
+    for (let x = 0; x < GW; x++) {
+      const t = GRID[y][x];
+      ctx.fillStyle = TILE_COLOR[t];
+      ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
+      if (!WALKABLE.has(t)) { ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(x*CELL, y*CELL, CELL, CELL); }
+    }
+}
+
+// paths shared by most variants
+const path = t => (t===STREET || t===SIDEWALK || t===ALLEY) ? "road" : null;
+const streetOnly = t => (t===STREET || t===ALLEY) ? "road" : null; // sidewalk stays grass
+
+const PANELS = [
+  { name: "0 · Current (flat colors)", map: "baseline for comparison", fn: null },
+  { name: "1 · Suburban hedges", map: "WALL→hedge  FLOOR→brick\nRUBBLE→crater  paths→road",
+    fn: t => t===WALL?"hedge" : t===FLOOR?"brick" : t===RUBBLE?"crater" : path(t) },
+  { name: "2 · Brick walls / grass floor", map: "WALL→brick  FLOOR→grass\nRUBBLE→crater  paths→road",
+    fn: t => t===WALL?"brick" : t===RUBBLE?"crater" : path(t) },
+  { name: "3 · Solid brick houses", map: "WALL→brick  FLOOR→brick\nRUBBLE→crater  paths→road",
+    fn: t => (t===WALL||t===FLOOR)?"brick" : t===RUBBLE?"crater" : path(t) },
+  { name: "4 · Hedge walls / grass floor", map: "WALL→hedge  FLOOR→grass\nRUBBLE→crater  paths→road",
+    fn: t => t===WALL?"hedge" : t===RUBBLE?"crater" : path(t) },
+  { name: "5 · Hedge house, sidewalk grass", map: "WALL→hedge  FLOOR→brick\nRUBBLE→crater  STREET/ALLEY→road",
+    fn: t => t===WALL?"hedge" : t===FLOOR?"brick" : t===RUBBLE?"crater" : streetOnly(t) },
+  { name: "6 · Crater walls (rubble look)", map: "WALL→crater  FLOOR→brick\nRUBBLE→crater  paths→road",
+    fn: t => t===WALL?"crater" : t===FLOOR?"brick" : t===RUBBLE?"crater" : path(t) },
+];
+
+const gridEl = document.getElementById("grid");
+for (const p of PANELS) {
+  const div = document.createElement("div"); div.className = "panel";
+  const h = document.createElement("h2"); h.textContent = p.name;
+  const m = document.createElement("p"); m.className = "map"; m.textContent = p.map;
+  const c = document.createElement("canvas"); c.width = GW*CELL; c.height = GH*CELL;
+  const cx = c.getContext("2d"); cx.imageSmoothingEnabled = false;
+  p.fn ? renderDual(cx, p.fn) : renderFlat(cx);
+  div.append(h, m, c); gridEl.append(div);
+}
+</script>

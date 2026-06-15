@@ -4,7 +4,7 @@
 // up space (soft body collision), and stop to attack. Marvin fights back with an
 // auto-aiming weapon (chosen on the select screen) whose damage and mana cost run
 // through the same combat resolver the enemies use.
-import { generate, isWalkable } from "./levelgen.js";
+import { generate, isWalkable, TILE } from "./levelgen.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
 import { findPath } from "../ai/ai.js";
@@ -28,12 +28,50 @@ const TILE_COLOR = THEME.tile; // indexed by tile id (see TILE in levelgen.js)
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
+// Optional textured ground (assets/tiles.png). The game renders flat THEME.tile
+// fills until this dual-grid atlas loads, and keeps doing so if it never does —
+// tiles are a droppable asset (CLAUDE.md "Art is isolated from game code"). The
+// load error is swallowed by intent, not to hide a bug. Material mapping:
+// WALL→hedge, FLOOR→brick, RUBBLE→crater, paved→road, yard→grass base.
+const TILE_TO_MAT = [];
+TILE_TO_MAT[TILE.STREET] = TILE_TO_MAT[TILE.SIDEWALK] = TILE_TO_MAT[TILE.ALLEY] = "road";
+TILE_TO_MAT[TILE.FLOOR] = "brick";
+TILE_TO_MAT[TILE.WALL] = "hedge";
+TILE_TO_MAT[TILE.RUBBLE] = "crater";
+TILE_TO_MAT[TILE.YARD] = null;
+
+let tileAtlas = null; // { sheet, ground, mats:{name:[16 frames]}, order:[names] }
+(function loadTileAtlas() {
+  fetch(new URL("../../assets/tiles.json", import.meta.url))
+    .then((r) => r.json())
+    .then((desc) => new Promise((res) => {
+      const img = new Image();
+      img.onload = () => res({ desc, img });
+      img.onerror = () => res(null); // missing png → stay on flat fills
+      img.src = new URL("../../assets/" + desc.sheet, import.meta.url).href;
+    }))
+    .then((loaded) => {
+      if (!loaded) return;
+      const { desc, img } = loaded;
+      const order = Object.keys(desc.materials); // priority order, last on top
+      const mats = {};
+      for (const m of order) {
+        const arr = new Array(16);
+        for (let c = 0; c < 16; c++) arr[c] = desc.frames[desc.materials[m][c]];
+        mats[m] = arr;
+      }
+      tileAtlas = { sheet: img, ground: desc.frames[desc.ground], mats, order };
+    })
+    .catch(() => {}); // missing/bad json → stay on flat fills
+})();
+
 export function createRunScene(ctx, input, seed, party, saveBlob) {
   const level = generate(seed, {
     w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS,
     wallScaleX: BALANCE.wall.scaleX, wallScaleY: BALANCE.wall.scaleY, wallDensity: BALANCE.wall.density,
   });
   const mapW = level.w * TS, mapH = level.h * TS;
+  ctx.imageSmoothingEnabled = false; // crisp 1:1 tile blits, no scaling blur
   const homeSet = new Set(level.homeBand.map(([x, y]) => y * level.w + x));
   const rng = makeRng(subSeed(seed, "spawns"));
   // Loot stream is its own sub-seed (spec 07): drops + shop stock stay reproducible
@@ -132,6 +170,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   const floaters = [];    // rising damage numbers, one per landed hit, visual only
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   let outcome = null;
+  let paused = false, pEsc = false; // Esc toggles a full freeze during free descent
   let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
   // One place to end the run as a loss with its cause — every lethal path routes here.
   const loseRun = (cause) => { outcome = "lose"; deathCause = cause; };
@@ -713,7 +752,13 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
 
   function update(dt) {
     if (outcome) return; // run is over; main hands off to the summary scene (spec 15)
+    // Track Esc every frame (even in the shop, which owns Esc to leave) so closing a
+    // stall with Esc can't bleed into the same press toggling pause.
+    const esc = input.down("Escape"), escEdge = esc && !pEsc;
+    pEsc = esc;
     if (shopOpen) { stepShop(); return; } // paused at a stall — only the modal runs
+    if (escEdge) paused = !paused;
+    if (paused) return; // frozen; render() draws the PAUSED overlay, Esc resumes
     while (input.consumeTap()) { /* gameplay has no tap actions — drain so taps don't
       back up and flush all at once when a shop opens (touch drives movement, not taps) */ }
     // Timed buffs tick on UNSCALED time: Slow Jam scales the whole sim (bullet-time),
@@ -728,7 +773,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     hero.sigCd = Math.max(0, hero.sigCd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
     regenMana(hero, dt); // same mana code the enemy casters use
-    tickHeal(hero, dt);
 
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
     const minY = cam.y + MARGIN; // the advancing crush line; fatal to whoever crosses it
@@ -754,8 +798,11 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     // Selected weapon: SPACE (or auto-fire on touch) fires through the shared resolver
     // (cooldown + mana + reach/range gated inside, per the weapon's own `autofire`),
     // auto-aimed at the nearest enemy. The follower train fires the same way.
+    // Per-hero tradeoff: the head contributes ONLY its active weapon (no signature, no
+    // passive). Every follower contributes ONLY its passive signature (no weapon — below).
+    // So adding a hero trades their weapon away for their passive: a real choice, not a
+    // free firepower stack.
     if (input.down("Space") || input.touchActive()) fireWeapon(hero, weapon, nearestEnemy());
-    fireSignature(hero, nearestEnemy()); // signature auto-fires from the head
 
     // Enemy brains (skip dead/frozen; cull far enemies on the long map)
     const activeY = cam.y + VIEW_H / 2;
@@ -795,8 +842,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       // but being pinned against a wall there is fatal — that's "left behind".
       if (f.y < minY) { f.y = minY; if (boxBlocked(level, f)) { f.dead = true; continue; } }
       const near = nearestEnemyTo(f.x, f.y);
-      fireWeapon(f, f.weapon, near); // auto-fire its own weapon
-      fireSignature(f, near);        // and its genre signature
+      fireSignature(f, near); // followers contribute only their passive signature, no weapon
     }
 
     // Projectiles (hero + enemy): resolve each against the opposite faction via the
@@ -957,11 +1003,37 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     ctx.textAlign = "left";
   }
 
+  // Dual-grid textured ground: a static grass base, then one offset pass per
+  // material. Each display tile sits half a cell up-left of the logic grid and
+  // samples its 4 corner cells (TL=1,TR=2,BR=4,BL=8) to pick an autotile, so an
+  // island's outline closes correctly. +1px overscan matches the flat path's
+  // seam guard. (x0..y1 are the visible cell bounds from render().)
+  function drawTiles(x0, x1, y0, y1) {
+    const A = tileAtlas, g = A.ground;
+    for (let ty = y0; ty <= y1; ty++)
+      for (let tx = x0; tx <= x1; tx++)
+        ctx.drawImage(A.sheet, g.x, g.y, g.w, g.h, Math.floor(tx * TS - cam.x), Math.floor(ty * TS - cam.y), TS + 1, TS + 1);
+    const matCell = (x, y) => (x < 0 || y < 0 || x >= level.w || y >= level.h) ? null : TILE_TO_MAT[level.tiles[y * level.w + x]];
+    const dx0 = Math.floor((cam.x - TS / 2) / TS), dx1 = Math.ceil((cam.x + VIEW_W) / TS);
+    const dy0 = Math.floor((cam.y - TS / 2) / TS), dy1 = Math.ceil((cam.y + VIEW_H) / TS);
+    for (const m of A.order) {
+      const frames = A.mats[m];
+      for (let y = dy0; y <= dy1; y++)
+        for (let x = dx0; x <= dx1; x++) {
+          const c = (matCell(x, y) === m ? 1 : 0) | (matCell(x + 1, y) === m ? 2 : 0) | (matCell(x + 1, y + 1) === m ? 4 : 0) | (matCell(x, y + 1) === m ? 8 : 0);
+          if (!c) continue;
+          const f = frames[c];
+          ctx.drawImage(A.sheet, f.x, f.y, f.w, f.h, Math.floor(x * TS + TS / 2 - cam.x), Math.floor(y * TS + TS / 2 - cam.y), TS + 1, TS + 1);
+        }
+    }
+  }
+
   function render() {
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
     const x0 = Math.max(0, Math.floor(cam.x / TS)), x1 = Math.min(level.w - 1, Math.ceil((cam.x + VIEW_W) / TS));
     const y0 = Math.max(0, Math.floor(cam.y / TS)), y1 = Math.min(level.h - 1, Math.ceil((cam.y + VIEW_H) / TS));
-    for (let ty = y0; ty <= y1; ty++)
+    if (tileAtlas) drawTiles(x0, x1, y0, y1);
+    else for (let ty = y0; ty <= y1; ty++)
       for (let tx = x0; tx <= x1; tx++) {
         const i = ty * level.w + tx;
         // Floor + 1px overscan so fractional camera scroll leaves no seams.
@@ -1164,6 +1236,14 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     // Paused shop modal: the frozen world shows behind a dimmed panel listing the
     // stall's stock; the player picks one to buy. Drawn last so it sits over everything.
     if (shopOpen && nearShop) renderShop();
+    if (paused) {
+      const O = THEME.overlay;
+      ctx.fillStyle = O.bg; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.fillStyle = O.fg; ctx.textAlign = "center";
+      ctx.font = O.titleFont; ctx.fillText("PAUSED", VIEW_W / 2, VIEW_H / 2 - 8);
+      ctx.font = O.subFont; ctx.fillText("Esc to resume", VIEW_W / 2, VIEW_H / 2 + 24);
+      ctx.textAlign = "left";
+    }
     // No end overlay here — when a run resolves, main hands off to the dedicated
     // DEATH/VICTORY summary scene (spec 15), which owns the end-of-run screen.
   }
