@@ -9,6 +9,7 @@ import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendM
 import { POWERUPS, SYNERGIES, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weightedPick } from "../src/run/powerups.js";
 import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgrade, applyHeroUpgrades, recomputeUnlocks, isHeroUnlocked, upgradeRank, nextCost } from "../src/meta/save.js";
 import { BALANCE, THEME } from "../src/run/balance.js";
+import { createPartyPreview } from "../src/run/partyPreview.js";
 
 const freshBlob = () => ({
   version: 1, credits: 0, runCount: 0, unlockedHeroes: recomputeUnlocks(0), heroUpgrades: {},
@@ -353,6 +354,32 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   ok(isHeroUnlocked(freshBlob(), day0), "isHeroUnlocked: run-0 character");
   ok(!recomputeUnlocks(gated.unlockAtRuns - 1).includes(gated.id), "gated character locked before its run");
   ok(recomputeUnlocks(gated.unlockAtRuns).includes(gated.id), "gated character unlocks at its run");
+}
+
+// Party-select live preview: the self-contained mini-sim must run every roster hero —
+// covering every weapon AND signature shape — without throwing, and must actually draw.
+// A no-op/counting ctx stub stands in for the canvas (the sim is decoupled from drawing).
+{
+  const DRAWS = new Set(["fillRect", "arc", "fillText", "stroke", "fill"]);
+  const rect = { x: 510, y: 70, w: 274, h: 500 };
+  for (const def of BALANCE.roster) {
+    let draws = 0;
+    const ctx = new Proxy({}, { get: (_t, p) => (DRAWS.has(p) ? () => { draws++; } : () => {}), set: () => true });
+    const pv = createPartyPreview(ctx, rect);
+    let threw = null;
+    try {
+      pv.setHero(def);
+      for (let f = 0; f < 600; f++) { pv.update(1 / 60); pv.render(); } // 10s sim
+    } catch (e) { threw = e.message; }
+    ok(!threw, `preview runs hero ${def.id} (${def.weaponId}/${def.signatureId}) without throwing — ${threw}`);
+    ok(draws > 0, `preview renders non-blank for hero ${def.id}`);
+  }
+  // setHero(null) clears to an idle panel without throwing.
+  const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+  const pv = createPartyPreview(ctx, rect);
+  let idleThrew = null;
+  try { pv.setHero(null); pv.update(1 / 60); pv.render(); } catch (e) { idleThrew = e.message; }
+  ok(!idleThrew, `preview idle (no hero) runs without throwing — ${idleThrew}`);
 }
 
 console.log(failures === 0

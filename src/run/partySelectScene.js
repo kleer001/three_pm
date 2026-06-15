@@ -6,6 +6,7 @@
 import { BALANCE, THEME } from "./balance.js";
 import { hitRect } from "../input/input.js";
 import { isHeroUnlocked } from "../meta/save.js";
+import { createPartyPreview } from "./partyPreview.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 const COLS = 3;
@@ -26,19 +27,37 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
   const byId = (id) => roster.find((c) => c.id === id);
 
+  // Only unlocked cards (and the Start button) can be highlighted/selected — locked
+  // heroes are skipped by nav and taps, so the preview only ever runs for reachable picks.
+  const selectable = (n) => n === START || (n < GRID && unlocked(roster[n]));
+  const lastUnlocked = () => { for (let n = GRID - 1; n >= 0; n--) if (unlocked(roster[n])) return n; return 0; };
+
+  // Live action-preview in the right column; lazily built (needs the static rect from
+  // layout()). Rebuilt whenever the highlighted index changes.
+  let preview = null, prevI = -1;
+  const prev = () => (preview || (preview = createPartyPreview(ctx, layout().preview)));
+  function syncPreview() {
+    if (i === START) prev().setHero(party.length ? byId(party[0]) : null); // Start: just the head
+    else prev().setHero(roster[i]);
+  }
+
   // Card grid + Start button geometry in logical canvas px — shared by render (draw)
   // and update (tap hit-testing) so taps land exactly where the cards are drawn.
+  // Compact, left-aligned 3×3 (cards + gaps shrunk ~70%) frees a tall preview column on
+  // the right. The single source for both render and tap hit-testing.
   function layout() {
-    const cardW = 200, cardH = 112, gx = 20, gy = 10, portH = 62;
-    const gridW = COLS * cardW + (COLS - 1) * gx;
-    const x0 = (VIEW_W - gridW) / 2, y0 = 62;
+    const cardW = 150, cardH = 84, gx = 6, gy = 6, portH = 40;
+    const gridW = COLS * cardW + (COLS - 1) * gx; // 462
+    const x0 = 24, y0 = 70;
     const cards = [];
     for (let n = 0; n < GRID; n++) {
       cards.push({ x: x0 + (n % COLS) * (cardW + gx), y: y0 + Math.floor(n / COLS) * (cardH + gy), w: cardW, h: cardH, index: n });
     }
-    const dy = y0 + 3 * (cardH + gy) + 2, dh = 64;
+    const dy = y0 + 3 * (cardH + gy) + 8, dh = 60;
     const start = { x: x0, y: dy + dh + 8, w: gridW, h: 34 };
-    return { cardW, cardH, portH, gridW, x0, y0, cards, dy, dh, start };
+    const previewX = x0 + gridW + 24;
+    const preview = { x: previewX, y: y0, w: VIEW_W - previewX - 16, h: VIEW_H - y0 - 30 };
+    return { cardW, cardH, portH, gridW, x0, y0, cards, dy, dh, start, preview };
   }
 
   function toggle(c) {
@@ -49,19 +68,21 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     party.push(c.id);                              // new pick lands last; first in line still leads
   }
 
-  function update() {
+  function update(dt) {
     if (!input.down("Space") && !input.down("Enter")) armed = true;
 
     const up = input.down("ArrowUp") || input.down("KeyW") || input.down("KeyK");
     const down = input.down("ArrowDown") || input.down("KeyS") || input.down("KeyJ");
     const left = input.down("ArrowLeft") || input.down("KeyA") || input.down("KeyH");
     const right = input.down("ArrowRight") || input.down("KeyD") || input.down("KeyL");
-    const rows = Math.ceil(GRID / COLS);
 
-    if (left && !pLeft && i !== START) { const ni = Math.floor(i / COLS) * COLS + ((i % COLS) - 1 + COLS) % COLS; if (ni < GRID) i = ni; }
-    if (right && !pRight && i !== START) { const ni = Math.floor(i / COLS) * COLS + ((i % COLS) + 1) % COLS; if (ni < GRID) i = ni; }
-    if (down && !pDown) i = i === START ? START : (Math.floor(i / COLS) < rows - 1 && i + COLS < GRID ? i + COLS : START);
-    if (up && !pUp) i = i === START ? GRID - 2 : (i >= COLS ? i - COLS : i);
+    // Nav lands only on selectable cells; moves onto locked cards are rejected. Down from
+    // a card falls through to Start when the cell below is locked/out; up from Start lands
+    // on the last unlocked card.
+    if (left && !pLeft && i !== START) { const ni = Math.floor(i / COLS) * COLS + ((i % COLS) - 1 + COLS) % COLS; if (selectable(ni)) i = ni; }
+    if (right && !pRight && i !== START) { const ni = Math.floor(i / COLS) * COLS + ((i % COLS) + 1) % COLS; if (selectable(ni)) i = ni; }
+    if (down && !pDown && i !== START) { const ni = i + COLS; i = ni < GRID && selectable(ni) ? ni : START; }
+    if (up && !pUp) i = i === START ? lastUnlocked() : (i >= COLS && selectable(i - COLS) ? i - COLS : i);
     pUp = up; pDown = down; pLeft = left; pRight = right;
 
     const confirm = input.down("Space") || input.down("Enter");
@@ -80,9 +101,12 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     const { cards, start } = layout();
     for (let tap; (tap = input.consumeTap()); ) {
       const card = cards.find((r) => hitRect(tap, r));
-      if (card) { i = card.index; toggle(roster[card.index]); }
+      if (card) { if (unlocked(roster[card.index])) { i = card.index; toggle(roster[card.index]); } } // ignore taps on locked
       else if (hitRect(tap, start)) { i = START; if (party.length) confirmed = true; }
     }
+
+    if (i !== prevI) { syncPreview(); prevI = i; } // rebuild the demo when the highlight moves
+    prev().update(dt);
   }
 
   // Placeholder portrait: a flat color block in the character's hue. Isolated so a real
@@ -116,20 +140,20 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
       ctx.fillStyle = P.name;
       ctx.font = P.nameFont;
-      ctx.fillText(c.name, cx + cardW / 2, cy + portH + 22);
+      ctx.fillText(c.name, cx + cardW / 2, cy + portH + 15);
       ctx.fillStyle = P.weapon;
       ctx.font = P.weaponFont;
-      ctx.fillText(BALANCE.weapons[c.weaponId].name, cx + cardW / 2, cy + portH + 40);
+      ctx.fillText(BALANCE.weapons[c.weaponId].name, cx + cardW / 2, cy + portH + 30);
 
       // Selection-order badge (head = 1) on chosen cards.
       const slot = party.indexOf(c.id);
       if (slot >= 0) {
-        const bx = cx + 16, by = cy + 16;
+        const bx = cx + 12, by = cy + 12;
         ctx.fillStyle = P.badge;
-        ctx.beginPath(); ctx.arc(bx, by, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(bx, by, 10, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = P.badgeText;
         ctx.font = P.badgeFont;
-        ctx.fillText(String(slot + 1), bx, by + 5);
+        ctx.fillText(String(slot + 1), bx, by + 4);
       }
 
       // Locked: veil + gate label, non-selectable.
@@ -168,6 +192,8 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     ctx.font = P.hintFont;
     ctx.fillText("←↑↓→ or tap    SPACE / tap to pick · start    C clear    (first pick leads)", VIEW_W / 2, VIEW_H - 14);
     ctx.textAlign = "left";
+
+    prev().render(); // live action-preview in the right column
   }
 
   // The hover readout: portrait + name/genre, basic weapon, signature, stats, and the
