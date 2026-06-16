@@ -10,7 +10,7 @@ import { makeRng, subSeed } from "../core/rng.js";
 import { findPath } from "../ai/ai.js";
 import { makeDirector, distanceFraction } from "./director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
-import { POWERUPS, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weightedPick } from "./powerups.js";
+import { POWERUPS, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag } from "./powerups.js";
 import { applyHeroUpgrades } from "../meta/save.js";
 import { hitRect } from "../input/input.js";
 import { BALANCE, THEME } from "./balance.js";
@@ -78,10 +78,14 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   // and independent of world-gen ("gen") and the director ("spawns").
   const lootRng = makeRng(subSeed(seed, "loot"));
   const LOOT = BALANCE.loot;
+  // One shuffled bag both shops and drops draw from without replacement, so the same
+  // item is never offered or dropped twice in a run (uniqueness, not weighted re-rolls).
+  const lootBag = makeLootBag(lootRng);
 
-  // Run-scoped progression (spec 07 runState): held powerup ids (repeats = stacks)
-  // and the single in-run currency. `base` is the normalized rebuild snapshot the
-  // hero + weapon are replayed from on every acquisition.
+  // Run-scoped progression (spec 07 runState): held powerup ids (unique — the bag
+  // never repeats one) and the single in-run currency (cash). `base` is the
+  // normalized rebuild snapshot the hero + weapon are replayed from on every
+  // acquisition.
   // The chosen party (ids, head first): party[0] is the controllable head, the rest
   // trail as the follower train. Resolve to roster defs (slice stub: baseline stats +
   // one weapon + a color per character; real per-hero data lands later).
@@ -97,7 +101,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     return { id, ...s, damage: s.damage ? { ...s.damage } : undefined };
   };
 
-  const runState = { scrap: 0, powerups: [], kills: 0 };
+  const runState = { cash: 0, powerups: [], kills: 0 };
   const activeBuffs = []; // live timed buffs (BPM Boost / Slow Jam); tick on unscaled time
   const base = snapshotBase(head.stats || HERO.stats, { id: head.weaponId, ...BALANCE.weapons[head.weaponId] });
   const weapon = { ...base.weapon, damage: { ...base.weapon.damage } };
@@ -147,17 +151,24 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   let heldLine = "";
   function rebuild() {
     applyHeld(hero, weapon, base, runState.powerups, BALANCE.derive, LOOT);
-    const counts = {};
-    for (const id of runState.powerups) counts[id] = (counts[id] || 0) + 1;
-    heldLine = Object.keys(counts).map((id) => POWERUPS[id].name + (counts[id] > 1 ? ` ×${counts[id]}` : "")).join(",  ");
+    // Held ids are unique (bag draw), so a flat name list — no ×N stacks to tally.
+    heldLine = runState.powerups.map((id) => POWERUPS[id].name).join(",  ");
   }
 
   // Route an acquired powerup id: timed `buff` kinds (BPM Boost / Slow Jam) start a live
   // timer; everything else joins the held set and rebuilds hero+weapon from base.
   function acquire(defId) {
     const def = POWERUPS[defId];
-    if (def.kind === "buff") activeBuffs.push({ id: defId, kind: def.effect, mult: def.mult, t: def.duration });
-    else { runState.powerups.push(defId); rebuild(); }
+    if (def.kind === "buff") {
+      activeBuffs.push({ id: defId, kind: def.effect, mult: def.mult, t: def.duration,
+        tailMult: def.tailMult, tailDuration: def.tailDuration, tail: false });
+      if (def.hpCostFrac) hero.hp = Math.max(1, hero.hp - hero.derived.maxHp * def.hpCostFrac);
+    } else {
+      const before = hero.derived.maxHp;
+      runState.powerups.push(defId); rebuild();
+      // A blessing that raised max HP heals by the gain (one-time items, no abuse).
+      if (hero.derived.maxHp > before) hero.hp += hero.derived.maxHp - before;
+    }
   }
 
   const pickups = []; // powerup drops lying on the ground, awaiting hero overlap
@@ -204,8 +215,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   }
 
   // Scatter shop spots down the descent — one per even depth band so they appear
-  // through the run. Each rolls a single offering from the loot table (spec 07 shop
-  // stock). Placed here, not in levelgen, which "emits geometry only".
+  // through the run. Each stall draws its stock from the shared bag (so no item is
+  // offered twice run-wide); prices are quoted later, at the moment the player
+  // reaches the stall (reactive market). Placed here, not in levelgen, which
+  // "emits geometry only".
   function placeShops() {
     const { count, minTileY, r, stock } = BALANCE.shop;
     const lo = Math.max(minTileY, BALANCE.spawnMinTileY), hi = level.h - 3;
@@ -220,10 +233,9 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       if (!cells.length) continue;
       const [tx, ty] = lootRng.pick(cells);
       const items = [];
-      for (let k = 0; k < stock; k++) {
-        const defId = weightedPick(lootRng, LOOT.rarityWeight);
-        items.push({ defId, cost: POWERUPS[defId].cost, bought: false });
-      }
+      for (let k = 0; k < stock && lootBag.length; k++)
+        items.push({ defId: lootBag.shift(), price: 0, bought: false });
+      if (!items.length) continue; // bag exhausted — no stall here
       out.push({ tx, ty, x: tx * TS + TS / 2, y: ty * TS + TS / 2, r, items });
     }
     return out;
@@ -311,14 +323,18 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   }
 
   // An enemy just died (the slice's stand-in for spec 04's `death` event, funneled
-  // through the single hit path below). Pay scrap and roll a world drop on the loot
+  // through the single hit path below). Pay cash and roll a world drop on the loot
   // stream. `looted` guards the one-shot — corpses linger, so we'd otherwise re-pay.
   function onEnemyDeath(e) {
     e.looted = true;
     runState.kills++;
-    runState.scrap += scrapForKill(e.def, LOOT);
-    const id = rollPowerupDrop(lootRng, e.def, LOOT);
-    if (id) pickups.push({ x: e.x, y: e.y, defId: id, r: LOOT.pickupR, t: 0, dead: false });
+    runState.cash += cashForKill(e.def, LOOT);
+    // On a drop, take the next id from the shared bag so drops stay unique run-wide
+    // (and don't dupe what a shop already offered). Empty bag → no drop.
+    if (lootBag.length && rollDrop(lootRng, e.def, LOOT)) {
+      const id = lootBag.shift();
+      pickups.push({ x: e.x, y: e.y, defId: id, r: LOOT.pickupR, t: 0, dead: false });
+    }
   }
 
   // Resolve a single hit: percent-HP/stat-scaled damage through dmgResist, optional
@@ -727,10 +743,20 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     return { items, px, py, panelW, panelH, rowH, gap, rows };
   }
 
+  // Reactive market: quote every unbought item as a fraction of the player's
+  // cash-on-hand, locked in the instant they reach the stall (not recomputed as
+  // they buy). With the rate tiers, one-of-each-tier sums to >1, so a stall can't
+  // be fully cleared from a single snapshot — and over-buying just stacks curses.
+  function priceShop(shop) {
+    const snapshot = runState.cash;
+    for (const it of shop.items)
+      if (!it.bought) it.price = Math.max(LOOT.priceFloor, Math.ceil(snapshot * LOOT.priceRate[POWERUPS[it.defId].rarity]));
+  }
+
   function buyItem(n) {
     const it = nearShop.items[n];
-    if (it.bought || runState.scrap < it.cost) return;
-    runState.scrap -= it.cost;
+    if (it.bought || runState.cash < it.price) return;
+    runState.cash -= it.price;
     acquire(it.defId);
     it.bought = true;
   }
@@ -785,7 +811,13 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     const rawDt = dt;
     let timeScale = 1, bpm = 1;
     for (const b of activeBuffs) { b.t -= rawDt; if (b.kind === "time") timeScale = Math.min(timeScale, b.mult); else if (b.kind === "speed") bpm *= b.mult; }
-    for (let i = activeBuffs.length - 1; i >= 0; i--) if (activeBuffs[i].t <= 0) activeBuffs.splice(i, 1);
+    for (let i = activeBuffs.length - 1; i >= 0; i--) {
+      const b = activeBuffs[i];
+      if (b.t > 0) continue;
+      // A speed burst with a crash tail flips into its slow phase instead of ending.
+      if (b.kind === "speed" && b.tailMult && !b.tail) { b.tail = true; b.mult = b.tailMult; b.t = b.tailDuration; }
+      else activeBuffs.splice(i, 1);
+    }
     dt *= timeScale;
     hero.cd = Math.max(0, hero.cd - dt);
     hero.sigCd = Math.max(0, hero.sigCd - dt);
@@ -982,7 +1014,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     for (const s of shops)
       if (dist(s.x, s.y, hero.x, hero.y) < hero.r + s.r) { nearShop = s; break; }
     if (!nearShop) shopLatch = false;
-    else if (!shopLatch && nearShop.items.some((it) => !it.bought)) { shopOpen = true; shopSel = 0; }
+    else if (!shopLatch && nearShop.items.some((it) => !it.bought)) { priceShop(nearShop); shopOpen = true; shopSel = 0; }
 
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
     for (let i = pickups.length - 1; i >= 0; i--) if (pickups[i].dead) pickups.splice(i, 1);
@@ -1026,11 +1058,11 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     ctx.fillStyle = S.title; ctx.font = S.titleFont;
     ctx.fillText("Shop", VIEW_W / 2, py + 46);
     ctx.fillStyle = S.hint; ctx.font = S.hintFont;
-    ctx.fillText(`scrap ${runState.scrap}`, VIEW_W / 2, py + 70);
+    ctx.fillText(`cash ${runState.cash}`, VIEW_W / 2, py + 70);
 
     for (let n = 0; n < items.length; n++) {
       const it = items[n], def = POWERUPS[it.defId], active = n === shopSel, y = rows[n].y;
-      const can = runState.scrap >= it.cost;
+      const can = runState.cash >= it.price;
       ctx.fillStyle = active ? S.cardActive : S.card;
       ctx.fillRect(px + 20, y, panelW - 40, rowH);
       if (active) { ctx.strokeStyle = S.border; ctx.lineWidth = 2; ctx.strokeRect(px + 21, y + 1, panelW - 42, rowH - 2); }
@@ -1042,7 +1074,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       ctx.textAlign = "right";
       ctx.fillStyle = it.bought ? S.hint : can ? THEME.shop.afford : THEME.shop.broke;
       ctx.font = S.nameFont;
-      ctx.fillText(it.bought ? "—" : `${it.cost}`, px + panelW - 40, y + 34);
+      ctx.fillText(it.bought ? "—" : `${it.price}`, px + panelW - 40, y + 34);
     }
 
     ctx.textAlign = "center";
@@ -1259,7 +1291,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
     const ready = hero.cd <= 0 ? "ready" : `${hero.cd.toFixed(1)}s`;
     const mana = weapon.manaCost > 0 ? `   MP ${Math.round(hero.mana)}/${hero.derived.maxMana}` : "";
-    const hud = `HP ${Math.max(0, Math.round(hero.hp))}/${hero.derived.maxHp}${mana}   scrap ${runState.scrap}   home in ${100 - depth}%   ${weapon.name} ${ready} [SPACE]`;
+    const hud = `HP ${Math.max(0, Math.round(hero.hp))}/${hero.derived.maxHp}${mana}   cash ${runState.cash}   home in ${100 - depth}%   ${weapon.name} ${ready} [SPACE]`;
     ctx.fillStyle = THEME.hud.box; // backing box for legibility over any tile
     ctx.fillRect(6, 6, ctx.measureText(hud).width + 12, 22);
     ctx.fillStyle = THEME.hud.text;
@@ -1319,7 +1351,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       return {
         distanceFraction: outcome === "win" ? 1 : distanceFraction(hero, level, TS),
         kills: runState.kills, won: outcome === "win",
-        cause: deathCause, heroId: head.id, seed, scrapDiscarded: runState.scrap,
+        cause: deathCause, heroId: head.id, seed, cashDiscarded: runState.cash,
       };
     },
   };

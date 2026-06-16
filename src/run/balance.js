@@ -153,13 +153,18 @@ export const BALANCE = {
   // partyThreatFloor caps how far a battered party can drop the threat.
   director: { baseThreat: 4, threatSlope: 16, tickInterval: 0.5, spawnBandTiles: 8, maxLive: 40, partyThreatScale: 1.0, partyThreatFloor: 0.6 },
 
-  // In-run powerups (spec 07): kills pay scrap and may drop a powerup pickup; scrap
-  // is spent at shop spots. Drops/stock roll on the `loot` RNG sub-stream so they're
-  // reproducible per seed and independent of gen/spawns.
+  // In-run powerups (spec 07): kills pay cash and may drop a powerup pickup; cash
+  // is spent at shop spots. Drops/stock draw from one shuffled bag on the `loot` RNG
+  // sub-stream, so they're reproducible per seed, independent of gen/spawns, and
+  // never repeat an item within a run.
   loot: {
-    scrapPerKill: 3, scrapPerThreat: 2,        // scrap = base + threatValue*per
+    cashPerKill: 2, cashPerThreat: 1,          // cash = base + threatValue*per (sets the displayed scale, not balance)
     dropChanceBase: 0.05, dropChancePerThreat: 0.02, // powerup-drop chance scales with threat
-    rarityWeight: { common: 6, uncommon: 3, rare: 1 }, // pick favors commons
+    // Reactive market: a shop quotes each item as a fraction of the player's
+    // cash-on-hand, locked in when they reach the stall (see runScene). Rates by
+    // rarity; one-of-each-tier sums to >1 so a 3-item stall can't be fully cleared.
+    priceRate: { common: 0.20, uncommon: 0.35, rare: 0.55 },
+    priceFloor: 8,                              // a broke wallet still pays something real
     pickupR: 13, pickupBob: 3, pickupBobRate: 4, // pickup radius + idle bob (px / rad·s)
     splitSpread: 0.16,                          // radians between split-shot projectiles
     minCd: 0.1,                                 // floor on weapon cooldown after stacks
