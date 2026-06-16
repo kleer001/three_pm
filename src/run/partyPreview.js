@@ -1,7 +1,8 @@
 // Live action-preview for the party picker: a self-contained mini-sim that shows one
-// highlighted character auto-firing its weapon AND signature at dummy enemies marching
-// up a tall arena. It exists so the player can SEE a kit (notably that signatures
-// auto-fire) before committing to a party.
+// highlighted character in its ROLE — the head auto-fires its active weapon, a follower
+// auto-fires only its passive signature (matching the in-run split) — at dummy enemies
+// marching up a tall arena. It exists so the player can SEE what a hero contributes
+// before committing to a party.
 //
 // Isolation by design: this reuses the EXPORTED combat math from combat.js (so cadence,
 // mana, and damage match the real game), but carries its own trimmed fire-dispatch,
@@ -29,6 +30,7 @@ const LANES = [0.25, 0.5, 0.75]; // enemy spawn columns across the arena width
 export function createPartyPreview(ctx, rect) {
   // Effect/entity state — all in arena-LOCAL coords (origin at the rect's top-left).
   let hero = null;
+  let role = "head"; // "head" → fire active weapon only; "follower" → passive signature only
   const enemies = [], projectiles = [], blasts = [], swings = [], fields = [], deployables = [], floaters = [];
   let swayT = 0, spawnT = 0, lane = 0;
 
@@ -67,9 +69,11 @@ export function createPartyPreview(ctx, rect) {
     lane = (lane + 1) % LANES.length;
   }
 
-  // (Re)build the sim for a highlighted character. null clears the arena.
-  function setHero(def) {
+  // (Re)build the sim for a highlighted character in a given role ("head" fires its weapon,
+  // "follower" fires its signature). null clears the arena.
+  function setHero(def, r = "head") {
     hero = def ? buildHero(def) : null;
+    role = r;
     enemies.length = projectiles.length = blasts.length = swings.length = 0;
     fields.length = deployables.length = floaters.length = 0;
     swayT = 0; spawnT = 0; lane = 0;
@@ -211,11 +215,14 @@ export function createPartyPreview(ctx, rect) {
     hero.sigCd = Math.max(0, hero.sigCd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
     regenMana(hero, dt);
-    tickHeal(hero, dt);
 
     const near = nearestEnemyTo(hero.x, hero.y);
-    fireWeapon(hero, hero.weapon, near);
-    fireSignature(hero, near);
+    if (role === "head") {
+      fireWeapon(hero, hero.weapon, near); // head: active weapon only, no signature
+    } else {
+      tickHeal(hero, dt);                  // follower: passive signature only (heal ticks here)
+      fireSignature(hero, near);
+    }
 
     for (const d of deployables) {
       if (d.dead) continue;
@@ -323,8 +330,11 @@ export function createPartyPreview(ctx, rect) {
       const B = THEME.bar;
       let by = hero.y - hero.r - B.gap - B.h;
       bar(hero.x, by, hero.hp / hero.derived.maxHp, B.hp);
-      if (hero.weapon.manaCost > 0) { by -= B.h + 1; bar(hero.x, by, hero.mana / hero.derived.maxMana, hero.mana >= hero.weapon.manaCost ? B.mana : B.tapped); }
-      if (hero.signature && hero.signature.shape === "charge") { by -= B.h + 1; bar(hero.x, by, hero.charge / hero.signature.threshold, THEME.charge.fill); }
+      // Mana/charge reflect the role's active ability: the head's weapon, or the follower's signature.
+      const sig = hero.signature;
+      const manaCost = role === "head" ? hero.weapon.manaCost : (sig ? sig.manaCost || 0 : 0);
+      if (manaCost > 0) { by -= B.h + 1; bar(hero.x, by, hero.mana / hero.derived.maxMana, hero.mana >= manaCost ? B.mana : B.tapped); }
+      if (role !== "head" && sig && sig.shape === "charge") { by -= B.h + 1; bar(hero.x, by, hero.charge / sig.threshold, THEME.charge.fill); }
     }
 
     const HN = THEME.hitNumber;

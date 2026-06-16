@@ -37,8 +37,12 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   let preview = null, prevI = -1;
   const prev = () => (preview || (preview = createPartyPreview(ctx, layout().preview)));
   function syncPreview() {
-    if (i === START) prev().setHero(party.length ? byId(party[0]) : null); // Start: just the head
-    else prev().setHero(roster[i]);
+    if (i === START) { prev().setHero(party.length ? byId(party[0]) : null, "head"); return; } // Start: the head
+    // First pick is the head (fires its weapon); everyone else is a follower (fires its
+    // signature). An unpicked card previews as it WOULD join: head if no party yet, else follower.
+    const c = roster[i];
+    const isHead = party.length === 0 || party[0] === c.id;
+    prev().setHero(c, isHead ? "head" : "follower");
   }
 
   // Card grid + Start button geometry in logical canvas px — shared by render (draw)
