@@ -110,7 +110,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
     stats: { ...(head.stats || HERO.stats) }, faction: HERO.faction, color: head.color,
     iframes: 0, iframeDur: HERO.iframeDur, manaRegen: HERO.manaRegen, dead: false, cd: 0,
-    sigCd: 0, signature: resolveSig(head.signatureId), charge: 0, damageTaken: 0,
+    sigCd: 0, signature: resolveSig(head.signatureId), charge: 0, damageTaken: 0, fadeT: BALANCE.spawnFade,
   };
   // Meta upgrades (spec 08) fold into base stats before derive — permanent boosts
   // bought between runs, applied once at run start (vs. powerups, applied mid-run).
@@ -131,7 +131,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       stats: { ...(def.stats || HERO.stats) }, faction: "player", color: def.color,
       iframes: 0, iframeDur: FOLLOWER.iframeDur, manaRegen: FOLLOWER.manaRegen, dead: false, cd: 0,
       weapon: { id: def.weaponId, ...w, damage: { ...w.damage } },
-      sigCd: 0, signature: resolveSig(def.signatureId), charge: 0, damageTaken: 0,
+      sigCd: 0, signature: resolveSig(def.signatureId), charge: 0, damageTaken: 0, fadeT: 0,
+      // Pending until the head has descended far enough to leave room for this slot — then
+      // it materializes at its trail point (no stacked-at-the-cramped-spawn pile-up).
+      pending: true,
     };
     recomputeDerived(f, BALANCE.derive);
     f.hp = f.derived.maxHp;
@@ -526,6 +529,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   // Party-member damage flows through the shared resolver (i-frames + death) like any
   // entity; only the head's death ends the run — a follower just permadies and is reaped.
   function hurtMember(m, amount, srcName) {
+    if (m.fadeT > 0) return; // intangible while materializing in
     const dealt = applyDamage(m, amount);
     if (dealt > 0) { spawnHitNumber(m, dealt); creditCharge(m, dealt, true); }
     if (m === hero && hero.dead) loseRun(srcName);
@@ -669,6 +673,20 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     if (moveA) { const p = BALANCE.softBodyPush; shift(a, -nx * o * p, -ny * o * p); shift(b, nx * o * p, ny * o * p); }
     else shift(b, nx * o, ny * o); // push only b (b out of an immovable a)
   }
+  // Hero vs an enemy: asymmetric split — the hero `a` yields only `aYield` of the overlap,
+  // the enemy `b` takes the rest, so a dense crowd's stacked nudges slow the head instead of
+  // parting like water. Crucially the hero's push never goes NORTH (toward the crush line at
+  // minY): `min(ny,0)` keeps the hero's y-shift >= 0 (southward or none), so no swarm can
+  // press the head back into the advancing edge — only the camera/input move it there.
+  function separateHero(a, b, aYield) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    let d = Math.hypot(dx, dy) || 0.001;
+    const min = a.r + b.r;
+    if (d >= min) return;
+    const o = min - d, nx = dx / d, ny = dy / d, ay = Math.min(ny, 0);
+    shift(a, -nx * o * aYield, -ay * o * aYield);
+    shift(b, nx * o * (1 - aYield), ny * o * (1 - aYield));
+  }
 
   // Hard block: the hero cannot move deeper into any body (living enemy or corpse),
   // but may always move away from one (so it never gets permanently stuck).
@@ -772,6 +790,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     hero.cd = Math.max(0, hero.cd - dt);
     hero.sigCd = Math.max(0, hero.sigCd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
+    hero.fadeT = Math.max(0, hero.fadeT - dt);
     regenMana(hero, dt); // same mana code the enemy casters use
 
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
@@ -829,15 +848,30 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     // its bat, and permadie when crushed against the advancing edge. Contact damage to
     // a follower is dealt by the enemies that target it (BEHAVIORS, via hurtMember);
     // enemy projectiles already hit followers through the shared heroTargets faction.
+    // Total trail length so far — a follower joins only once the head has descended past
+    // its slot, so the train materializes into cleared space instead of stacking at spawn.
+    let trailLen = 0;
+    for (let t = 1; t < trail.length; t++) trailLen += dist(trail[t].x, trail[t].y, trail[t - 1].x, trail[t - 1].y);
+
     for (let i = 0; i < followers.length; i++) {
       const f = followers[i];
+      if (f.pending) {
+        if (trailLen >= (i + 1) * gap) { // room opened: materialize at the trail point
+          const p = trailPointBack((i + 1) * gap);
+          if (p) { f.x = p.x; f.y = p.y; f.pending = false; f.fadeT = BALANCE.spawnFade; }
+        }
+        continue; // not in play yet — no move, fire, crush, collision, or render
+      }
       f.cd = Math.max(0, f.cd - dt);
       f.sigCd = Math.max(0, f.sigCd - dt);
       f.iframes = Math.max(0, f.iframes - dt);
+      f.fadeT = Math.max(0, f.fadeT - dt);
       regenMana(f, dt);
       tickHeal(f, dt);
       const p = trailPointBack((i + 1) * gap);
-      if (p) { f.x = p.x; f.y = p.y; }
+      // Ease toward the trail point instead of hard-snapping, so a follower shoved off it
+      // by an enemy (in the separation pass below) slides back over a few frames, not pops.
+      if (p) { const k = BALANCE.followerReturn; f.x += (p.x - f.x) * k; f.y += (p.y - f.y) * k; }
       // Mirror the hero's crush rule (below): riding the advancing edge is fine,
       // but being pinned against a wall there is fatal — that's "left behind".
       if (f.y < minY) { f.y = minY; if (boxBlocked(level, f)) { f.dead = true; continue; } }
@@ -863,7 +897,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       }
       const pad = p.faction === "enemy" ? BALANCE.enemyShotHitPad : 0;
       for (const t of (p.faction === "player" ? enemies : heroTargets)) {
-        if (t.dead) continue;
+        if (t.dead || t.pending || t.fadeT > 0) continue; // not-yet-joined or still fading in: can't be hit
         if (dist(p.x, p.y, t.x, t.y) < p.shotR + t.r + pad) {
           if (p.fuse != null) { // Flashback: small impact hit, then plant + fuse to the big blast
             applyHit(p.attacker, t, p.impact || p.damage, 0, p.vx, p.vy, false);
@@ -912,11 +946,25 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     const live = [], corpses = [];
     for (const e of enemies) (e.dead ? corpses : live).push(e);
     for (let i = 0; i < live.length; i++) {
-      separate(hero, live[i], false);
+      separateHero(hero, live[i], BALANCE.heroCrowdYield); // crowd slows the head (never south-pins)
       for (const c of corpses) separate(c, live[i], false);
       for (let j = i + 1; j < live.length; j++) separate(live[i], live[j], true);
     }
     for (const c of corpses) separate(hero, c, false); // the hero shoves (heavy) corpses aside
+
+    // Followers are soft bodies too: living enemies and corpses shove them off their eased
+    // trail point (they re-home next frame via followerReturn). shift()'s wall-revert keeps
+    // them from clipping into walls. Runs after the enemy/hero pass so enemy positions are
+    // settled. Crush leniency: a shove past minY isn't fatal here — the check at the top of
+    // the follower loop catches a genuine pin next frame.
+    for (let i = 0; i < followers.length; i++) {
+      const f = followers[i];
+      if (f.dead || f.pending) continue;
+      for (const e of live) separate(e, f, false);
+      for (const c of corpses) separate(c, f, false);
+      // No follower-vs-follower push: they're spaced by the trail, and mutual separation
+      // can fling briefly-coincident bodies. Letting them overlap on a tight turn is calmer.
+    }
 
     // Powerup pickups: collect on hero overlap → append to held + rebuild from base.
     for (const p of pickups) {
@@ -1161,8 +1209,11 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     // Follower train: hero-clone discs under the hero in each follower's roster color
     // (white flash on i-frames), each with an HP bar — shown always, like the hero.
     for (const f of followers) {
+      if (f.pending) continue; // not joined yet — nothing to draw
       const fx = f.x - cam.x, fy = f.y - cam.y, B = THEME.bar;
+      ctx.globalAlpha = f.fadeT > 0 ? 1 - f.fadeT / BALANCE.spawnFade : 1; // quick fade-in on join
       disc(ctx, fx, fy, f.r, f.iframes > 0 ? THEME.follower.hit : f.color);
+      ctx.globalAlpha = 1;
       // Followers fire only their signature; show its recharge (heal/charge have no cd).
       if (f.signature && f.signature.cd) cdDot(ctx, fx, fy, f.r, f.sigCd / (f.signature.cd * BALANCE.heroFireCooldownMult));
       let by = fy - f.r - B.gap - B.h;
@@ -1170,7 +1221,9 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       if (f.signature && f.signature.shape === "charge") { by -= B.h + 1; bar(ctx, fx, by, f.charge / f.signature.threshold, THEME.charge.fill); }
     }
 
+    ctx.globalAlpha = hero.fadeT > 0 ? 1 - hero.fadeT / BALANCE.spawnFade : 1; // quick fade-in at spawn
     disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : hero.color);
+    ctx.globalAlpha = 1;
     // The head fires only its active weapon; show its recharge on the body.
     if (weapon.cd) cdDot(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.cd / (weapon.cd * BALANCE.heroFireCooldownMult));
 

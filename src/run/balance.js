@@ -180,6 +180,10 @@ export const BALANCE = {
   spawnMinTileY: 9, // don't spawn enemies in the player's opening rows
   waypointArrive: 5, // px tolerance for "reached the path node"
   softBodyPush: 0.5, // share of overlap each of two living bodies yields when separating
+  followerReturn: 0.35, // ease factor a shoved follower uses to re-home to its trail point
+  heroCrowdYield: 0.15, // hero's share of overlap when an enemy pushes it (a crowd slows it)
+  spawnFade: 0.25, // seconds a hero takes to fade in (in its own color) when it materializes;
+                   // it's intangible (can't be hit) while fading
   enemyShotLife: 2.5, // s an enemy projectile lives before fizzling
   enemyShotHitPad: 5, // px added to hero radius for enemy-projectile hits
 };
