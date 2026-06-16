@@ -59,11 +59,11 @@ export const BALANCE = {
     { id: "chad",      name: "Chad",      genre: "Industrial", color: "#e8743b", weaponId: "cleave",    signatureId: "mosh_pit",     stats: { speed: 5, constitution: 8, strength: 8, magic: 2 }, unlockAtRuns: 0 },
     { id: "dash",      name: "Dash",      genre: "Psytrance",  color: "#d6336c", weaponId: "spear",     signatureId: "redline",      stats: { speed: 9, constitution: 3, strength: 5, magic: 3 }, unlockAtRuns: 0 },
     { id: "wendolyn",  name: "Wendolyn",  genre: "Dubtechno",  color: "#0b7285", weaponId: "hex",       signatureId: "deep_freeze",  stats: { speed: 5, constitution: 3, strength: 2, magic: 9 }, unlockAtRuns: 0 },
-    { id: "eugene",    name: "Eugene",    genre: "Techno",     color: "#4dabf7", weaponId: "slingshot", signatureId: "drum_machine", stats: { speed: 4, constitution: 5, strength: 3, magic: 7 }, unlockAtRuns: 0 },
-    { id: "jess",      name: "Jess",      genre: "Trance",     color: "#e64980", weaponId: "hex",       signatureId: "the_drop",     stats: { speed: 5, constitution: 5, strength: 4, magic: 7 }, unlockAtRuns: 1 },
-    { id: "zigzag",    name: "ZigZag",    genre: "Acid",       color: "#82c91e", weaponId: "hex",       signatureId: "bad_trip",     stats: { speed: 6, constitution: 4, strength: 3, magic: 7 }, unlockAtRuns: 2 },
-    { id: "jasper",    name: "Jasper",    genre: "Ambient",    color: "#b197fc", weaponId: "hex",       signatureId: "chill_zone",   stats: { speed: 4, constitution: 6, strength: 3, magic: 6 }, unlockAtRuns: 3 },
-    { id: "valentine", name: "Valentine", genre: "Synthwave",  color: "#cc5de8", weaponId: "slingshot", signatureId: "flashback",    stats: { speed: 6, constitution: 5, strength: 4, magic: 6 }, unlockAtRuns: 4 },
+    { id: "eugene",    name: "Eugene",    genre: "Techno",     color: "#4dabf7", weaponId: "bomb",      signatureId: "drum_machine", stats: { speed: 4, constitution: 5, strength: 3, magic: 7 }, unlockAtRuns: 0 },
+    { id: "jess",      name: "Jess",      genre: "Trance",     color: "#e64980", weaponId: "nova",      signatureId: "the_drop",     stats: { speed: 5, constitution: 5, strength: 4, magic: 7 }, unlockAtRuns: 1 },
+    { id: "zigzag",    name: "ZigZag",    genre: "Acid",       color: "#82c91e", weaponId: "beam",      signatureId: "bad_trip",     stats: { speed: 6, constitution: 4, strength: 3, magic: 7 }, unlockAtRuns: 2 },
+    { id: "jasper",    name: "Jasper",    genre: "Ambient",    color: "#b197fc", weaponId: "field",     signatureId: "chill_zone",   stats: { speed: 4, constitution: 6, strength: 3, magic: 6 }, unlockAtRuns: 3 },
+    { id: "valentine", name: "Valentine", genre: "Synthwave",  color: "#cc5de8", weaponId: "whirl",     signatureId: "flashback",    stats: { speed: 6, constitution: 5, strength: 4, magic: 6 }, unlockAtRuns: 4 },
   ],
 
   // Hero signatures (docs/19): one genre kit each, auto-fired from the hero/segment on
