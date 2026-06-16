@@ -363,19 +363,16 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   const DRAWS = new Set(["fillRect", "arc", "fillText", "stroke", "fill"]);
   const rect = { x: 510, y: 70, w: 274, h: 500 };
   for (const def of BALANCE.roster) {
-    // Both roles: "head" exercises the weapon shape, "follower" the signature shape.
-    for (const role of ["head", "follower"]) {
-      let draws = 0;
-      const ctx = new Proxy({}, { get: (_t, p) => (DRAWS.has(p) ? () => { draws++; } : () => {}), set: () => true });
-      const pv = createPartyPreview(ctx, rect);
-      let threw = null;
-      try {
-        pv.setHero(def, role);
-        for (let f = 0; f < 600; f++) { pv.update(1 / 60); pv.render(); } // 10s sim
-      } catch (e) { threw = e.message; }
-      ok(!threw, `preview runs ${def.id} as ${role} (${def.weaponId}/${def.signatureId}) without throwing — ${threw}`);
-      ok(draws > 0, `preview renders non-blank for ${def.id} as ${role}`);
-    }
+    let draws = 0;
+    const ctx = new Proxy({}, { get: (_t, p) => (DRAWS.has(p) ? () => { draws++; } : () => {}), set: () => true });
+    const pv = createPartyPreview(ctx, rect);
+    let threw = null;
+    try {
+      pv.setHero(def);
+      for (let f = 0; f < 600; f++) { pv.update(1 / 60); pv.render(); } // 10s sim
+    } catch (e) { threw = e.message; }
+    ok(!threw, `preview runs hero ${def.id} (${def.weaponId}/${def.signatureId}) without throwing — ${threw}`);
+    ok(draws > 0, `preview renders non-blank for hero ${def.id}`);
   }
   // setHero(null) clears to an idle panel without throwing.
   const ctx = new Proxy({}, { get: () => () => {}, set: () => true });

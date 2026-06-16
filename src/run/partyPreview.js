@@ -1,15 +1,12 @@
 // Live action-preview for the party picker: a self-contained mini-sim that shows one
-// highlighted character in its ROLE — the head auto-fires its active weapon, a follower
-// auto-fires only its passive signature (matching the in-run split) — at dummy enemies
-// marching up a tall arena. It exists so the player can SEE what a hero contributes
-// before committing to a party.
+// highlighted character auto-firing its weapon AND signature at two dummy targets — one
+// a couple body-lengths below (catches projectiles; sits in range of every weapon) and one
+// off to the side (shows knockback). A downed dummy vanishes and respawns at its spot.
 //
 // Isolation by design: this reuses the EXPORTED combat math from combat.js (so cadence,
-// mana, and damage match the real game), but carries its own trimmed fire-dispatch,
-// effect arrays, and draw helpers rather than touching the 1200-line run scene. The
-// shared logic already lives in combat.js — that is the DRY seam; the run scene stays
-// untouched. The fire/draw branches mirror runScene.js; if a NEW weapon shape is ever
-// added there it must be added here too (a missing shape just doesn't fire — never throws).
+// mana, and damage match the real game), but carries its own trimmed fire-dispatch, effect
+// arrays, and draw helpers rather than touching the 1200-line run scene. If a NEW weapon
+// shape is ever added there it must be added here too (a missing shape just doesn't fire).
 
 import { BALANCE, THEME } from "./balance.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
@@ -18,21 +15,20 @@ const FREEZE_DUR = BALANCE.freezeDur;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
-// Arena tuning — small bounded sim, far lighter than a real run.
-const MARCH = 70;        // enemy upward march speed (px/s)
-const TARGET = 5;        // live-enemy population the trickle maintains
-const SPAWN_INT = 0.7;   // seconds between spawns while under target
-const SWAY_RATE = 1.6;   // hero side-to-side angular rate
-const SWAY_FRAC = 0.30;  // sway amplitude as a fraction of arena width
-const HEAL_PULSE = 1.0;  // seconds between Good Vibes pulse visuals
-const LANES = [0.25, 0.5, 0.75]; // enemy spawn columns across the arena width
+// Arena tuning — a tiny static target range (no marching wave).
+const HEAL_PULSE = 1.0;   // seconds between Good Vibes pulse visuals
+const KB_SCALE = 7;       // px of shove per unit of weapon knockback (preview-only feel)
+const RESPAWN = 0.7;      // seconds a downed dummy stays gone before reappearing at its spot
+const RETURN = 0.05;      // per-frame drift of a shoved dummy back toward its anchor
+const HERO_Y = 0.18;      // hero's vertical position as a fraction of arena height
+const DOWN = 58;          // projectile target: this far straight below the hero (in melee range)
+const SIDE_DX = 62, SIDE_DY = 30; // knockback target: offset to the side, slightly farther out
+const DUMMY_HP = 80;      // punching-bag HP — survives a few hits so knockback is visible before it drops
 
 export function createPartyPreview(ctx, rect) {
   // Effect/entity state — all in arena-LOCAL coords (origin at the rect's top-left).
   let hero = null;
-  let role = "head"; // "head" → fire active weapon only; "follower" → passive signature only
   const enemies = [], projectiles = [], blasts = [], swings = [], fields = [], deployables = [], floaters = [];
-  let swayT = 0, spawnT = 0, lane = 0;
 
   const resolveSig = (id) => {
     if (!id) return null;
@@ -43,7 +39,7 @@ export function createPartyPreview(ctx, rect) {
   function buildHero(def) {
     const wdef = BALANCE.weapons[def.weaponId];
     const h = {
-      x: rect.w / 2, y: rect.h * 0.18, baseX: rect.w / 2, r: BALANCE.hero.r,
+      x: rect.w / 2, y: rect.h * HERO_Y, r: BALANCE.hero.r,
       faction: "player", color: def.color, stats: { ...(def.stats || BALANCE.hero.stats) },
       iframes: 0, iframeDur: BALANCE.hero.iframeDur, manaRegen: BALANCE.hero.manaRegen, dead: false,
       cd: 0, sigCd: 0, charge: 0, damageTaken: 0, healPulseT: 0,
@@ -55,34 +51,36 @@ export function createPartyPreview(ctx, rect) {
     return h;
   }
 
-  // Spawn a marcher at the given y (defaults to just below the arena, the live trickle).
-  function spawnEnemy(y) {
+  // A dummy target anchored at a fixed spot (ax,ay): it holds position (drifting home after a
+  // shove) and respawns there a beat after going down — it never marches.
+  function makeDummy(ax, ay) {
     const def = BALANCE.enemies.shambler; // baseline marcher — visible chip, honest TTK
     const e = {
       def, faction: "enemy", stats: def.stats, r: def.r, color: def.color,
-      x: LANES[lane] * rect.w, y: y != null ? y : rect.h + def.r + 4,
+      x: ax, y: ay, ax, ay, respawnT: 0, down: false,
       iframes: 0, dead: false, frozenT: 0, freezeCount: 0, confuseT: 0,
     };
     recomputeDerived(e, BALANCE.derive);
-    e.hp = e.derived.maxHp;
-    enemies.push(e);
-    lane = (lane + 1) % LANES.length;
+    e.derived.maxHp = DUMMY_HP; e.hp = DUMMY_HP; // tanky bag so hits land repeatedly + knockback shows
+    return e;
+  }
+  function reviveDummy(e) {
+    e.x = e.ax; e.y = e.ay; e.hp = e.derived.maxHp;
+    e.dead = false; e.down = false; e.respawnT = 0; e.frozenT = 0; e.freezeCount = 0; e.confuseT = 0;
   }
 
-  // (Re)build the sim for a highlighted character in a given role ("head" fires its weapon,
-  // "follower" fires its signature). null clears the arena.
-  function setHero(def, r = "head") {
+  // (Re)build the sim for a highlighted character. null clears the arena.
+  function setHero(def) {
     hero = def ? buildHero(def) : null;
-    role = r;
     enemies.length = projectiles.length = blasts.length = swings.length = 0;
     fields.length = deployables.length = floaters.length = 0;
-    swayT = 0; spawnT = 0; lane = 0;
-    // Seed enemies spread up the arena so there's instant action and a melee/nova hero
-    // gets a target near the top within a second or two (not a long empty march-in).
-    if (hero) for (const fy of [0.45, 0.68, 0.9]) spawnEnemy(rect.h * fy);
+    if (hero) {
+      enemies.push(makeDummy(rect.w / 2, hero.y + DOWN));               // below — catches projectiles
+      enemies.push(makeDummy(rect.w / 2 + SIDE_DX, hero.y + SIDE_DY));  // to the side — shows knockback
+    }
   }
 
-  // --- fire path (trimmed copy of runScene's; no knockback/loot/collision) ----------
+  // --- fire path (trimmed copy of runScene's; adds a simple knockback shove) ---------
   const nearestEnemyTo = (px, py) => {
     let best = null, bd = Infinity;
     for (const e of enemies) { if (e.dead) continue; const d = dist(e.x, e.y, px, py); if (d < bd) { bd = d; best = e; } }
@@ -94,28 +92,34 @@ export function createPartyPreview(ctx, rect) {
   }
   function spawnFloater(x, y, value, color) { floaters.push({ x, y, value, t: 0, color }); }
 
-  function applyHit(attacker, t, damage, freeze) {
+  // `kb` shoves `t` away from the source (sx,sy) — defaults to the attacker's position.
+  function applyHit(attacker, t, damage, freeze, kb, sx, sy) {
     const dealt = applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
     if (dealt > 0) { spawnFloater(t.x, t.y, Math.round(dealt)); creditCharge(attacker, dealt); }
     if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
+    if (kb) {
+      const ox = sx != null ? sx : attacker.x, oy = sy != null ? sy : attacker.y;
+      const dx = t.x - ox, dy = t.y - oy, m = Math.hypot(dx, dy) || 1;
+      t.x += (dx / m) * kb * KB_SCALE; t.y += (dy / m) * kb * KB_SCALE;
+    }
   }
 
-  function blast(cx, cy, radius, attacker, damage, freeze, aim) {
+  function blast(cx, cy, radius, attacker, damage, freeze, aim, kb) {
     for (const e of enemies) {
       if (e.dead) continue;
       const dx = e.x - cx, dy = e.y - cy, d = Math.hypot(dx, dy);
       if (d > radius + e.r) continue;
       if (aim && (dx * aim.x + dy * aim.y) / (d || 1) < aim.cosHalf) continue; // outside the swing arc
-      applyHit(attacker, e, damage, freeze);
+      applyHit(attacker, e, damage, freeze, kb, cx, cy);
     }
   }
 
-  function detonate(p) { blast(p.x, p.y, p.radius, p.attacker, p.damage, p.freeze); blasts.push({ x: p.x, y: p.y, r: p.radius, t: 0 }); }
+  function detonate(p) { blast(p.x, p.y, p.radius, p.attacker, p.damage, p.freeze, null, p.knockback); blasts.push({ x: p.x, y: p.y, r: p.radius, t: 0 }); }
 
   function fireShot(attacker, vx, vy, o) {
     projectiles.push({
       x: attacker.x, y: attacker.y, ox: attacker.x, oy: attacker.y, vx, vy, life: o.life, life0: o.life, dead: false,
-      attacker, damage: o.damage, freeze: o.freeze, shotR: o.shotR, color: o.color || "#ddd",
+      attacker, damage: o.damage, freeze: o.freeze, knockback: o.knockback || 0, shotR: o.shotR, color: o.color || "#ddd",
       shape: o.shape || "projectile", radius: o.radius, pierce: o.pierce, hits: o.pierce ? new Set() : null,
       fuse: o.fuse != null ? o.fuse : null, impact: o.impact, planted: false,
     });
@@ -126,7 +130,7 @@ export function createPartyPreview(ctx, rect) {
     if (!inReach && w.autofire !== "cooldown") return false;
     const dx = near ? near.e.x - attacker.x : 0, dy = near ? near.e.y - attacker.y : 0, m = Math.hypot(dx, dy) || 1;
     const aim = w.arc >= 360 ? null : { x: dx / m, y: dy / m, cosHalf: Math.cos((w.arc * Math.PI) / 360) };
-    blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.freeze, aim);
+    blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.freeze, aim, w.knockback);
     swings.push({ x: attacker.x, y: attacker.y, r: w.radius, ax: dx / m, ay: dy / m, arc: w.arc, t: 0 });
     return true;
   }
@@ -135,7 +139,7 @@ export function createPartyPreview(ctx, rect) {
     if (attacker[cdKey] > 0 || !canCast(attacker, w.manaCost || 0)) return false;
     let fired = false;
     if (w.shape === "nova") {
-      if (near && near.d <= w.radius) { blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.freeze); blasts.push({ x: attacker.x, y: attacker.y, r: w.radius, t: 0 }); fired = true; }
+      if (near && near.d <= w.radius) { blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.freeze, null, w.knockback); blasts.push({ x: attacker.x, y: attacker.y, r: w.radius, t: 0 }); fired = true; }
     } else if (w.shape === "field") {
       if (near && near.d <= w.range) { fields.push({ x: attacker.x, y: attacker.y, r: w.radius, life: w.lifespan, tick: 0, weapon: w, attacker }); fired = true; }
     } else if (w.shape === "melee-arc") {
@@ -144,7 +148,7 @@ export function createPartyPreview(ctx, rect) {
       const ang = Math.atan2(near.e.y - attacker.y, near.e.x - attacker.x);
       fireShot(attacker, Math.cos(ang) * w.speed, Math.sin(ang) * w.speed, {
         damage: w.damage, life: w.life, shotR: w.shotR, color: THEME.weaponShot[w.id],
-        freeze: w.freeze, shape: w.shape, radius: w.radius, pierce: w.pierce, fuse: w.fuse, impact: w.impact,
+        freeze: w.freeze, knockback: w.knockback, shape: w.shape, radius: w.radius, pierce: w.pierce, fuse: w.fuse, impact: w.impact,
       });
       fired = true;
     }
@@ -173,7 +177,7 @@ export function createPartyPreview(ctx, rect) {
   function releaseCharge(attacker, sig) {
     if (attacker.charge < sig.threshold) return;
     const dmg = { ...sig.damage, base: sig.damage.base + attacker.damageTaken * sig.takenScale };
-    blast(attacker.x, attacker.y, sig.radius, attacker, dmg, sig.freeze);
+    blast(attacker.x, attacker.y, sig.radius, attacker, dmg, sig.freeze, null, sig.knockback);
     blasts.push({ x: attacker.x, y: attacker.y, r: sig.radius, t: 0 });
     attacker.charge = 0; attacker.damageTaken = 0;
   }
@@ -204,25 +208,19 @@ export function createPartyPreview(ctx, rect) {
     for (let i = blasts.length - 1; i >= 0; i--) if (blasts[i].t >= THEME.blast.dur) blasts.splice(i, 1);
     for (let i = swings.length - 1; i >= 0; i--) if (swings[i].t >= THEME.melee.dur) swings.splice(i, 1);
     for (let i = floaters.length - 1; i >= 0; i--) if (floaters[i].t >= THEME.hitNumber.dur) floaters.splice(i, 1);
-    for (let i = enemies.length - 1; i >= 0; i--) { const e = enemies[i]; if (e.dead || e.y < -e.r) enemies.splice(i, 1); }
   }
 
   function update(dt) {
     if (!hero) return;
-    swayT += dt;
-    hero.x = clamp(hero.baseX + Math.sin(swayT * SWAY_RATE) * rect.w * SWAY_FRAC, hero.r, rect.w - hero.r);
     hero.cd = Math.max(0, hero.cd - dt);
     hero.sigCd = Math.max(0, hero.sigCd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
     regenMana(hero, dt);
+    tickHeal(hero, dt);
 
     const near = nearestEnemyTo(hero.x, hero.y);
-    if (role === "head") {
-      fireWeapon(hero, hero.weapon, near); // head: active weapon only, no signature
-    } else {
-      tickHeal(hero, dt);                  // follower: passive signature only (heal ticks here)
-      fireSignature(hero, near);
-    }
+    fireWeapon(hero, hero.weapon, near);
+    fireSignature(hero, near);
 
     for (const d of deployables) {
       if (d.dead) continue;
@@ -243,32 +241,35 @@ export function createPartyPreview(ctx, rect) {
       for (const t of enemies) {
         if (t.dead) continue;
         if (dist(p.x, p.y, t.x, t.y) < p.shotR + t.r) {
-          if (p.fuse != null) { applyHit(p.attacker, t, p.impact || p.damage, false); p.planted = true; p.vx = 0; p.vy = 0; break; }
+          if (p.fuse != null) { applyHit(p.attacker, t, p.impact || p.damage, false, 0); p.planted = true; p.vx = 0; p.vy = 0; break; }
           if (p.shape === "bomb") { detonate(p); p.dead = true; break; }
-          if (p.pierce) { if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.freeze); p.hits.add(t); } continue; }
-          applyHit(p.attacker, t, p.damage, p.freeze); p.dead = true; break;
+          if (p.pierce) { if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.freeze, p.knockback); p.hits.add(t); } continue; }
+          applyHit(p.attacker, t, p.damage, p.freeze, p.knockback); p.dead = true; break;
         }
       }
     }
 
     for (const f of fields) {
       f.life -= dt; f.tick -= dt;
-      if (f.tick <= 0) { blast(f.x, f.y, f.r, f.attacker || hero, f.weapon.damage, f.weapon.freeze); f.tick = f.weapon.tickInterval; }
+      if (f.tick <= 0) { blast(f.x, f.y, f.r, f.attacker || hero, f.weapon.damage, f.weapon.freeze, null, f.weapon.knockback); f.tick = f.weapon.tickInterval; }
     }
 
+    // Dummies hold their spot: drift home after a shove, tick freeze/confuse, and respawn a
+    // beat after going down (any cause — hp or freeze). They never march.
     for (const e of enemies) {
-      if (e.dead) continue;
-      if (e.frozenT > 0) { e.frozenT -= dt; continue; }       // frozen: no march
-      if (e.confuseT > 0) { e.confuseT -= dt; continue; }     // Bad Trip: halt while turned
-      e.y -= MARCH * dt;
+      if (e.dead || e.hp <= 0) {
+        if (!e.down) { e.dead = true; e.down = true; e.respawnT = RESPAWN; } // the frame it drops
+        else { e.respawnT -= dt; if (e.respawnT <= 0) reviveDummy(e); }
+        continue;
+      }
+      if (e.frozenT > 0) e.frozenT -= dt;
+      if (e.confuseT > 0) e.confuseT -= dt;
+      e.x += (e.ax - e.x) * RETURN; e.y += (e.ay - e.y) * RETURN; // ease back so it can be shoved again
     }
 
     for (const b of blasts) b.t += dt;
     for (const s of swings) s.t += dt;
     for (const f of floaters) f.t += dt;
-
-    spawnT -= dt;
-    if (enemies.filter((e) => !e.dead).length < TARGET && spawnT <= 0) { spawnEnemy(); spawnT = SPAWN_INT; }
     reap();
   }
 
@@ -330,11 +331,8 @@ export function createPartyPreview(ctx, rect) {
       const B = THEME.bar;
       let by = hero.y - hero.r - B.gap - B.h;
       bar(hero.x, by, hero.hp / hero.derived.maxHp, B.hp);
-      // Mana/charge reflect the role's active ability: the head's weapon, or the follower's signature.
-      const sig = hero.signature;
-      const manaCost = role === "head" ? hero.weapon.manaCost : (sig ? sig.manaCost || 0 : 0);
-      if (manaCost > 0) { by -= B.h + 1; bar(hero.x, by, hero.mana / hero.derived.maxMana, hero.mana >= manaCost ? B.mana : B.tapped); }
-      if (role !== "head" && sig && sig.shape === "charge") { by -= B.h + 1; bar(hero.x, by, hero.charge / sig.threshold, THEME.charge.fill); }
+      if (hero.weapon.manaCost > 0) { by -= B.h + 1; bar(hero.x, by, hero.mana / hero.derived.maxMana, hero.mana >= hero.weapon.manaCost ? B.mana : B.tapped); }
+      if (hero.signature && hero.signature.shape === "charge") { by -= B.h + 1; bar(hero.x, by, hero.charge / hero.signature.threshold, THEME.charge.fill); }
     }
 
     const HN = THEME.hitNumber;

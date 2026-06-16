@@ -37,12 +37,8 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   let preview = null, prevI = -1;
   const prev = () => (preview || (preview = createPartyPreview(ctx, layout().preview)));
   function syncPreview() {
-    if (i === START) { prev().setHero(party.length ? byId(party[0]) : null, "head"); return; } // Start: the head
-    // First pick is the head (fires its weapon); everyone else is a follower (fires its
-    // signature). An unpicked card previews as it WOULD join: head if no party yet, else follower.
-    const c = roster[i];
-    const isHead = party.length === 0 || party[0] === c.id;
-    prev().setHero(c, isHead ? "head" : "follower");
+    if (i === START) prev().setHero(party.length ? byId(party[0]) : null); // Start: the head
+    else prev().setHero(roster[i]);
   }
 
   // Card grid + Start button geometry in logical canvas px — shared by render (draw)
@@ -60,7 +56,8 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     const dy = y0 + 3 * (cardH + gy) + 8, dh = 60;
     const start = { x: x0, y: dy + dh + 8, w: gridW, h: 34 };
     const previewX = x0 + gridW + 24;
-    const preview = { x: previewX, y: y0, w: VIEW_W - previewX - 16, h: VIEW_H - y0 - 30 };
+    // Preview bottom aligns with the bottom of the 3 hero rows so the detail sheet below stays clear.
+    const preview = { x: previewX, y: y0, w: VIEW_W - previewX - 16, h: 3 * (cardH + gy) - gy };
     return { cardW, cardH, portH, gridW, x0, y0, cards, dy, dh, start, preview };
   }
 
@@ -218,7 +215,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     const tx = sx + sw + 16;
     ctx.textAlign = "left";
     ctx.fillStyle = c.color; ctx.font = P.nameFont;
-    ctx.fillText(`${c.name}   ·   ${c.genre}`, tx, y + 20);
+    ctx.fillText(c.name, tx, y + 20);
     ctx.fillStyle = P.weapon; ctx.font = P.weaponFont;
     ctx.fillText(`${wdef.name} — ${wdef.desc}${sig ? `      ·      Sig: ${sig.name}` : ""}`, tx, y + 39);
     const st = c.stats || BALANCE.hero.stats;
