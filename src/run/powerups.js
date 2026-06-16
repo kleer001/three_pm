@@ -138,6 +138,13 @@ export function cashForKill(def, cfg) {
   return cfg.cashPerKill + def.threatValue * cfg.cashPerThreat;
 }
 
+// Reactive shop price: a fraction of the player's cash-on-hand by rarity tier,
+// floored so a broke wallet still pays something real. Pure, so the shop and the
+// tests quote the same formula.
+export function priceItem(rarity, cashOnHand, cfg) {
+  return Math.max(cfg.priceFloor, Math.ceil(cashOnHand * cfg.priceRate[rarity]));
+}
+
 // One shuffled bag of every catalog id, drawn from without replacement by both the
 // shops and world drops (Fisher-Yates on the `loot` sub-stream, so it's reproducible
 // per seed and independent of gen/spawns). Shifting from this guarantees the same

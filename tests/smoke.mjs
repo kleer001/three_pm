@@ -6,7 +6,7 @@ import { findPath, localWalkableTile } from "../src/ai/ai.js";
 import { makeRng } from "../src/core/rng.js";
 import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
-import { POWERUPS, SYNERGIES, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag } from "../src/run/powerups.js";
+import { POWERUPS, SYNERGIES, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag, priceItem } from "../src/run/powerups.js";
 import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgrade, applyHeroUpgrades, recomputeUnlocks, isHeroUnlocked, upgradeRank, nextCost } from "../src/meta/save.js";
 import { BALANCE, THEME } from "../src/run/balance.js";
 import { createPartyPreview } from "../src/run/partyPreview.js";
@@ -320,9 +320,8 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
 
   // Reactive price: a fraction of cash-on-hand, floored; a stall can't be cleared
   // from one snapshot (one-of-each-tier rates sum to >1).
-  const price = (rarity, cash) => Math.max(L.priceFloor, Math.ceil(cash * L.priceRate[rarity]));
-  ok(price("rare", 4) === L.priceFloor, "broke wallet still pays the floor");
-  ok(price("common", 200) === Math.ceil(200 * L.priceRate.common), "price scales with cash-on-hand");
+  ok(priceItem("rare", 4, L) === L.priceFloor, "broke wallet still pays the floor");
+  ok(priceItem("common", 200, L) === Math.ceil(200 * L.priceRate.common), "price scales with cash-on-hand");
   ok(L.priceRate.common + L.priceRate.uncommon + L.priceRate.rare > 1, "one-of-each-tier exceeds a single snapshot");
 }
 

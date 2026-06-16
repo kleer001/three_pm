@@ -10,7 +10,7 @@ import { makeRng, subSeed } from "../core/rng.js";
 import { findPath } from "../ai/ai.js";
 import { makeDirector, distanceFraction } from "./director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
-import { POWERUPS, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag } from "./powerups.js";
+import { POWERUPS, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag, priceItem } from "./powerups.js";
 import { applyHeroUpgrades } from "../meta/save.js";
 import { hitRect } from "../input/input.js";
 import { BALANCE, THEME } from "./balance.js";
@@ -161,7 +161,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     const def = POWERUPS[defId];
     if (def.kind === "buff") {
       activeBuffs.push({ id: defId, kind: def.effect, mult: def.mult, t: def.duration,
-        tailMult: def.tailMult, tailDuration: def.tailDuration, tail: false });
+        tailMult: def.tailMult, tailDuration: def.tailDuration });
       if (def.hpCostFrac) hero.hp = Math.max(1, hero.hp - hero.derived.maxHp * def.hpCostFrac);
     } else {
       const before = hero.derived.maxHp;
@@ -234,7 +234,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
       const [tx, ty] = lootRng.pick(cells);
       const items = [];
       for (let k = 0; k < stock && lootBag.length; k++)
-        items.push({ defId: lootBag.shift(), price: 0, bought: false });
+        items.push({ defId: lootBag.shift(), bought: false });
       if (!items.length) continue; // bag exhausted — no stall here
       out.push({ tx, ty, x: tx * TS + TS / 2, y: ty * TS + TS / 2, r, items });
     }
@@ -750,7 +750,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   function priceShop(shop) {
     const snapshot = runState.cash;
     for (const it of shop.items)
-      if (!it.bought) it.price = Math.max(LOOT.priceFloor, Math.ceil(snapshot * LOOT.priceRate[POWERUPS[it.defId].rarity]));
+      if (!it.bought) it.price = priceItem(POWERUPS[it.defId].rarity, snapshot, LOOT);
   }
 
   function buyItem(n) {
