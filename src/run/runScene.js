@@ -14,11 +14,16 @@ import { POWERUPS, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weigh
 import { applyHeroUpgrades } from "../meta/save.js";
 import { hitRect } from "../input/input.js";
 import { BALANCE, THEME } from "./balance.js";
+import { createVoidRenderer } from "./voidBackgrounds.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 const SCALE = 2;
 const TS = 24 * SCALE; // 2x grid
 const MARGIN = TS; // keep the hero this far inside the window edges
+const VOID_CORNER = TS * 0.45; // rounding radius for exposed void-hole corners
+const GLOW_BLUR = 14;          // rim glow width (≈50% wider than the prior 9px shadow)
+const GLOW_COLOR = "rgba(165,205,255,1)"; // light-blue rim tint
+const GLOW_GAIN = 1.5;         // rim glow strength (drawn over itself this many ×, ≈50% stronger)
 
 // Gameplay tuning lives in balance.js; alias the hot ones to keep the body terse.
 const { hero: HERO, enemies: ENEMIES } = BALANCE;
@@ -65,12 +70,25 @@ let tileAtlas = null; // { sheet, ground, mats:{name:[16 frames]}, order:[names]
     .catch(() => {}); // missing/bad json → stay on flat fills
 })();
 
-export function createRunScene(ctx, input, seed, party, saveBlob) {
+export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const level = generate(seed, {
     w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS,
     wallScaleX: BALANCE.wall.scaleX, wallScaleY: BALANCE.wall.scaleY, wallDensity: BALANCE.wall.density,
   });
   const mapW = level.w * TS, mapH = level.h * TS;
+  // The blocking RUBBLE tiles render as "holes in reality" — the chosen void effect,
+  // masked to the crater's exact shape and given a glowing rim. Null bgId falls back to
+  // the flat darkened crater look. The void is drawn into an offscreen buffer so it can
+  // be masked (destination-in) to the crater silhouette before compositing with a glow.
+  const voidRenderer = bgId ? createVoidRenderer(bgId, VIEW_W, VIEW_H) : null;
+  const mkBuf = () => { const c = document.createElement("canvas"); c.width = VIEW_W; c.height = VIEW_H; return c; };
+  const voidBuf = voidRenderer ? mkBuf() : null;       // the rendered void
+  const maskBuf = voidRenderer ? mkBuf() : null;       // accumulated crater silhouette (one destination-in source)
+  const glowBuf = voidRenderer ? mkBuf() : null;       // pre-blurred blue rim (blurred once per frame)
+  const voidBufCtx = voidBuf ? voidBuf.getContext("2d") : null;
+  const maskBufCtx = maskBuf ? maskBuf.getContext("2d") : null;
+  const glowBufCtx = glowBuf ? glowBuf.getContext("2d") : null;
+  let voidClock = 0; // real-time seconds for the void animation
   ctx.imageSmoothingEnabled = false; // crisp 1:1 tile blits, no scaling blur
   const homeSet = new Set(level.homeBand.map(([x, y]) => y * level.w + x));
   const rng = makeRng(subSeed(seed, "spawns"));
@@ -769,6 +787,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
   }
 
   function update(dt) {
+    voidClock += dt; // void background animates on real time, regardless of pause/outcome
     if (outcome) return; // run is over; main hands off to the summary scene (spec 15)
     // Track Esc every frame (even in the shop, which owns Esc to leave) so closing a
     // stall with Esc can't bleed into the same press toggling pause.
@@ -1076,6 +1095,20 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
     }
   }
 
+  // Draw the crater material's dual-grid silhouette into `dst` (same shape drawTiles
+  // renders), used as a destination-in mask so the void exactly fills the crater holes.
+  function drawCraterMask(dst, dx0, dx1, dy0, dy1) {
+    const A = tileAtlas, frames = A.mats.crater;
+    const isC = (x, y) => x >= 0 && y >= 0 && x < level.w && y < level.h && TILE_TO_MAT[level.tiles[y * level.w + x]] === "crater";
+    for (let y = dy0; y <= dy1; y++)
+      for (let x = dx0; x <= dx1; x++) {
+        const c = (isC(x, y) ? 1 : 0) | (isC(x + 1, y) ? 2 : 0) | (isC(x + 1, y + 1) ? 4 : 0) | (isC(x, y + 1) ? 8 : 0);
+        if (!c) continue;
+        const f = frames[c];
+        dst.drawImage(A.sheet, f.x, f.y, f.w, f.h, Math.floor(x * TS + TS / 2 - cam.x), Math.floor(y * TS + TS / 2 - cam.y), TS + 1, TS + 1);
+      }
+  }
+
   function render() {
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
     const x0 = Math.max(0, Math.floor(cam.x / TS)), x1 = Math.min(level.w - 1, Math.ceil((cam.x + VIEW_W) / TS));
@@ -1093,6 +1126,64 @@ export function createRunScene(ctx, input, seed, party, saveBlob) {
           ctx.fillRect(sx, sy, TS + 1, TS + 1);
         }
       }
+
+    // Holes in reality: render the void into its buffer, mask it to the crater's exact
+    // silhouette (convex/concave curves and all), then composite over the scene with a
+    // glowing blue rim. Without the atlas, fall back to rounded-rect hole shapes.
+    if (voidRenderer) {
+      const rub = (tx, ty) => tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE;
+      const vb = voidBufCtx;
+      vb.clearRect(0, 0, VIEW_W, VIEW_H);
+      voidRenderer.draw(vb, voidClock, cam.y);
+      if (tileAtlas && tileAtlas.mats.crater) {
+        // Build the full crater silhouette in maskBuf (source-over), then intersect once.
+        const dx0 = Math.floor((cam.x - TS / 2) / TS), dx1 = Math.ceil((cam.x + VIEW_W) / TS);
+        const dy0 = Math.floor((cam.y - TS / 2) / TS), dy1 = Math.ceil((cam.y + VIEW_H) / TS);
+        maskBufCtx.clearRect(0, 0, VIEW_W, VIEW_H);
+        drawCraterMask(maskBufCtx, dx0, dx1, dy0, dy1);
+        vb.save();
+        vb.globalCompositeOperation = "destination-in";
+        vb.drawImage(maskBuf, 0, 0);
+        vb.restore();
+      } else {
+        // Flat fallback: a single fill of rounded-rect hole shapes is one destination-in op.
+        vb.save();
+        vb.globalCompositeOperation = "destination-in";
+        vb.fillStyle = "#fff";
+        vb.beginPath();
+        for (let ty = y0; ty <= y1; ty++)
+          for (let tx = x0; tx <= x1; tx++) {
+            if (level.tiles[ty * level.w + tx] !== TILE.RUBBLE) continue;
+            const sx = Math.floor(tx * TS - cam.x), sy = Math.floor(ty * TS - cam.y);
+            const up = rub(tx, ty - 1), dn = rub(tx, ty + 1), lf = rub(tx - 1, ty), rt = rub(tx + 1, ty);
+            vb.roundRect(sx, sy, TS + 1, TS + 1, [
+              (!up && !lf) ? VOID_CORNER : 0, (!up && !rt) ? VOID_CORNER : 0,
+              (!dn && !rt) ? VOID_CORNER : 0, (!dn && !lf) ? VOID_CORNER : 0,
+            ]);
+          }
+        vb.fill();
+        vb.restore();
+      }
+      // Pre-blur the rim once: blur the (already hole-shaped) void silhouette into glowBuf
+      // and tint it blue. Then composite glow (haloing the edges) + the sharp void on top.
+      const gc = glowBufCtx;
+      gc.globalCompositeOperation = "source-over";
+      gc.clearRect(0, 0, VIEW_W, VIEW_H);
+      gc.filter = `blur(${GLOW_BLUR}px)`;
+      gc.drawImage(voidBuf, 0, 0);
+      gc.filter = "none";
+      gc.globalCompositeOperation = "source-in"; // recolor the blurred silhouette to the rim tint
+      gc.fillStyle = GLOW_COLOR;
+      gc.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, GLOW_GAIN);
+      ctx.drawImage(glowBuf, 0, 0);
+      if (GLOW_GAIN > 1) { ctx.globalAlpha = GLOW_GAIN - 1; ctx.drawImage(glowBuf, 0, 0); } // extra pass for >100% strength
+      ctx.restore();
+      ctx.drawImage(voidBuf, 0, 0); // the sharp void fills the hole over the rim
+
+    }
+
     ctx.fillStyle = THEME.homeBand;
     for (const [hx, hy] of level.homeBand)
       if (hx >= x0 && hx <= x1 && hy >= y0 && hy <= y1)

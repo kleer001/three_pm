@@ -22,7 +22,7 @@ startLoop({
   update(dt) {
     scene.update(dt);
     if (phase === "party" && scene.done) {
-      scene = createRunScene(ctx, input, scene.seed, scene.party, load());
+      scene = createRunScene(ctx, input, scene.seed, scene.party, load(), scene.bgId);
       phase = "run";
     } else if (phase === "run" && scene.finished) {
       scene = createSummaryScene(ctx, input, scene.result, scene.nextSeed);

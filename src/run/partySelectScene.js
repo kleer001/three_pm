@@ -7,15 +7,21 @@ import { BALANCE, THEME } from "./balance.js";
 import { hitRect } from "../input/input.js";
 import { isHeroUnlocked } from "../meta/save.js";
 import { createPartyPreview } from "./partyPreview.js";
+import { VOID_BACKGROUNDS } from "./voidBackgrounds.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 const COLS = 3;
+// Background-picker coverflow under the Start button: the selected name sits centered
+// and large, neighbours shrink/fade toward the edges; the list wraps around.
+const CAR_CY = 520, CAR_SPACING = 150;
 
 export function createPartySelectScene(ctx, input, seed, blob) {
   const roster = BALANCE.roster;
   const MAX = BALANCE.partyMax;
-  const GRID = roster.length, START = GRID; // last focusable is the Start button
+  const GRID = roster.length, START = GRID, BG = GRID + 1; // focusables: cards, Start, then the bg carousel
   const unlocked = (c) => isHeroUnlocked(blob, c.id);
+
+  let bgIndex = 0; // chosen void background (index into VOID_BACKGROUNDS)
 
   // Pre-fill the party with everyone unlocked (up to the cap), in roster order — the
   // player can hit Start immediately or toggle/reorder by re-picking.
@@ -29,7 +35,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
   // Only unlocked cards (and the Start button) can be highlighted/selected — locked
   // heroes are skipped by nav and taps, so the preview only ever runs for reachable picks.
-  const selectable = (n) => n === START || (n < GRID && unlocked(roster[n]));
+  const selectable = (n) => n === START || n === BG || (n < GRID && unlocked(roster[n]));
   const lastUnlocked = () => { for (let n = GRID - 1; n >= 0; n--) if (unlocked(roster[n])) return n; return 0; };
 
   // Live action-preview in the right column; lazily built (needs the static rect from
@@ -37,7 +43,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   let preview = null, prevI = -1;
   const prev = () => (preview || (preview = createPartyPreview(ctx, layout().preview)));
   function syncPreview() {
-    if (i === START) prev().setHero(party.length ? byId(party[0]) : null); // Start: the head
+    if (i === START || i === BG) prev().setHero(party.length ? byId(party[0]) : null); // Start/BG: the head
     else prev().setHero(roster[i]);
   }
 
@@ -77,18 +83,25 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     const left = input.down("ArrowLeft") || input.down("KeyA") || input.down("KeyH");
     const right = input.down("ArrowRight") || input.down("KeyD") || input.down("KeyL");
 
-    // Nav lands only on selectable cells; moves onto locked cards are rejected. Down from
-    // a card falls through to Start when the cell below is locked/out; up from Start lands
-    // on the last unlocked card.
-    if (left && !pLeft && i !== START) { const ni = Math.floor(i / COLS) * COLS + ((i % COLS) - 1 + COLS) % COLS; if (selectable(ni)) i = ni; }
-    if (right && !pRight && i !== START) { const ni = Math.floor(i / COLS) * COLS + ((i % COLS) + 1) % COLS; if (selectable(ni)) i = ni; }
-    if (down && !pDown && i !== START) { const ni = i + COLS; i = ni < GRID && selectable(ni) ? ni : START; }
-    if (up && !pUp) i = i === START ? lastUnlocked() : (i >= COLS && selectable(i - COLS) ? i - COLS : i);
+    // Nav lands only on selectable cells; moves onto locked cards are rejected. Down a
+    // column falls to Start, then to the bg carousel; up reverses. On the carousel,
+    // left/right scroll the wrapping background list instead of moving focus.
+    if (i === BG) {
+      const N = VOID_BACKGROUNDS.length;
+      if (left && !pLeft) bgIndex = (bgIndex - 1 + N) % N;
+      if (right && !pRight) bgIndex = (bgIndex + 1) % N;
+      if (up && !pUp) i = START;
+    } else {
+      if (left && !pLeft && i !== START) { const ni = Math.floor(i / COLS) * COLS + ((i % COLS) - 1 + COLS) % COLS; if (selectable(ni)) i = ni; }
+      if (right && !pRight && i !== START) { const ni = Math.floor(i / COLS) * COLS + ((i % COLS) + 1) % COLS; if (selectable(ni)) i = ni; }
+      if (down && !pDown) { if (i === START) i = BG; else { const ni = i + COLS; i = ni < GRID && selectable(ni) ? ni : START; } }
+      if (up && !pUp) i = i === START ? lastUnlocked() : (i >= COLS && selectable(i - COLS) ? i - COLS : i);
+    }
     pUp = up; pDown = down; pLeft = left; pRight = right;
 
     const confirm = input.down("Space") || input.down("Enter");
     if (armed && confirm && !pConfirm) {
-      if (i === START) { if (party.length) confirmed = true; }
+      if (i === START || i === BG) { if (party.length) confirmed = true; } // BG: Space also starts
       else toggle(roster[i]);
     }
     pConfirm = confirm;
@@ -104,6 +117,11 @@ export function createPartySelectScene(ctx, input, seed, blob) {
       const card = cards.find((r) => hitRect(tap, r));
       if (card) { if (unlocked(roster[card.index])) { i = card.index; toggle(roster[card.index]); } } // ignore taps on locked
       else if (hitRect(tap, start)) { i = START; if (party.length) confirmed = true; }
+      else if (Math.abs(tap.y - CAR_CY) < 24) { // tap a name in the carousel band → pick the nearest
+        let best = null;
+        for (const c of carouselCells()) if (!best || Math.abs(tap.x - c.cx) < Math.abs(tap.x - best.cx)) best = c;
+        i = BG; bgIndex = best.idx;
+      }
     }
 
     if (i !== prevI) { syncPreview(); prevI = i; } // rebuild the demo when the highlight moves
@@ -115,6 +133,38 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   function drawPortrait(c, x, y, w, h) {
     ctx.fillStyle = c.color;
     ctx.fillRect(x, y, w, h);
+  }
+
+  // Visible coverflow entries: center (d=0) prominent, ±1/±2 fade toward the edges,
+  // list wraps. `cx` is each name's screen-x; doubles as the tap target center.
+  function carouselCells() {
+    const N = VOID_BACKGROUNDS.length, out = [];
+    for (let d = -2; d <= 2; d++) {
+      const idx = ((bgIndex + d) % N + N) % N;
+      const alpha = d === 0 ? 1 : Math.abs(d) === 1 ? 0.5 : 0.22;
+      out.push({ idx, d, alpha, cx: VIEW_W / 2 + d * CAR_SPACING });
+    }
+    return out;
+  }
+
+  function renderCarousel() {
+    const P = THEME.party, focused = i === BG;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = focused ? P.start : P.hint; ctx.font = P.hintFont;
+    ctx.fillText("Background", VIEW_W / 2, CAR_CY - 22);
+    for (const c of carouselCells()) {
+      ctx.globalAlpha = c.alpha;
+      ctx.fillStyle = c.d === 0 ? (focused ? P.start : P.name) : P.hint;
+      ctx.font = c.d === 0 ? "bold 20px system-ui, sans-serif" : P.nameFont;
+      ctx.fillText(VOID_BACKGROUNDS[c.idx].name, c.cx, CAR_CY);
+    }
+    ctx.globalAlpha = 1;
+    if (focused) { // caret hints when the carousel holds focus
+      ctx.fillStyle = P.start; ctx.font = "bold 20px system-ui, sans-serif";
+      ctx.fillText("‹", VIEW_W / 2 - 100, CAR_CY);
+      ctx.fillText("›", VIEW_W / 2 + 100, CAR_CY);
+    }
+    ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
   }
 
   function render() {
@@ -189,9 +239,11 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     ctx.font = P.nameFont;
     ctx.fillText(ready ? `› Start the walk home  (${party.length})` : "Pick at least one", VIEW_W / 2, start.y + 23);
 
+    renderCarousel(); // background-picker coverflow under the Start button
+
     ctx.fillStyle = P.hint;
     ctx.font = P.hintFont;
-    ctx.fillText("←↑↓→ or tap    SPACE / tap to pick · start    C clear    (first pick leads)", VIEW_W / 2, VIEW_H - 14);
+    ctx.fillText("←↑↓→ or tap · SPACE pick/start · C clear · ↓ to Background, ←→ to change", VIEW_W / 2, VIEW_H - 14);
     ctx.textAlign = "left";
 
     prev().render(); // live action-preview in the right column
@@ -201,7 +253,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   // character's party status — or a head→tail party summary when Start is focused.
   function renderDetail(x, y, w, h) {
     const P = THEME.party;
-    if (i === START) {
+    if (i === START || i === BG) { // Start/BG focus: show the head→tail party summary, not a card
       ctx.textAlign = "left";
       ctx.fillStyle = P.weapon; ctx.font = P.weaponFont;
       ctx.fillText("Party, head → tail:", x + 16, y + 26);
@@ -235,6 +287,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     update, render,
     get done() { return confirmed; },
     get party() { return party.slice(); }, // ordered char ids, head first
+    get bgId() { return VOID_BACKGROUNDS[bgIndex].id; }, // chosen void background for the run
     seed,
   };
 }
