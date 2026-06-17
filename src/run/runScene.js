@@ -15,6 +15,8 @@ import { applyHeroUpgrades } from "../meta/save.js";
 import { hitRect } from "../input/input.js";
 import { BALANCE, THEME } from "./balance.js";
 import { createVoidRenderer } from "./voidBackgrounds.js";
+import { createCombat } from "./combatKit.js";
+import { disc, ring, bar, glyph, clamp, drawMember } from "./draw.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 const SCALE = 2;
@@ -39,10 +41,9 @@ function addRoundTile(c, x, y, w, h, tl, tr, br, bl) {
 
 // Gameplay tuning lives in balance.js; alias the hot ones to keep the body terse.
 const { hero: HERO, enemies: ENEMIES } = BALANCE;
-const { scroll: SCROLL, mapH: MAP_H, freezeDur: FREEZE_DUR } = BALANCE;
+const { scroll: SCROLL, mapH: MAP_H } = BALANCE;
 const TILE_COLOR = THEME.tile; // indexed by tile id (see TILE in levelgen.js)
 
-const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 // Optional textured ground (assets/tiles.png). The game renders flat THEME.tile
@@ -305,16 +306,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   // Spawn a projectile owned by `attacker`; its faction (which side it can hit)
   // comes from the attacker. `shape` defaults to a single-hit projectile; a `bomb`
   // detonates an area on contact, a `pierce` projectile (beam) hits each enemy once.
-  function fireShot(attacker, vx, vy, o) {
-    projectiles.push({
-      x: attacker.x, y: attacker.y, ox: attacker.x, oy: attacker.y, vx, vy, life: o.life, life0: o.life, dead: false,
-      faction: attacker.faction, attacker, damage: o.damage,
-      freeze: o.freeze, knockback: o.knockback, shotR: o.shotR, color: o.color,
-      shape: o.shape || "projectile", radius: o.radius, pierce: o.pierce, hits: o.pierce ? new Set() : null,
-      fuse: o.fuse != null ? o.fuse : null, impact: o.impact, planted: false,
-    });
-  }
-
   // Knockback no longer teleports: it queues an impulse of `mag` px along (dx,dy)
   // to ride out over a few frames (heavier targets carry it longer), consumed by
   // applyKb each tick. A fresh hit overwrites any in-flight shove.
@@ -347,11 +338,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     const base = e.staggerT > 0 ? e.derived.moveSpeed * (1 - e.staggerT / e.staggerMax) : e.derived.moveSpeed;
     return base * slow;
   }
-  // A landed hit's HP loss, surfaced as a rising number at the target (spec: honest hits).
-  function spawnHitNumber(t, dealt) {
-    floaters.push({ x: t.x, y: t.y, value: Math.round(dealt), t: 0 });
-  }
-
   // An enemy just died (the slice's stand-in for spec 04's `death` event, funneled
   // through the single hit path below). Pay cash and roll a world drop on the loot
   // stream. `looted` guards the one-shot — corpses linger, so we'd otherwise re-pay.
@@ -367,170 +353,20 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     }
   }
 
-  // Resolve a single hit: percent-HP/stat-scaled damage through dmgResist, optional
-  // knockback along (kdx,kdy), optional freeze (player→enemy CC). Every damage
-  // source — projectiles, beams, AoE blasts — funnels through here so they agree
-  // (and so every enemy death routes through one loot roll).
-  function applyHit(attacker, t, damage, kbMult, kdx, kdy, freeze) {
-    const dealt = applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
-    if (dealt > 0) { spawnHitNumber(t, dealt); creditCharge(attacker, dealt, false); if (t.signature) creditCharge(t, dealt, true); }
-    if (kbMult) knockback(t, kdx, kdy, attacker.derived.knockback * kbMult);
-    if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
-    if (t === hero && hero.dead) loseRun(attacker.def ? attacker.def.name : null);
-    else if (t.def && t.dead && !t.looted) onEnemyDeath(t);
-  }
-
-  // Area blast at (cx,cy): hit every enemy overlapping the radius, knocked outward
-  // from the center. Shared by nova, bomb detonation, field ticks, and melee. An
-  // optional `aim` ({x,y,cosHalf}) restricts hits to an arc (melee swings); omit it
-  // for a full circle.
-  function blast(cx, cy, radius, attacker, damage, kbMult, freeze, aim) {
-    for (const e of enemies) {
-      if (e.dead) continue;
-      const dx = e.x - cx, dy = e.y - cy, d = Math.hypot(dx, dy);
-      if (d > radius + e.r) continue;
-      if (aim && (dx * aim.x + dy * aim.y) / (d || 1) < aim.cosHalf) continue; // outside the swing arc
-      applyHit(attacker, e, damage, kbMult, dx, dy, freeze);
-    }
-  }
-
-  // Detonate a bomb projectile: area damage + a visual ring at its position.
-  function detonate(p) {
-    blast(p.x, p.y, p.radius, p.attacker, p.damage, p.knockback, p.freeze);
-    blasts.push({ x: p.x, y: p.y, r: p.radius, t: 0 });
-  }
-
-  // Nearest living enemy to a point, with its distance — the shared auto-aim pick,
-  // used by the hero (SPACE) and every follower (auto-swing).
-  function nearestEnemyTo(px, py) {
-    let best = null, bd = Infinity;
-    for (const e of enemies) {
-      if (e.dead) continue;
-      const d = dist(e.x, e.y, px, py);
-      if (d < bd) { bd = d; best = e; }
-    }
-    return best && { e: best, d: bd };
-  }
-  const nearestEnemy = () => nearestEnemyTo(hero.x, hero.y);
-
-  // A melee-arc swing from `attacker` at the nearest enemy `near` ({e,d}): a wedge
-  // blast in reach plus its visual. Returns whether it connected. Shared by the
-  // hero's SPACE fire and the follower train.
-  function meleeSwing(attacker, w, near) {
-    // `autofire: "cooldown"` weapons (Whirl) spin every cooldown even with nothing
-    // in reach — free, aimless area denial. The default still gates on reach.
-    const inReach = near && near.d <= w.radius + near.e.r;
-    if (!inReach && w.autofire !== "cooldown") return false;
-    const dx = near ? near.e.x - attacker.x : 0, dy = near ? near.e.y - attacker.y : 0, m = Math.hypot(dx, dy) || 1;
-    const aim = w.arc >= 360 ? null : { x: dx / m, y: dy / m, cosHalf: Math.cos((w.arc * Math.PI) / 360) };
-    blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.knockback, w.freeze, aim);
-    swings.push({ x: attacker.x, y: attacker.y, r: w.radius, ax: dx / m, ay: dy / m, arc: w.arc, t: 0 });
-    return true;
-  }
-
-  // Fire `attacker`'s weapon `w` at the nearest enemy `near` ({e,d}) when its cooldown
-  // and mana allow, branching on `w.shape` for delivery. One fire path for the hero
-  // (gated by SPACE) and every follower (auto). Sets cooldown + spends mana on a fire.
-  function fireWeapon(attacker, w, near, cdKey = "cd") {
-    if (attacker[cdKey] > 0 || !canCast(attacker, w.manaCost || 0)) return false;
-    let fired = false;
-    if (w.shape === "nova") {
-      if (near && near.d <= w.radius) {
-        blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.knockback, w.freeze);
-        blasts.push({ x: attacker.x, y: attacker.y, r: w.radius, t: 0 });
-        fired = true;
-      }
-    } else if (w.shape === "field") {
-      if (near && near.d <= w.range) {
-        fields.push({ x: attacker.x, y: attacker.y, r: w.radius, life: w.lifespan, tick: 0, weapon: w, attacker });
-        fired = true;
-      }
-    } else if (w.shape === "melee-arc") {
-      fired = meleeSwing(attacker, w, near);
-    } else if (near && near.d <= w.range) { // projectile / beam / bomb — aimed
-      const dx = near.e.x - attacker.x, dy = near.e.y - attacker.y;
-      const ang = Math.atan2(dy, dx), n = w.count || 1, spread = n > 1 ? LOOT.splitSpread : 0;
-      for (let s = 0; s < n; s++) { // count>1 fans the shots (Split Shot powerup)
-        const a = ang + (s - (n - 1) / 2) * spread;
-        fireShot(attacker, Math.cos(a) * w.speed, Math.sin(a) * w.speed, {
-          damage: w.damage, life: w.life, shotR: w.shotR,
-          color: THEME.weaponShot[w.id], freeze: w.freeze, knockback: w.knockback,
-          shape: w.shape, radius: w.radius, pierce: w.pierce, fuse: w.fuse, impact: w.impact,
-        });
-      }
-      fired = true;
-    }
-    if (fired) { attacker[cdKey] = w.cd * BALANCE.heroFireCooldownMult; spendMana(attacker, w.manaCost || 0); }
-    return fired;
-  }
-
-  // --- Signatures (docs/19) -------------------------------------------------
-  // Credit a charge-signature bearer (The Drop) for damage dealt or taken; only
-  // `taken` damage scales the eventual release.
-  function creditCharge(e, amount, taken) {
-    if (!e || !e.signature || e.signature.shape !== "charge") return;
-    e.charge += amount;
-    if (taken) e.damageTaken += amount;
-  }
-
-  // Deploy a turret at the bearer's spot: a stationary player-faction entity that
-  // auto-fires `turretId` and holds world position as the camera scrolls past, expiring
-  // after `life`. Capped per owner (oldest culled). Reuses the whole fireWeapon path.
-  function deployTurret(owner, sig) {
-    const mine = deployables.filter((d) => d.owner === owner && !d.dead);
-    while (mine.length >= sig.maxActive) { mine.shift().dead = true; }
-    const w = BALANCE.weapons[sig.turretId];
-    deployables.push({
-      x: owner.x, y: owner.y, r: 10, owner, faction: "player",
-      stats: owner.stats, derived: owner.derived, mana: Infinity, manaRegen: 0,
-      cd: 0, life: sig.life, dead: false,
-      weapon: { id: sig.turretId, ...w, manaCost: 0, damage: { ...w.damage } },
-    });
-    return true;
-  }
-
-  // Confuse every enemy in radius for confuseDur — it then chases and contact-damages
-  // the nearest OTHER enemy instead of the party (handled in the enemy step).
-  function confuseBurst(attacker, sig) {
-    let any = false;
-    for (const e of enemies) {
-      if (e.dead || dist(e.x, e.y, attacker.x, attacker.y) > sig.radius + e.r) continue;
-      e.confuseT = sig.confuseDur; e.confuseTarget = null; any = true;
-    }
-    blasts.push({ x: attacker.x, y: attacker.y, r: sig.radius, t: 0 });
-    return any;
-  }
-
-  // Release a charge signature (The Drop) once its meter fills: a nova whose flat damage
-  // is bumped by the damage taken while charging, then reset.
-  function releaseCharge(attacker, sig) {
-    if (attacker.charge < sig.threshold) return;
-    const dmg = { ...sig.damage, base: sig.damage.base + attacker.damageTaken * sig.takenScale };
-    blast(attacker.x, attacker.y, sig.radius, attacker, dmg, sig.knockback, sig.freeze);
-    blasts.push({ x: attacker.x, y: attacker.y, r: sig.radius, t: 0 });
-    attacker.charge = 0; attacker.damageTaken = 0;
-  }
-
-  // Resolve a bearer's signature each tick. `heal` is passive (ticked in the entity
-  // loop); `charge` releases on its meter; the rest reuse fireWeapon on their own
-  // `sigCd`, or the net-new deploy/confuse helpers.
-  function fireSignature(attacker, near) {
-    const sig = attacker.signature;
-    if (!sig || sig.shape === "heal") return;
-    if (sig.shape === "charge") { releaseCharge(attacker, sig); return; }
-    if (attacker.sigCd > 0 || !canCast(attacker, sig.manaCost || 0)) return;
-    let fired = false;
-    if (sig.shape === "deploy") fired = deployTurret(attacker, sig);
-    else if (sig.shape === "confuse") fired = confuseBurst(attacker, sig);
-    else { fireWeapon(attacker, sig, near, "sigCd"); return; } // sets sigCd + mana itself
-    if (fired) { attacker.sigCd = sig.cd * BALANCE.heroFireCooldownMult; spendMana(attacker, sig.manaCost || 0); }
-  }
-
-  // Passive HP regen for a `heal` signature (Good Vibes).
-  function tickHeal(e, dt) {
-    if (e.signature && e.signature.shape === "heal" && !e.dead)
-      e.hp = Math.min(e.derived.maxHp, e.hp + e.signature.hpPerSec * dt);
-  }
+  // Player weapon/signature dispatch + the generic effect steppers live in combatKit, driven
+  // verbatim by the party-select preview too. Inject the world-coupled bits: the queued,
+  // wall-collided knockback; the wall/expiry test; the crush-line deployable cull; and the
+  // loot/loss-on-death hook (a hero death ends the run, an enemy death rolls loot once).
+  const combat = createCombat({
+    enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters,
+    knockback,
+    projectileBlocked: (x, y) => !isWalkable(level, Math.floor(x / TS), Math.floor(y / TS)),
+    cullDeployable: (d) => d.y < cam.y + MARGIN, // left behind once the crush line passes it
+    onDeath: (t, attacker) =>
+      t === hero ? loseRun(attacker.def ? attacker.def.name : null)
+                 : (t.def && !t.looted && onEnemyDeath(t)),
+  });
+  const nearestEnemy = () => combat.nearestEnemyTo(hero.x, hero.y);
 
   // Nearest living enemy to `self`, excluding itself — confused-enemy targeting.
   function nearestOtherEnemy(self) {
@@ -552,7 +388,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     moveAndCollide(level, e, (dx / d) * moveSpeedOf(e) * dt, (dy / d) * moveSpeedOf(e) * dt);
     if (d < e.r + t.r && e.def.contactDamage) {
       const dealt = applyDamage(t, e.def.contactDamage);
-      if (dealt > 0) { spawnHitNumber(t, dealt); if (t.dead && !t.looted) onEnemyDeath(t); }
+      if (dealt > 0) { combat.spawnHitNumber(t, dealt); if (t.dead && !t.looted) onEnemyDeath(t); }
     }
   }
 
@@ -577,7 +413,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   function hurtMember(m, amount, srcName) {
     if (m.fadeT > 0) return; // intangible while materializing in
     const dealt = applyDamage(m, amount);
-    if (dealt > 0) { spawnHitNumber(m, dealt); creditCharge(m, dealt, true); }
+    if (dealt > 0) { combat.spawnHitNumber(m, dealt); combat.creditCharge(m, dealt, true); }
     if (m === hero && hero.dead) loseRun(srcName);
   }
 
@@ -645,7 +481,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
         e.timer -= dt;
         if (e.timer <= 0) {
           const dx = tgt.x - e.x, dy = tgt.y - e.y, m = Math.hypot(dx, dy) || 1;
-          fireShot(e, (dx / m) * k.shot, (dy / m) * k.shot, {
+          combat.fireShot(e, (dx / m) * k.shot, (dy / m) * k.shot, {
             damage: k.attack, life: BALANCE.enemyShotLife, shotR: THEME.enemyShot.r,
             color: THEME.enemyShot.color, freeze: false, knockback: 0,
           });
@@ -884,7 +720,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     // passive). Every follower contributes ONLY its passive signature (no weapon — below).
     // So adding a hero trades their weapon away for their passive: a real choice, not a
     // free firepower stack.
-    if (input.down("Space") || input.touchActive()) fireWeapon(hero, weapon, nearestEnemy());
+    if (input.down("Space") || input.touchActive()) combat.fireWeapon(hero, weapon, nearestEnemy());
 
     // Enemy brains (skip dead/frozen; cull far enemies on the long map)
     const activeY = cam.y + VIEW_H / 2;
@@ -930,7 +766,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       f.iframes = Math.max(0, f.iframes - dt);
       f.fadeT = Math.max(0, f.fadeT - dt);
       regenMana(f, dt);
-      tickHeal(f, dt);
+      combat.tickHeal(f, dt);
       const p = trailPointBack((i + 1) * gap);
       // Re-home to the trail point at a capped speed (its own moveSpeed × the knob),
       // not a fixed fraction: a shoved follower closes the gap at a steady rate, so
@@ -948,67 +784,16 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       // Mirror the hero's crush rule (below): riding the advancing edge is fine,
       // but being pinned against a wall there is fatal — that's "left behind".
       if (f.y < minY) { f.y = minY; if (boxBlocked(level, f)) { f.dead = true; continue; } }
-      const near = nearestEnemyTo(f.x, f.y);
-      fireSignature(f, near); // followers contribute only their passive signature, no weapon
+      const near = combat.nearestEnemyTo(f.x, f.y);
+      combat.fireSignature(f, near); // followers contribute only their passive signature, no weapon
     }
 
-    // Projectiles (hero + enemy): resolve each against the opposite faction via the
-    // shared hit path. Bombs detonate an area on contact/expiry; beams pierce and
-    // hit each enemy once; the rest hit the first enemy and die.
-    for (const p of projectiles) {
-      if (p.dead) continue;
-      if (p.planted) { // Flashback: stuck where it hit, counting down to its area blast
-        p.fuse -= dt;
-        if (p.fuse <= 0) { detonate(p); p.dead = true; }
-        continue;
-      }
-      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-      if (p.life <= 0 || !isWalkable(level, Math.floor(p.x / TS), Math.floor(p.y / TS))) {
-        if (p.fuse != null) { p.planted = true; p.vx = 0; p.vy = 0; continue; } // plant, then fuse
-        if (p.shape === "bomb") detonate(p); // lob that fizzles still bursts where it lands
-        p.dead = true; continue;
-      }
-      const pad = p.faction === "enemy" ? BALANCE.enemyShotHitPad : 0;
-      for (const t of (p.faction === "player" ? enemies : heroTargets)) {
-        if (t.dead || t.pending || t.fadeT > 0) continue; // not-yet-joined or still fading in: can't be hit
-        if (dist(p.x, p.y, t.x, t.y) < p.shotR + t.r + pad) {
-          if (p.fuse != null) { // Flashback: small impact hit, then plant + fuse to the big blast
-            applyHit(p.attacker, t, p.impact || p.damage, 0, p.vx, p.vy, false);
-            p.planted = true; p.vx = 0; p.vy = 0; break;
-          }
-          if (p.shape === "bomb") { detonate(p); p.dead = true; break; }
-          if (p.pierce) { // beam: hit each enemy once, keep flying
-            if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze); p.hits.add(t); }
-            continue;
-          }
-          applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze);
-          p.dead = true; break;
-        }
-      }
-    }
-
-    // Lingering fields tick area damage to enemies inside them, then expire.
-    for (const f of fields) {
-      f.life -= dt; f.tick -= dt;
-      // Field ticks never knock back — a lingering zone that flung enemies out (once
-      // a knockback powerup folds into the weapon) would just cycle them in and out for
-      // repeat ticks. Pass 0 regardless of the weapon's knockback.
-      if (f.tick <= 0) {
-        blast(f.x, f.y, f.r, f.attacker || hero, f.weapon.damage, 0, f.weapon.freeze);
-        if (f.weapon.slow) for (const e of enemies) // Chill Zone also slows everything inside
-          if (!e.dead && dist(e.x, e.y, f.x, f.y) <= f.r + e.r) { e.slowT = f.weapon.slowDur; e.slowMult = f.weapon.slow; }
-        f.tick = f.weapon.tickInterval;
-      }
-    }
-
-    // Turrets (Drum Machine): hold world position, auto-fire, expire — the descent
-    // leaves them behind, which is the intended trade.
-    for (const d of deployables) {
-      if (d.dead) continue;
-      d.life -= dt; d.cd = Math.max(0, d.cd - dt);
-      if (d.life <= 0 || d.y < minY) { d.dead = true; continue; }
-      fireWeapon(d, d.weapon, nearestEnemyTo(d.x, d.y));
-    }
+    // Projectiles, lingering fields, and turrets all advance through the shared combat kit
+    // (same hit/detonate/pierce/fuse path the preview uses); the world-coupled wall test and
+    // crush-line cull were injected when `combat` was built.
+    combat.stepProjectiles(dt);
+    combat.stepFields(dt);
+    combat.stepDeployables(dt);
     for (const b of blasts) b.t += dt; // visual rings expand then expire
     for (const s of swings) s.t += dt; // melee wedges flash then expire
     for (const f of floaters) f.t += dt; // damage numbers rise and fade
@@ -1350,42 +1135,14 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       ctx.globalAlpha = 1;
     }
 
-    // Follower train: hero-clone discs under the hero in each follower's roster color
-    // (white flash on i-frames), each with an HP bar — shown always, like the hero.
+    // Follower train + head: each drawn by the shared drawMember (body, cooldown dot, status
+    // bars) so the run scene and the party-select preview present a hero identically. A
+    // follower shows its signature's recharge; the head shows its weapon's recharge + mana.
     for (const f of followers) {
       if (f.pending) continue; // not joined yet — nothing to draw
-      const fx = f.x - cam.x, fy = f.y - cam.y, B = THEME.bar;
-      ctx.globalAlpha = f.fadeT > 0 ? 1 - f.fadeT / BALANCE.spawnFade : 1; // quick fade-in on join
-      disc(ctx, fx, fy, f.r, f.iframes > 0 ? THEME.follower.hit : f.color);
-      ctx.globalAlpha = 1;
-      // Followers fire only their signature; show its recharge (heal/charge have no cd).
-      if (f.signature && f.signature.cd) cdDot(ctx, fx, fy, f.r, f.sigCd / (f.signature.cd * BALANCE.heroFireCooldownMult));
-      let by = fy - f.r - B.gap - B.h;
-      bar(ctx, fx, by, f.hp / f.derived.maxHp, B.hp);
-      if (f.signature && f.signature.shape === "charge") { by -= B.h + 1; bar(ctx, fx, by, f.charge / f.signature.threshold, THEME.charge.fill); }
+      drawMember(ctx, f, f.x - cam.x, f.y - cam.y, "follower");
     }
-
-    ctx.globalAlpha = hero.fadeT > 0 ? 1 - hero.fadeT / BALANCE.spawnFade : 1; // quick fade-in at spawn
-    disc(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.iframes > 0 ? THEME.hero.hit : hero.color);
-    ctx.globalAlpha = 1;
-    // The head fires only its active weapon; show its recharge on the body.
-    if (weapon.cd) cdDot(ctx, hero.x - cam.x, hero.y - cam.y, hero.r, hero.cd / (weapon.cd * BALANCE.heroFireCooldownMult));
-
-    // Status bars above the hero, mirroring the enemies: HP always, plus a mana bar
-    // when the chosen weapon spends mana (dim when too dry to fire).
-    {
-      const B = THEME.bar, hx = hero.x - cam.x;
-      let by = hero.y - cam.y - hero.r - B.gap - B.h;
-      bar(ctx, hx, by, hero.hp / hero.derived.maxHp, B.hp);
-      if (weapon.manaCost > 0) {
-        by -= B.h + 1;
-        bar(ctx, hx, by, hero.mana / hero.derived.maxMana, hero.mana >= weapon.manaCost ? B.mana : B.tapped);
-      }
-      if (hero.signature && hero.signature.shape === "charge") {
-        by -= B.h + 1;
-        bar(ctx, hx, by, hero.charge / hero.signature.threshold, THEME.charge.fill);
-      }
-    }
+    drawMember(ctx, hero, hero.x - cam.x, hero.y - cam.y, "head", weapon);
 
     // Floating damage numbers: rise and fade, ghosted so they don't bury the action.
     const HN = THEME.hitNumber;
@@ -1469,42 +1226,3 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   };
 }
 
-function disc(ctx, x, y, r, color) {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-}
-// Cooldown readout drawn ON the body: a dark dot whose radius tracks the remaining
-// cooldown fraction (1 = just fired → big dot, 0 = ready → gone). Universal across heroes
-// and reads cleanly under a sprite later. `remain` is the 0..1 remaining-cooldown fraction.
-function cdDot(ctx, x, y, r, remain) {
-  const ir = remain * r * 0.72;
-  if (ir < 0.6) return; // ready (or nearly): draw nothing
-  ctx.fillStyle = "rgba(0,0,0,0.5)";
-  ctx.beginPath();
-  ctx.arc(x, y, ir, 0, Math.PI * 2);
-  ctx.fill();
-}
-function ring(ctx, x, y, r, color) {
-  ctx.strokeStyle = color;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.stroke();
-}
-// A centered single-character icon (pickup/shop markers).
-function glyph(ctx, ch, x, y, color, font) {
-  ctx.fillStyle = color;
-  ctx.font = font;
-  ctx.textAlign = "center";
-  ctx.fillText(ch, x, y);
-  ctx.textAlign = "left";
-}
-// A centered status bar (HP/mana): dark backing + a `frac`-wide fill.
-function bar(ctx, cx, y, frac, fill) {
-  const B = THEME.bar, x = cx - B.w / 2;
-  ctx.fillStyle = B.back;
-  ctx.fillRect(x, y, B.w, B.h);
-  ctx.fillStyle = fill;
-  ctx.fillRect(x, y, B.w * clamp(frac, 0, 1), B.h);
-}

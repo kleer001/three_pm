@@ -61,11 +61,15 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
   // Live action-preview in the right column; lazily built (needs the static rect from
   // layout()). Rebuilt whenever the highlighted index changes.
-  let preview = null, prevI = -1;
+  let preview = null, prevI = -1, prevKey = "";
   const prev = () => (preview || (preview = createPartyPreview(ctx, layout().preview)));
+  // The role a hero plays in the preview: the slot-0 pick (or a hypothetical add to an empty
+  // party) is the controllable head; anyone else is a follower. Matches runScene's split so
+  // the preview shows weapon-only vs signature-only, never both.
+  const roleOf = (id) => (party[0] === id || party.length === 0 ? "head" : "follower");
   function syncPreview() {
-    if (i === START || i === BG) prev().setHero(party.length ? byId(party[0]) : null); // Start/BG: the head
-    else prev().setHero(roster[i]);
+    if (i === START || i === BG) prev().setHero(party.length ? byId(party[0]) : null, "head"); // Start/BG: the head
+    else prev().setHero(roster[i], roleOf(roster[i].id));
   }
 
   // Card grid + Start button geometry in logical canvas px — shared by render (draw)
@@ -157,7 +161,10 @@ export function createPartySelectScene(ctx, input, seed, blob) {
       }
     }
 
-    if (i !== prevI) { syncPreview(); prevI = i; } // rebuild the demo when the highlight moves
+    // Rebuild the demo when the highlight moves OR the party changes (a toggle can flip the
+    // highlighted hero's role, e.g. dropping the head promotes the next pick).
+    const pkey = party.join(",");
+    if (i !== prevI || pkey !== prevKey) { syncPreview(); prevI = i; prevKey = pkey; }
     prev().update(dt);
   }
 
