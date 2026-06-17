@@ -31,7 +31,7 @@ export function createSummaryScene(ctx, input, result, nextSeed) {
   if (result.won) rows.push(["Made it home", `+${PAYOUT.win}`, S.plus]);
   rows.push([null, "", ""]);
   rows.push(["Earned", `+${payout}`, S.plus]);
-  if (!result.won) rows.push(["Scrap lost", `${result.scrapDiscarded}`, S.lost]);
+  if (!result.won) rows.push(["Cash lost", `${result.cashDiscarded}`, S.lost]);
   rows.push(["Banked", `${after.credits}`, S.value]);
 
   let armed = false, done = false; // require confirm release before accepting (held

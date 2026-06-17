@@ -6,7 +6,7 @@ import { findPath, localWalkableTile } from "../src/ai/ai.js";
 import { makeRng } from "../src/core/rng.js";
 import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
-import { POWERUPS, SYNERGIES, applyHeld, snapshotBase, scrapForKill, rollPowerupDrop, weightedPick } from "../src/run/powerups.js";
+import { POWERUPS, SYNERGIES, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag, priceItem } from "../src/run/powerups.js";
 import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgrade, applyHeroUpgrades, recomputeUnlocks, isHeroUnlocked, upgradeRank, nextCost } from "../src/meta/save.js";
 import { BALANCE, THEME } from "../src/run/balance.js";
 import { createPartyPreview } from "../src/run/partyPreview.js";
@@ -241,8 +241,8 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   const noRegen = { mana: 5, derived: { maxMana: 20 } }; regenMana(noRegen, 1); ok(noRegen.mana === 5, "regenMana no-op without a regen rate");
 }
 
-// In-run powerups (spec 07): stat/weapon mods, rebuild-from-base stacking,
-// synergies, the loot/scrap roll. All pure — no canvas, no input.
+// In-run powerups (spec 07): hybrid stat/weapon mods with ≥1:1 curses,
+// rebuild-from-base, synergies, the unique loot bag, and the cash roll. All pure.
 {
   const derive = BALANCE.derive, L = BALANCE.loot;
   const baseStats = { speed: 5, constitution: 5, strength: 5, magic: 5 };
@@ -251,57 +251,78 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   const mkWeapon = (b) => ({ ...b.weapon, damage: { ...b.weapon.damage } });
   ok(base.weapon.count === 1 && base.weapon.pierce === false, "snapshotBase normalizes count/pierce");
 
-  // Every registry entry is well-formed (the loader contract, validated up front).
+  // Every registry entry is well-formed: a price-rate tier and a real payload.
   for (const [id, d] of Object.entries(POWERUPS)) {
-    ok(d.kind === "stat" || d.kind === "weapon" || d.kind === "buff", `powerup ${id}: known kind`);
-    ok(typeof d.cost === "number" && d.cost > 0, `powerup ${id}: has a shop cost`);
-    ok(L.rarityWeight[d.rarity], `powerup ${id}: rarity has a drop weight`);
+    ok(L.priceRate[d.rarity] !== undefined, `powerup ${id}: rarity has a price rate`);
+    ok(d.kind === "buff" || d.stat || d.weapon, `powerup ${id}: carries a stat/weapon mod or is a buff`);
   }
   for (const [id, s] of Object.entries(SYNERGIES))
     ok(s.requires.every((r) => POWERUPS[r]), `synergy ${id}: requires known powerups`);
 
-  // Stat powerups stack and re-derive.
+  // A stat item applies both its blessing and its (≥1:1) curse, then re-derives.
   const h1 = mkHero(), w1 = mkWeapon(base);
-  applyHeld(h1, w1, base, ["espresso_shot", "espresso_shot"], derive, L);
-  ok(h1.stats.speed === 7, "stat powerup stacks (+2 speed)");
-  ok(h1.derived.moveSpeed > mkHero().derived.moveSpeed, "stat stack re-derives moveSpeed");
+  applyHeld(h1, w1, base, ["track_star"], derive, L); // +2 speed, -2 constitution
+  ok(h1.stats.speed === 7 && h1.stats.constitution === 3, "stat item applies blessing + curse");
+  ok(h1.derived.moveSpeed > mkHero().derived.moveSpeed && h1.derived.maxHp < mkHero().derived.maxHp, "tradeoff re-derives both ways");
 
-  // Weapon mods add (count, flat damage).
+  // Curses can't drive a stat past the 1–10 rails even when overshot.
+  const hC = mkHero(), wC = mkWeapon(base);
+  applyHeld(hC, wC, base, ["redline", "redline"], derive, L); // +4 speed/-4 con, doubled
+  ok(hC.stats.speed === 10 && hC.stats.constitution === 1, "stats clamp to [1,10] under heavy curse");
+
+  // Weapon mods: additive count/damage, plus a `mult` curse that multiplies cd.
   const h2 = mkHero(), w2 = mkWeapon(base);
-  applyHeld(h2, w2, base, ["split_shot", "split_shot", "heavy_hands"], derive, L);
-  ok(w2.count === 3, "split_shot stacks projectile count");
-  ok(w2.damage.base === base.weapon.damage.base + 3, "weapon damage mod adds");
+  applyHeld(h2, w2, base, ["split_shot"], derive, L); // +1 count, -5 base
+  ok(w2.count === 2, "split_shot adds a projectile");
+  ok(w2.damage.base === base.weapon.damage.base - 5, "weapon damage curse subtracts");
+  const h6 = mkHero(), w6 = mkWeapon(base);
+  applyHeld(h6, w6, base, ["heavy_hands"], derive, L); // +9 base, cd *1.40
+  ok(Math.abs(w6.cd - base.weapon.cd * 1.40) < 1e-9, "mult curse multiplies cooldown");
+  ok(w6.damage.base === base.weapon.damage.base + 9, "additive applies before the mult");
 
-  // Rebuild-from-base clears prior mods (a dropped pierce must not linger).
+  // Needle Tip pierces but its `mult: { knockback: 0 }` zeroes knockback (curse).
   const h3 = mkHero(), w3 = mkWeapon(base);
   applyHeld(h3, w3, base, ["needle_tip"], derive, L);
-  ok(w3.pierce === true, "needle_tip sets pierce");
+  ok(w3.pierce === true && w3.knockback === 0, "needle_tip pierces but kills knockback");
   applyHeld(h3, w3, base, [], derive, L);
   ok(w3.pierce === false && w3.count === 1 && w3.damage.base === base.weapon.damage.base, "rebuild from base clears prior mods");
 
-  // Synergy applies on top of the held set when its requires are all present.
+  // Synergy applies on top of the held set when its requires are all present —
+  // checked as the absolute sum, since needle_tip carries its own damage curse.
   const hexBase = snapshotBase(baseStats, { id: "hex", ...BALANCE.weapons.hex });
   const hA = mkHero(), wA = mkWeapon(hexBase); applyHeld(hA, wA, hexBase, ["split_shot", "needle_tip"], derive, L);
-  const hB = mkHero(), wB = mkWeapon(hexBase); applyHeld(hB, wB, hexBase, ["split_shot"], derive, L);
-  ok(wA.damage.base === wB.damage.base + SYNERGIES.skewer_volley.mods.damage.base, "synergy adds when its set is held");
+  const expectBase = hexBase.weapon.damage.base + POWERUPS.split_shot.weapon.damage.base
+    + POWERUPS.needle_tip.weapon.damage.base + SYNERGIES.skewer_volley.weapon.damage.base;
+  ok(wA.damage.base === expectBase, "synergy adds on top of its held set's mods");
 
-  // Cooldown floor holds under heavy stacking.
+  // Cooldown floor holds under heavy stacking of a fast-fire curse.
   const h5 = mkHero(), w5 = mkWeapon(base);
   applyHeld(h5, w5, base, Array(20).fill("hair_trigger"), derive, L);
   ok(w5.cd === L.minCd, "weapon cooldown floored at minCd");
 
-  // Scrap + loot rolls: formula, determinism, well-formed output.
-  ok(scrapForKill(BALANCE.enemies.shambler, L) === L.scrapPerKill + 1 * L.scrapPerThreat, "scrapForKill formula");
-  const r1 = makeRng(7), r2 = makeRng(7), a1 = [], a2 = [];
-  for (let i = 0; i < 200; i++) { a1.push(rollPowerupDrop(r1, BALANCE.enemies.brute, L)); a2.push(rollPowerupDrop(r2, BALANCE.enemies.brute, L)); }
-  ok(a1.every((v, i) => v === a2[i]), "loot rolls reproduce on the same seed");
-  ok(a1.every((v) => v === null || POWERUPS[v]), "drops are null or a valid powerup id");
-  ok(a1.some((v) => v !== null), "a high-threat enemy drops sometimes");
+  // Cash payout formula.
+  ok(cashForKill(BALANCE.enemies.shambler, L) === L.cashPerKill + 1 * L.cashPerThreat, "cashForKill formula");
 
-  // weightedPick only ever returns a registered id.
-  const wp = makeRng(5); let allValid = true;
-  for (let i = 0; i < 100; i++) if (!POWERUPS[weightedPick(wp, L.rarityWeight)]) allValid = false;
-  ok(allValid, "weightedPick returns a registered id");
+  // The loot bag holds every catalog id exactly once and reproduces per seed.
+  const bagA = makeLootBag(makeRng(11)), bagB = makeLootBag(makeRng(11));
+  ok(bagA.length === Object.keys(POWERUPS).length, "bag holds the whole catalog");
+  ok(new Set(bagA).size === bagA.length, "bag has no duplicate ids (uniqueness)");
+  ok(bagA.every((id) => POWERUPS[id]) , "bag ids are all registered");
+  ok(bagA.every((v, i) => v === bagB[i]), "bag shuffle reproduces on the same seed");
+  ok(bagA.length >= 12, "catalog covers the 12 shop slots without repeats");
+
+  // Drop roll is a deterministic boolean that fires sometimes for high threat.
+  const r1 = makeRng(7), r2 = makeRng(7), a1 = [], a2 = [];
+  for (let i = 0; i < 200; i++) { a1.push(rollDrop(r1, BALANCE.enemies.brute, L)); a2.push(rollDrop(r2, BALANCE.enemies.brute, L)); }
+  ok(a1.every((v) => typeof v === "boolean"), "rollDrop returns a boolean");
+  ok(a1.every((v, i) => v === a2[i]), "drop rolls reproduce on the same seed");
+  ok(a1.some((v) => v === true), "a high-threat enemy drops sometimes");
+
+  // Reactive price: a fraction of cash-on-hand, floored; a stall can't be cleared
+  // from one snapshot (one-of-each-tier rates sum to >1).
+  ok(priceItem("rare", 4, L) === L.priceFloor, "broke wallet still pays the floor");
+  ok(priceItem("common", 200, L) === Math.ceil(200 * L.priceRate.common), "price scales with cash-on-hand");
+  ok(L.priceRate.common + L.priceRate.uncommon + L.priceRate.rare > 1, "one-of-each-tier exceeds a single snapshot");
 }
 
 // Meta-progression + save (spec 08): payout, recordRun fold, upgrade purchase +

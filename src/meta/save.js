@@ -1,6 +1,6 @@
 // Durable meta tier (spec 08): the persistent save blob, its one localStorage
 // key + version/migration, the end-of-run payout, and per-hero upgrade trees
-// bought with banked `credits` (distinct from the volatile in-run `scrap`, spec
+// bought with banked `credits` (distinct from the volatile in-run `cash`, spec
 // 07 — the two never convert). The pure transforms (computePayout, recordRun,
 // bankCurrency, purchaseUpgrade, applyHeroUpgrades, recompute/unlock helpers) are
 // node-testable; only load/save touch storage, guarded for headless runs.
