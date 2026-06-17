@@ -8,7 +8,7 @@ import { load, save, recordRun, computePayout, PAYOUT } from "../meta/save.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 
-export function createSummaryScene(ctx, input, result, nextSeed) {
+export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
   // Commit-once on enter (spec 15): load → record (banks payout, bumps runCount,
   // refreshes unlocks) → save. Deltas come off the pre-commit blob.
   const before = load();
@@ -106,5 +106,5 @@ export function createSummaryScene(ctx, input, result, nextSeed) {
     ctx.textAlign = "left";
   }
 
-  return { update, render, get done() { return done; }, nextSeed };
+  return { update, render, get done() { return done; }, nextSeed, bgId }; // bgId passes through to the between-days screen
 }

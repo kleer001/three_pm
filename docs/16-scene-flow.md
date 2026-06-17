@@ -101,11 +101,13 @@ There is no separate "new game" wipe here — clearing a save is out of scope fo
 this spec.
 
 ## HERO-SELECT scene
-Lists **all five heroes** in unlock order, shows which are playable, and commits
+Lists **all nine heroes** in unlock order, shows which are playable, and commits
 the chosen one into the next run. Read-only over the save (spec 08 `load()`); it
 spends nothing.
 
-Hero roster (ids + gates from specs 05, 10–13):
+Hero roster — the **roster of record is spec 19's nine** (and the `roster` in
+`balance.js`); the table below is the original five from specs 05, 10–13, kept for
+its schema and superseded by spec 19's genre cast:
 
 | Order | id | Name | Archetype | `unlockAtRuns` | Stat spread (spd/con/str/mag) | Kit (basic / signature) |
 |---|---|---|---|---|---|---|
