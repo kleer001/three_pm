@@ -5,7 +5,7 @@
 // No level is generated here — the scene only carries the `seed` through to the run.
 import { BALANCE, THEME } from "./balance.js";
 import { hitRect } from "../input/input.js";
-import { isHeroUnlocked } from "../meta/save.js";
+import { isHeroUnlocked, save, purchaseUpgrade, UPGRADES, upgradeRank, nextCost } from "../meta/save.js";
 import { createPartyPreview } from "./partyPreview.js";
 import { VOID_BACKGROUNDS } from "./voidBackgrounds.js";
 
@@ -30,8 +30,29 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   let i = 0, confirmed = false;
   let armed = false; // require confirm to be released once (held SPACE ended the prior run)
   let pUp = false, pDown = false, pLeft = false, pRight = false, pConfirm = false, pClear = false;
+  const pDigit = [false, false, false, false]; // edge state for the 1–4 buy keys
 
   const byId = (id) => roster.find((c) => c.id === id);
+
+  // Spend banked credits on the highlighted hero's upgrade (spec 08): persist via
+  // save() so the next run's load() sees it, and re-bind blob so the panel + the
+  // unlock gate read the new state. A no-op when maxed/broke (purchaseUpgrade).
+  const buyUpgrade = (heroId, upId) => { blob = save(purchaseUpgrade(blob, heroId, upId)); };
+  // The highlighted hero's tree as [upgradeId, def] pairs, or [] when the focus is
+  // on Start/BG/a locked card (no buyable hero) — the one source render + input share.
+  function upgradeEntries() {
+    if (i === START || i === BG || i >= GRID || !unlocked(roster[i])) return [];
+    return Object.entries(UPGRADES[roster[i].id] || {});
+  }
+  // Buyable-row rects under the preview column, one per upgrade track (carries `id`
+  // and `track` for the 1–4 keys), shared by render (draw) and update (tap + key).
+  function upgradeRows() {
+    const entries = upgradeEntries();
+    if (!entries.length) return [];
+    const { preview: pv } = layout();
+    const rowH = 28, gap = 4, y0 = pv.y + pv.h + 14 + 20; // 20px under the panel header
+    return entries.map(([id], n) => ({ id, track: n, x: pv.x, y: y0 + n * (rowH + gap), w: pv.w, h: rowH }));
+  }
 
   // Only unlocked cards (and the Start button) can be highlighted/selected — locked
   // heroes are skipped by nav and taps, so the preview only ever runs for reachable picks.
@@ -110,12 +131,24 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     if (clear && !pClear) party = []; // C wipes the whole selection
     pClear = clear;
 
-    // Touch: tap a card to toggle it into/out of the party; tap Start to begin.
+    // Buy the highlighted hero's upgrades with credits: number keys 1–4 map to the
+    // visible tracks (edge-detected so a held key buys one rank, not 60/s).
+    const upRows = upgradeRows();
+    for (let n = 0; n < pDigit.length; n++) {
+      const held = input.down(`Digit${n + 1}`);
+      if (held && !pDigit[n] && upRows[n]) buyUpgrade(roster[i].id, upRows[n].id);
+      pDigit[n] = held;
+    }
+
+    // Touch: tap a card to toggle it into/out of the party; tap Start to begin;
+    // tap an upgrade row to buy its next rank for the highlighted hero.
     // Taps are fresh-press edge events, so a held touch can't auto-confirm — no arming.
     const { cards, start } = layout();
     for (let tap; (tap = input.consumeTap()); ) {
       const card = cards.find((r) => hitRect(tap, r));
+      const upRow = upRows.find((r) => hitRect(tap, r));
       if (card) { if (unlocked(roster[card.index])) { i = card.index; toggle(roster[card.index]); } } // ignore taps on locked
+      else if (upRow) buyUpgrade(roster[i].id, upRow.id);
       else if (hitRect(tap, start)) { i = START; if (party.length) confirmed = true; }
       else if (Math.abs(tap.y - CAR_CY) < 24) { // tap a name in the carousel band → pick the nearest
         let best = null;
@@ -243,10 +276,44 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
     ctx.fillStyle = P.hint;
     ctx.font = P.hintFont;
-    ctx.fillText("←↑↓→ or tap · SPACE pick/start · C clear · ↓ to Background, ←→ to change", VIEW_W / 2, VIEW_H - 14);
+    ctx.fillText("←↑↓→/tap · SPACE pick/start · 1–4/tap upgrade · C clear · ↓ Background", VIEW_W / 2, VIEW_H - 14);
     ctx.textAlign = "left";
 
     prev().render(); // live action-preview in the right column
+    renderUpgrades(); // the highlighted hero's buyable upgrade tree, under the preview
+  }
+
+  // The highlighted hero's upgrade tree (spec 08), drawn under the preview column:
+  // a credits header plus one row per track with its name, effect, rank pips, and
+  // the next-rank cost (greyed MAX when capped, red when unaffordable). Reuses the
+  // META theme tokens. Nothing draws when the focus isn't on a buyable hero.
+  function renderUpgrades() {
+    const rows = upgradeRows();
+    if (!rows.length) return;
+    const M = THEME.meta, hero = roster[i];
+    const { preview: pv } = layout();
+    const hy = pv.y + pv.h + 14;
+    ctx.textAlign = "left";
+    ctx.fillStyle = M.credits; ctx.font = "bold 14px system-ui, sans-serif";
+    ctx.fillText(`Upgrades · ${blob.credits} cr`, pv.x, hy + 12);
+    for (const r of rows) {
+      const def = UPGRADES[hero.id][r.id];
+      const rank = upgradeRank(blob, hero.id, r.id), cost = nextCost(blob, hero.id, r.id);
+      ctx.fillStyle = M.row;
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.textAlign = "left";
+      ctx.fillStyle = M.name; ctx.font = "13px system-ui, sans-serif";
+      ctx.fillText(`${r.track + 1} ${def.name}`, r.x + 8, r.y + 12);
+      ctx.fillStyle = M.blurb; ctx.font = "11px system-ui, sans-serif";
+      ctx.fillText(def.blurb, r.x + 8, r.y + 24);
+      ctx.textAlign = "right";
+      ctx.fillStyle = M.rank; ctx.font = "12px ui-monospace, monospace";
+      ctx.fillText("●".repeat(rank) + "○".repeat(def.maxRank - rank), r.x + r.w - 8, r.y + 12);
+      ctx.font = "12px ui-monospace, monospace";
+      if (cost === null) { ctx.fillStyle = M.maxed; ctx.fillText("MAX", r.x + r.w - 8, r.y + 24); }
+      else { ctx.fillStyle = blob.credits >= cost ? M.cost : M.broke; ctx.fillText(`${cost} cr`, r.x + r.w - 8, r.y + 24); }
+    }
+    ctx.textAlign = "left";
   }
 
   // The hover readout: portrait + name/genre, basic weapon, signature, stats, and the

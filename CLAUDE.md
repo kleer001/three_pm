@@ -1,6 +1,6 @@
 # three_pm — "3pm"
 
-A vanilla browser **roguelite**: five 16-year-olds at Merriton High try to get
+A vanilla browser **roguelite**: nine 16-year-olds at Merriton High try to get
 home alive through a terrifying post-apocalypse cartoon-hellscape suburb. Each
 run is one "day" — a forced top-down **descent** south, with the camera window
 auto-scrolling down and crushing stragglers. Home is the south edge; reach it to
@@ -9,7 +9,7 @@ win. Plain HTML, CSS, and ES modules — no build system, bundler, or dependenci
 ## Two layers: design corpus vs. the slice
 
 - **`docs/00-index.md` … `docs/17-*.md` + `ENGAGEMENT.md`** are the design source
-  of truth (engine, world, entities, combat, the five heroes, enemies, powerups,
+  of truth (engine, world, entities, combat, the nine heroes, enemies, powerups,
   meta-progression, presentation, tone, scene flow, powerup synergies). Start at
   `docs/00-index.md`.
 - **`src/`** is a **vertical slice** that proves the core loop. It deliberately

@@ -7,7 +7,7 @@ the cast live. Specs are the contract; numbers inside them are tuning, not.
 ## Premise (spec 14)
 The final bell rings at 3pm and the suburbia around Merriton High has gone
 wrong — recognizably home, but rotted, cratered, and crawling with cartoon-terror
-horrors. Five 16-year-olds try to walk home alive before dark. A **run = one
+horrors. Nine 16-year-olds try to walk home alive before dark. A **run = one
 in-game "day"**; the kid starts at the **north** edge and home is the fixed
 **south** band. A slow camera auto-scrolls southward, holding the hero inside
 its window — descent home is forced. A kids' GPS smart-watch reads

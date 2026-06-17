@@ -7,7 +7,7 @@ spec 02, enemies spec 06, presentation spec 09). Where a beat surfaces in code,
 this doc points at the owning spec; it never redefines it.
 
 ## Decisions in force
-- **Genre fiction:** five 16-year-olds at Merriton High trying to get home alive
+- **Genre fiction:** nine 16-year-olds at Merriton High trying to get home alive
   through a post-apocalypse **cartoon** hellscape (ruined suburbia, spec 02).
 - **Tone is cartoon-terror:** a genuinely menacing hellscape played with absurd,
   darkly comic Saturday-morning energy. Menace is real; gore is not.

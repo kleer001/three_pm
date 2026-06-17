@@ -48,7 +48,7 @@ StS replayability comes from **emergent build synergies** across characters and
 cards, not raw RNG. Different heroes reshape which choices are good; runs feel
 distinct because the *strategy* differs, not just the layout.
 
-**In 3pm:** the five teens have hard-specialized kits (`docs/05`, `docs/10–13`)
+**In 3pm:** the nine teens have hard-specialized kits (`docs/05`, `docs/10–13`, `docs/19`)
 and powerups stack with declared synergies (`docs/07`). Push synergies that
 "pivot" — a powerup that's fine alone but transforms a specific hero's signature.
 The goal: a player thinks "this is a *spread-Marvin* run" the way StS players
@@ -99,7 +99,8 @@ deck-builder), exclusivity comes from four levers — limited **weapon-mod slots
 one-or-the-other **forks**, **Faustian trade-offs**, and **conditional value**
 (a generic mod is great for one hero, dead weight for another) — and synergy
 comes from **tags** that combine plus mods that **pivot** a hero's signature.
-Spec 17 gives each of the five heroes a Fork / Trade / Pivot / Combo set.
+Spec 17 gives each hero a Fork / Trade / Pivot / Combo set (authored for the
+original five; the roster of record is now nine, `docs/19`).
 
 ## Sources
 - [Reverse-engineering Slay the Spire's decisions — Cloudfall Studios](https://www.cloudfallstudios.com/blog/2020/11/2/game-design-tips-reverse-engineering-slay-the-spires-decisions)

@@ -1,8 +1,8 @@
 # 3pm
 
 A browser roguelite. It's 3pm and school's out — but Merriton High lets out into
-a post-apocalyptic cartoon hellscape. Pick one of five 16-year-olds and **get
-home alive**. Every day the way home is a forced march south while the world
+a post-apocalyptic cartoon hellscape. Pick your party from nine 16-year-olds and
+**get home alive**. Every day the way home is a forced march south while the world
 caves in behind you.
 
 Vanilla HTML/CSS/JavaScript — no build step, no dependencies.

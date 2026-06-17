@@ -3,8 +3,9 @@
 // next rank via save(purchaseUpgrade(load(), …)). A trailing "Head out" item is the
 // sole exit, carrying the next day's seed into the weapon-select → RUN loop.
 //
-// The slice ships only Marvin, so this lists Marvin's tree directly; the save API
-// is hero-keyed, ready for the rest of the roster.
+// All nine heroes have upgrade trees (save.js UPGRADES); per-hero buying lives in
+// the party-select screen, where you pick the hero. This between-days screen keeps
+// Marvin's tree as a quick general spend — the save API is hero-keyed throughout.
 import { THEME } from "../run/balance.js";
 import { hitRect } from "../input/input.js";
 import { load, save, purchaseUpgrade, UPGRADES, upgradeRank, nextCost } from "./save.js";

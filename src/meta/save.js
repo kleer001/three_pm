@@ -24,12 +24,97 @@ export const HERO_UNLOCKS = Object.fromEntries(BALANCE.roster.map((c) => [c.id, 
 // Per-hero permanent upgrade trees (spec 08 upgrades.json). `apply` mirrors the
 // spec-07 stat payload: deltas on the hero's base stats, scaled by purchased rank,
 // folded in at run start before recomputeDerived. costCurve[i] is rank i+1's price.
+//
+// Each tree is themed to its hero's kit (genre + basic weapon + signature) rather
+// than copied verbatim: a hero leans cheapest into the stat its weapon/signature
+// scales on, and pays a premium to shore up a defining weakness. The four base
+// stats are the only payload the run folds (applyHeroUpgrades) — differentiation
+// comes from WHICH stats a tree offers, its rank caps, and its cost curves:
+//   speed → moveSpeed · constitution → maxHp + dmgResist · strength → knockback +
+//   strength-scaled weapon/signature damage · magic → maxMana + abilityPower +
+//   magic-scaled weapon/signature damage.
 export const UPGRADES = {
+  // House · Slingshot (str + ⅓-maxHP, freezes) · Good Vibes (passive heal). The
+  // baseline all-rounder: every stat, evenly priced — no specialism, no weakness.
   marvin: {
     track_legs:  { name: "Track Legs",    blurb: "+1 speed / rank",        maxRank: 3, costCurve: [40, 80, 140], apply: { speed: 1 } },
     iron_gut:    { name: "Iron Gut",      blurb: "+1 constitution / rank", maxRank: 3, costCurve: [40, 80, 140], apply: { constitution: 1 } },
     weight_room: { name: "Weight Room",   blurb: "+1 strength / rank",     maxRank: 3, costCurve: [50, 100, 175], apply: { strength: 1 } },
     honor_roll:  { name: "Honor Roll",    blurb: "+1 magic / rank",        maxRank: 3, costCurve: [50, 100, 175], apply: { magic: 1 } },
+  },
+
+  // Industrial · Cleave (heavy str melee) · Mosh Pit (str nova). The varsity
+  // bruiser: cheap strength + constitution, a premium combined "mosh" track, and a
+  // little speed to close his gap. No magic — his kit doesn't touch it.
+  chad: {
+    pit_boss:      { name: "Pit Boss",      blurb: "+1 strength / rank",      maxRank: 3, costCurve: [45, 90, 160],  apply: { strength: 1 } },
+    letterman:     { name: "Letterman",     blurb: "+1 constitution / rank",  maxRank: 3, costCurve: [40, 80, 140],  apply: { constitution: 1 } },
+    wall_of_death: { name: "Wall of Death", blurb: "+1 str & con / rank",     maxRank: 2, costCurve: [130, 240],     apply: { strength: 1, constitution: 1 } },
+    warmup_laps:   { name: "Warm-Up Laps",  blurb: "+1 speed / rank",         maxRank: 2, costCurve: [55, 120],      apply: { speed: 1 } },
+  },
+
+  // Psytrance · Spear (fast str melee) · Redline (rapid str shots). The track star
+  // glass cannon: cheap speed + strength to lean into the build, and a costly
+  // constitution track to patch his paper-thin survivability.
+  dash: {
+    sprinters_high: { name: "Sprinter's High", blurb: "+1 speed / rank",       maxRank: 3, costCurve: [40, 80, 140],   apply: { speed: 1 } },
+    adrenaline:     { name: "Adrenaline",      blurb: "+1 strength / rank",    maxRank: 3, costCurve: [45, 90, 160],   apply: { strength: 1 } },
+    second_wind:    { name: "Second Wind",     blurb: "+1 constitution / rank",maxRank: 3, costCurve: [60, 130, 230],  apply: { constitution: 1 } },
+  },
+
+  // Dubtechno · Hex (magic %-HP, costs mana) · Deep Freeze (magic freeze nova).
+  // The occultist: cheap magic (damage + the mana both casts burn), a pricey
+  // constitution track for her fragility, and some speed to kite.
+  wendolyn: {
+    sub_bass:     { name: "Sub-Bass",     blurb: "+1 magic / rank",        maxRank: 3, costCurve: [40, 80, 140],   apply: { magic: 1 } },
+    ritual_scars: { name: "Ritual Scars", blurb: "+1 constitution / rank", maxRank: 3, costCurve: [55, 120, 210],  apply: { constitution: 1 } },
+    echo_chamber: { name: "Echo Chamber", blurb: "+1 speed / rank",        maxRank: 2, costCurve: [50, 110],       apply: { speed: 1 } },
+  },
+
+  // Techno · Bomb (magic area) · Drum Machine (deploy turret, costs mana). The
+  // robotics nerd: cheap magic for blast damage + the mana that fields turrets,
+  // armor for his chassis, and servos to fix his slow feet.
+  eugene: {
+    overclock:          { name: "Overclock",          blurb: "+1 magic / rank",        maxRank: 3, costCurve: [40, 80, 140],  apply: { magic: 1 } },
+    reinforced_chassis: { name: "Reinforced Chassis",  blurb: "+1 constitution / rank", maxRank: 3, costCurve: [45, 90, 160],  apply: { constitution: 1 } },
+    servo_motors:       { name: "Servo Motors",        blurb: "+1 speed / rank",        maxRank: 2, costCurve: [55, 120],      apply: { speed: 1 } },
+  },
+
+  // Trance · Nova (str burst) · The Drop (magic charge nova). The hybrid raver:
+  // her two casts pull opposite stats, so magic and strength are both first-class
+  // and evenly priced, with constitution to ride out the charge-up.
+  jess: {
+    build_up:  { name: "Build-Up",  blurb: "+1 magic / rank",        maxRank: 3, costCurve: [40, 80, 140],  apply: { magic: 1 } },
+    hands_up:  { name: "Hands Up",  blurb: "+1 strength / rank",     maxRank: 3, costCurve: [45, 90, 160],  apply: { strength: 1 } },
+    afterglow: { name: "Afterglow", blurb: "+1 constitution / rank", maxRank: 3, costCurve: [50, 110, 190], apply: { constitution: 1 } },
+  },
+
+  // Acid · Beam (STRENGTH-scaled pierce, costs mana) · Bad Trip (confuse, costs
+  // mana). The oddball: his pierce scales on strength while both casts burn mana,
+  // so strength AND magic both pay off — plus quick feet for repositioning.
+  zigzag: {
+    squelch_303: { name: "303 Squelch", blurb: "+1 strength / rank", maxRank: 3, costCurve: [45, 90, 160], apply: { strength: 1 } },
+    acid_bath:   { name: "Acid Bath",   blurb: "+1 magic / rank",    maxRank: 3, costCurve: [40, 80, 140], apply: { magic: 1 } },
+    quick_feet:  { name: "Quick Feet",  blurb: "+1 speed / rank",    maxRank: 2, costCurve: [50, 110],     apply: { speed: 1 } },
+  },
+
+  // Ambient · Hex Field (magic zone) · Chill Zone (magic slow field). The zone
+  // controller: cheap magic for zone damage + the heavy mana both fields demand,
+  // matching cheap constitution since he holds ground, and a dash of speed.
+  jasper: {
+    drone:     { name: "Drone",     blurb: "+1 magic / rank",        maxRank: 3, costCurve: [40, 80, 140], apply: { magic: 1 } },
+    deep_calm: { name: "Deep Calm", blurb: "+1 constitution / rank", maxRank: 3, costCurve: [40, 80, 140], apply: { constitution: 1 } },
+    slow_fade: { name: "Slow Fade", blurb: "+1 speed / rank",        maxRank: 2, costCurve: [55, 120],     apply: { speed: 1 } },
+  },
+
+  // Synthwave · Whirl (str 360° spin, always firing) · Flashback (magic planted
+  // bomb). The true hybrid: mobility feeds his constant spin, strength powers it,
+  // magic powers his bomb — all three on offer, with a small armor track.
+  valentine: {
+    neon_drive: { name: "Neon Drive", blurb: "+1 speed / rank",        maxRank: 3, costCurve: [40, 80, 140],  apply: { speed: 1 } },
+    power_chord:{ name: "Power Chord", blurb: "+1 strength / rank",     maxRank: 3, costCurve: [45, 90, 160],  apply: { strength: 1 } },
+    retrowave:  { name: "Retrowave",  blurb: "+1 magic / rank",        maxRank: 3, costCurve: [50, 110, 190], apply: { magic: 1 } },
+    hairspray:  { name: "Hairspray",  blurb: "+1 constitution / rank", maxRank: 2, costCurve: [55, 120],      apply: { constitution: 1 } },
   },
 };
 
