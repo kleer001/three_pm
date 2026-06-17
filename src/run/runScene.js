@@ -1442,7 +1442,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   // at the instant it ends. Only distanceFraction/kills/won reach the save; the rest
   // are display-only. `finished` flips once and tells main to hand off to the summary.
   return {
-    update, render, runState, nextSeed: seed + 1,
+    update, render, runState, nextSeed: seed + 1, bgId, // bgId rides through to the between-days screen
     // Read-only live-state handle for the headless gauntlet harness (tests/gauntlet.mjs):
     // lets a bot read the hero position + map to steer, and taps run metrics. Not used
     // by the game itself.

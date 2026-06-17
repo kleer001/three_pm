@@ -25,10 +25,10 @@ startLoop({
       scene = createRunScene(ctx, input, scene.seed, scene.party, load(), scene.bgId);
       phase = "run";
     } else if (phase === "run" && scene.finished) {
-      scene = createSummaryScene(ctx, input, scene.result, scene.nextSeed);
+      scene = createSummaryScene(ctx, input, scene.result, scene.nextSeed, scene.bgId);
       phase = "summary";
     } else if (phase === "summary" && scene.done) {
-      scene = createMetaScene(ctx, input, scene.nextSeed);
+      scene = createMetaScene(ctx, input, scene.nextSeed, scene.bgId);
       phase = "meta";
     } else if (phase === "meta" && scene.done) {
       scene = createPartySelectScene(ctx, input, scene.nextSeed, load());
