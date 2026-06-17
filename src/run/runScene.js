@@ -25,6 +25,18 @@ const GLOW_BLUR = 14;          // rim glow width (≈50% wider than the prior 9p
 const GLOW_COLOR = "rgba(165,205,255,1)"; // light-blue rim tint
 const GLOW_GAIN = 1.5;         // rim glow strength (drawn over itself this many ×, ≈50% stronger)
 
+// Append one closed rounded-rect subpath with per-corner radii (0 = square corner).
+// ctx.roundRect isn't safe across all targets the slice ships to (see metaScene), so
+// build it from arcTo instead.
+function addRoundTile(c, x, y, w, h, tl, tr, br, bl) {
+  c.moveTo(x + tl, y);
+  c.arcTo(x + w, y,     x + w, y + h, tr);
+  c.arcTo(x + w, y + h, x,     y + h, br);
+  c.arcTo(x,     y + h, x,     y,     bl);
+  c.arcTo(x,     y,     x + w, y,     tl);
+  c.closePath();
+}
+
 // Gameplay tuning lives in balance.js; alias the hot ones to keep the body terse.
 const { hero: HERO, enemies: ENEMIES } = BALANCE;
 const { scroll: SCROLL, mapH: MAP_H, freezeDur: FREEZE_DUR } = BALANCE;
@@ -1198,10 +1210,9 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
             if (level.tiles[ty * level.w + tx] !== TILE.RUBBLE) continue;
             const sx = Math.floor(tx * TS - cam.x), sy = Math.floor(ty * TS - cam.y);
             const up = rub(tx, ty - 1), dn = rub(tx, ty + 1), lf = rub(tx - 1, ty), rt = rub(tx + 1, ty);
-            vb.roundRect(sx, sy, TS + 1, TS + 1, [
+            addRoundTile(vb, sx, sy, TS + 1, TS + 1,
               (!up && !lf) ? VOID_CORNER : 0, (!up && !rt) ? VOID_CORNER : 0,
-              (!dn && !rt) ? VOID_CORNER : 0, (!dn && !lf) ? VOID_CORNER : 0,
-            ]);
+              (!dn && !rt) ? VOID_CORNER : 0, (!dn && !lf) ? VOID_CORNER : 0);
           }
         vb.fill();
         vb.restore();
