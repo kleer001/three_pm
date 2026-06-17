@@ -920,9 +920,19 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       regenMana(f, dt);
       tickHeal(f, dt);
       const p = trailPointBack((i + 1) * gap);
-      // Ease toward the trail point instead of hard-snapping, so a follower shoved off it
-      // by an enemy (in the separation pass below) slides back over a few frames, not pops.
-      if (p) { const k = BALANCE.followerReturn; f.x += (p.x - f.x) * k; f.y += (p.y - f.y) * k; }
+      // Re-home to the trail point at a capped speed (its own moveSpeed × the knob),
+      // not a fixed fraction: a shoved follower closes the gap at a steady rate, so
+      // out-running the train strands it — slow down to let the line re-form. bpm/rawDt
+      // tie its pace to the head's (BPM-boost / Slow-Jam). In normal following the trail
+      // point only advances a head-step each frame, so d <= step and it snaps on-point.
+      if (p) {
+        const dx = p.x - f.x, dy = p.y - f.y, d = Math.hypot(dx, dy);
+        const step = f.derived.moveSpeed * BALANCE.followerReturnSpeedMult * bpm * rawDt;
+        if (d <= step || d < 1e-3) { f.x = p.x; f.y = p.y; }
+        // Per-axis shift mirrors heroMove: a returning follower slides along a wall
+        // instead of clipping a corner (shift reverts a blocked axis).
+        else { const s = step / d; shift(f, dx * s, 0); shift(f, 0, dy * s); }
+      }
       // Mirror the hero's crush rule (below): riding the advancing edge is fine,
       // but being pinned against a wall there is fatal — that's "left behind".
       if (f.y < minY) { f.y = minY; if (boxBlocked(level, f)) { f.dead = true; continue; } }
@@ -1003,8 +1013,8 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     }
     for (const c of corpses) separate(hero, c, false); // the hero shoves (heavy) corpses aside
 
-    // Followers are soft bodies too: living enemies and corpses shove them off their eased
-    // trail point (they re-home next frame via followerReturn). shift()'s wall-revert keeps
+    // Followers are soft bodies too: living enemies and corpses shove them off their
+    // trail point (they re-home at a capped speed via followerReturnSpeedMult). shift()'s wall-revert keeps
     // them from clipping into walls. Runs after the enemy/hero pass so enemy positions are
     // settled. Crush leniency: a shove past minY isn't fatal here — the check at the top of
     // the follower loop catches a genuine pin next frame.

@@ -185,7 +185,11 @@ export const BALANCE = {
   spawnMinTileY: 9, // don't spawn enemies in the player's opening rows
   waypointArrive: 5, // px tolerance for "reached the path node"
   softBodyPush: 0.5, // share of overlap each of two living bodies yields when separating
-  followerReturn: 0.35, // ease factor a shoved follower uses to re-home to its trail point
+  // Multiplier on a stray follower's OWN derived.moveSpeed when re-homing to its
+  // trail point: the cap on how fast it closes a gap opened by a shove (or by a
+  // faster head out-running it). >1 lets an equal-speed follower keep formation
+  // and recover from small shoves; a genuinely slower follower still lags.
+  followerReturnSpeedMult: 1.2,
   heroCrowdYield: 0.15, // hero's share of overlap when an enemy pushes it (a crowd slows it)
   spawnFade: 0.25, // seconds a hero takes to fade in (in its own color) when it materializes;
                    // it's intangible (can't be hit) while fading
