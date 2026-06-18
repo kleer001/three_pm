@@ -81,7 +81,7 @@ export const BALANCE = {
     good_vibes:   { name: "Good Vibes",   shape: "heal", hpPerSec: 1.6 },
     drum_machine: { name: "Drum Machine", shape: "deploy", cd: 4, manaCost: 16, maxActive: 2, life: 8, turretId: "slingshot" },
     bad_trip:     { name: "Bad Trip",     shape: "confuse", cd: 6, radius: 150, confuseDur: 2.5, manaCost: 14 },
-    the_drop:     { name: "The Drop",     shape: "charge", radius: 150, threshold: 38, freeze: false, manaCost: 0, knockback: 4, takenScale: 0.8, damage: { scaling: "magic", base: 4, ratio: 0.4, pctMax: 0, pctCur: 0 } },
+    the_drop:     { name: "The Drop",     shape: "charge", radius: 150, threshold: 28, freeze: false, manaCost: 0, knockback: 4, takenScale: 0.35, trickle: 8, damage: { scaling: "magic", base: 7, ratio: 0.4, pctMax: 0.06, pctCur: 0 } },
   },
 
   // Player arsenal — all are offered on the select screen each run; one is fired

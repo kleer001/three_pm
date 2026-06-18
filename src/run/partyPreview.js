@@ -21,6 +21,7 @@ const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 // Arena tuning — a tiny static target range (no marching wave).
 const KB_SHOVE = 1.2;     // px of shove per unit of resolved knockback (preview-only feel)
+const POKE_EVERY = 0.55;  // seconds between simulated incoming hits (so charge/heal passives demo)
 const RESPAWN = 0.7;      // seconds a downed dummy stays gone before reappearing at its spot
 const RETURN = 0.05;      // per-frame drift of a shoved dummy back toward its anchor
 const HERO_Y = 0.18;      // hero's vertical position as a fraction of arena height
@@ -31,6 +32,7 @@ const DUMMY_HP = 80;      // punching-bag HP — survives a few hits so knockbac
 export function createPartyPreview(ctx, rect) {
   // Effect/entity state — all in arena-LOCAL coords (origin at the rect's top-left).
   let hero = null;
+  let pokeT = 0; // countdown to the next simulated incoming hit (charge/heal demo)
   const enemies = [], projectiles = [], blasts = [], swings = [], fields = [], deployables = [], floaters = [];
 
   // Shared combat, wired to the arena: hits land on the dummies, knockback is a cosmetic
@@ -87,6 +89,7 @@ export function createPartyPreview(ctx, rect) {
   // null clears the arena.
   function setHero(def, role = "head") {
     hero = def ? buildHero(def, role) : null;
+    pokeT = 0;
     enemies.length = projectiles.length = blasts.length = swings.length = 0;
     fields.length = deployables.length = floaters.length = 0;
     if (hero) {
@@ -112,10 +115,27 @@ export function createPartyPreview(ctx, rect) {
     hero.iframes = Math.max(0, hero.iframes - dt);
     regenMana(hero, dt);
 
+    // Charge/heal passives feed on incoming damage (The Drop charges off hits taken; Good
+    // Vibes heals them back) — but the dummies never attack. Simulate a steady trickle of
+    // incoming damage on a follower whose signature needs it, so the passive actually does
+    // something on screen. HP floors so the demo hero can't die.
+    const sig = hero.signature;
+    if (hero.role === "follower" && sig && (sig.shape === "charge" || sig.shape === "heal")) {
+      pokeT -= dt;
+      if (pokeT <= 0) {
+        pokeT = POKE_EVERY;
+        const dmg = Math.max(1, hero.derived.maxHp * 0.07);
+        hero.hp = Math.max(hero.derived.maxHp * 0.25, hero.hp - dmg);
+        hero.iframes = 0.12; // brief white blip to read as "took a hit"
+        combat.creditCharge(hero, dmg, true); // taken-damage charge for The Drop
+        combat.spawnHitNumber(hero, dmg);
+      }
+    }
+
     const near = combat.nearestEnemyTo(hero.x, hero.y);
     // Role split mirrors runScene: a head fires only its weapon; a follower contributes
     // only its passive signature (heal ticks silently, the rest dispatch through fireSignature).
-    if (hero.role === "follower") { combat.tickHeal(hero, dt); combat.fireSignature(hero, near); }
+    if (hero.role === "follower") { combat.tickHeal(hero, dt); combat.tickCharge(hero, dt); combat.fireSignature(hero, near); }
     else combat.fireWeapon(hero, hero.weapon, near);
 
     combat.stepDeployables(dt);

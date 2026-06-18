@@ -192,6 +192,14 @@ export function createCombat(env) {
       e.hp = Math.min(e.derived.maxHp, e.hp + e.signature.hpPerSec * dt);
   }
 
+  // Baseline charge for a `charge` signature (The Drop's `trickle`): a follower contributes
+  // even when it isn't being hit, so the passive never sits dead. Damage taken still adds on
+  // top (creditCharge in applyHit), so tanking ramps it up — only the floor is new.
+  function tickCharge(e, dt) {
+    if (e.signature && e.signature.shape === "charge" && e.signature.trickle && !e.dead)
+      e.charge += e.signature.trickle * dt;
+  }
+
   // --- per-frame steppers -----------------------------------------------------------
   // Projectiles (hero + enemy): resolve each against the opposite faction. Bombs detonate
   // an area on contact/expiry; beams pierce and hit each target once; fuses plant then blast;
@@ -247,7 +255,7 @@ export function createCombat(env) {
 
   return {
     applyHit, blast, detonate, nearestEnemyTo, meleeSwing, fireShot, fireWeapon,
-    creditCharge, spawnHitNumber, deployTurret, confuseBurst, releaseCharge, fireSignature, tickHeal,
+    creditCharge, spawnHitNumber, deployTurret, confuseBurst, releaseCharge, fireSignature, tickHeal, tickCharge,
     stepProjectiles, stepFields, stepDeployables,
   };
 }

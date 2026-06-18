@@ -789,6 +789,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       f.fadeT = Math.max(0, f.fadeT - dt);
       regenMana(f, dt);
       combat.tickHeal(f, dt);
+      combat.tickCharge(f, dt); // The Drop's baseline trickle, so a back-line follower still fires
       const p = trailPointBack((i + 1) * gap);
       // Re-home to the trail point at a capped speed (its own moveSpeed × the knob),
       // not a fixed fraction: a shoved follower closes the gap at a steady rate, so
