@@ -1,0 +1,71 @@
+/* V4 (avatar) stat studies. Loaded after uv-base.css + uv-portraits.css.
+   - drops the cardinal unit number (01-09); keeps only the place-in-line
+   - three states: in-party (full), unlocked-but-unpicked (dim), not-won (greyed)
+   - #grid gets `mode-v4s smode-<bars|eq|num|big>` */
+
+#grid.mode-v4s .no{display:none}              /* no more cardinal numbering */
+#grid.mode-v4s .card{padding:8px 10px 6px}
+
+/* bust avatar (head + shoulders), framed to the chip */
+#grid.mode-v4s .av{position:absolute;left:9px;top:30px;width:40px;height:40px;border-radius:3px;overflow:hidden;border:1px solid var(--line);background:#191c12}
+#grid.mode-v4s .av img{position:absolute;inset:0;left:0;transform:none;width:100%;height:100%;object-fit:cover;object-position:center top}
+
+/* header: name full-width up top, genre + sig in a column right of the avatar */
+#grid.mode-v4s .nm{margin-left:0;font-size:17px}
+#grid.mode-v4s .info{position:absolute;left:56px;right:10px;top:30px}
+#grid.mode-v4s .info .gn{margin-top:0}
+#grid.mode-v4s .info .sig{margin-top:6px;font-size:11px}
+
+/* place-in-line marker — readable grey, consistent top-right (party only) */
+.place{position:absolute;right:9px;top:7px;text-align:right;line-height:1;z-index:3;display:none}
+.card.inparty .place{display:block}
+.place i{font-family:"Space Mono",monospace;font-style:normal;font-size:7px;letter-spacing:.18em;color:#5d6450;display:block;margin-bottom:1px}
+.place b{font-family:"Anton";font-size:21px;color:#98a07f}
+.card.sel .place b{color:var(--uv);text-shadow:0 0 12px rgba(204,255,0,.4)}
+
+/* lock tag (not-won) */
+.lockt{position:absolute;right:9px;top:8px;z-index:3;font-family:"Space Mono";font-size:8px;letter-spacing:.14em;color:var(--cyan);border:1px solid #1d3640;padding:2px 5px}
+
+/* ---- states ---- */
+.card.dim{opacity:.6}                          /* unlocked, not in the party */
+
+/* not-yet-earned: fully redacted — flat grey silhouette on black + censored blocks */
+.card.lock{opacity:1}
+.card.lock .av{background:#000;border-color:#16180f}
+.silhouette{position:absolute;inset:0;background:#000;overflow:hidden}
+.silhouette::before{content:"";position:absolute;left:50%;top:7px;width:15px;height:15px;border-radius:50%;background:#3b4036;transform:translateX(-50%)}     /* head */
+.silhouette::after{content:"";position:absolute;left:50%;bottom:-3px;width:30px;height:19px;border-radius:15px 15px 0 0;background:#3b4036;transform:translateX(-50%)} /* shoulders */
+.redact{position:absolute;background:#15180f;border-radius:1px}
+.rname{left:56px;top:33px;width:80px;height:14px}
+.rsub{left:56px;top:53px;width:52px;height:8px}
+.rstat{left:56px;bottom:11px;width:104px;height:8px}
+.qmark{position:absolute;left:9px;top:30px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;
+  font-family:"Anton";font-size:22px;color:#2b3026;z-index:2}
+
+/* ---- stat treatments (bottom strip) ---- */
+.stats{position:absolute;left:10px;right:10px;bottom:7px}
+
+/* A · labelled horizontal bars */
+.smode-bars .stats{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px}
+.smode-bars .stat{display:grid;grid-template-columns:22px 1fr;gap:5px;align-items:center}
+.smode-bars .stat i{font-family:"Space Mono";font-style:normal;font-size:8px;color:var(--dim);letter-spacing:.04em}
+.smode-bars .pbar{height:4px;background:#1a1d14;position:relative}
+.smode-bars .pbar>span{position:absolute;inset:0 auto 0 0}
+
+/* B · vertical EQ in the bottom-right; labels left */
+.smode-eq .stats{bottom:8px;left:auto;right:10px;width:74px;height:34px;display:flex;align-items:flex-end;justify-content:space-between}
+.smode-eq .stat{width:14px;display:flex;flex-direction:column;align-items:center;gap:2px;height:100%;justify-content:flex-end}
+.smode-eq .eqs{width:9px;height:100%;display:flex;flex-direction:column-reverse;gap:2px}
+.smode-eq .eqs i{flex:1;background:#1a1d14}
+.smode-eq .stat i.lab{font-family:"Space Mono";font-style:normal;font-size:7px;color:var(--dim)}
+
+/* C · inline mono numeric readout */
+.smode-num .stats{display:flex;gap:9px;font-family:"Space Mono";font-size:11px;letter-spacing:.02em}
+.smode-num .stat{color:var(--dim)}
+.smode-num .stat b{color:#e7ece2;margin-left:2px}
+
+/* D · big numerals, tiny labels under */
+.smode-big .stats{display:flex;justify-content:space-between}
+.smode-big .stat{text-align:center;line-height:.9}
+.smode-big .stat b{font-family:"Anton";font-size:22px;color:#fff;display:block}
+.smode-big .stat i{font-family:"Space Mono";font-style:normal;font-size:7.5px;letter-spacing:.08em;color:var(--dim);display:block;margin-top:2px}

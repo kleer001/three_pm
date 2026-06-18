@@ -1,0 +1,45 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>3A stats · B-eq</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="uv-base.css">
+<link rel="stylesheet" href="uv-portraits.css">
+<link rel="stylesheet" href="uv-stats.css">
+<style>
+  header{position:absolute;top:0;left:22px;right:22px;height:74px;display:flex;align-items:flex-end;justify-content:space-between;padding-bottom:11px;border-bottom:2px solid var(--uv)}
+  .title{font-size:34px}.title small{font-size:9.5px}
+  #grid{position:absolute;left:22px;top:88px;width:506px;bottom:104px}
+  #doss{position:absolute;right:22px;top:88px;width:234px;height:196px}
+  #arena{position:absolute;right:22px;top:294px;width:234px;bottom:104px}
+  footer{position:absolute;left:0;right:0;bottom:0;height:92px;border-top:2px solid var(--uv);background:#060604;display:grid;grid-template-rows:1fr 1fr}
+  #conga{padding:0 22px;border-bottom:1px solid #16180f}
+  .botrow{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:0 22px;overflow:hidden}
+  /* highly-visible control hints, bottom-left → middle */
+  .hints{display:flex;gap:12px;align-items:center}
+  .hint{display:flex;align-items:center;gap:6px;font-family:"Oswald";font-weight:600;font-size:11px;letter-spacing:.05em;color:#dfe5d2;text-transform:uppercase;white-space:nowrap}
+  .hint kbd{font-family:"Space Mono";font-size:11px;color:var(--uv);border:1px solid #3f4d19;background:#11140a;padding:2px 7px;border-radius:3px;box-shadow:0 0 9px rgba(204,255,0,.18)}
+  /* background selector, middle → bottom-right */
+  #bgrow{flex:0 1 auto;justify-content:flex-end;overflow:hidden}
+  #bgrow .sep{color:#2c3322;margin:0 2px}
+  #bgrow .nb{color:#46502f}
+</style></head>
+<body><div class="stage">
+  <header><div class="title">SELECT <em>YOUR</em> CREW<small>MERRITON HIGH · 3:00 PM · DESCENT SOUTH</small></div>
+    <div class="rhead">ROSTER <b>09</b><br>UNLOCKED <b>07</b><br>SEED <b>1F4A</b></div></header>
+  <div id="grid"></div><div id="doss"></div><div id="arena"></div>
+  <footer>
+    <div id="conga"></div>
+    <div class="botrow">
+      <div class="hints">
+        <span class="hint"><kbd>↑↓←→</kbd> Move</span>
+        <span class="hint"><kbd>SPACE</kbd> Add / Drop</span>
+        <span class="hint"><kbd>U</kbd> Upgrades</span>
+        <span class="hint"><kbd>ENTER</kbd> Start</span>
+      </div>
+      <div id="bgrow"></div>
+    </div>
+  </footer>
+</div>
+<script src="data.js"></script>
+<script>window.STAT_MODE='eq';</script>
+<script src="uv-render-stats.js"></script>
+</body></html>

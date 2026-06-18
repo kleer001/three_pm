@@ -1,0 +1,85 @@
+/* UV Rave — shared theme + components. Layout files position the zones
+   (#hdr #grid #doss #arena #conga #bgrow); this styles their contents. */
+:root{--uv:#ccff00;--mag:#ff2d95;--cyan:#00e5ff;--ink:#f2f4f0;--dim:#6f7566;
+  --card:#0b0c09;--card2:#070806;--line:#1c1f18;--num:#3c4232}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#000}
+.stage{width:800px;height:600px;position:relative;overflow:hidden;background:#040404;color:var(--ink);font-family:"Oswald",sans-serif}
+.mono{font-family:"Space Mono",monospace}
+.ringdeco{display:none}  /* plain black background for now */
+
+/* ---- header ---- */
+.title{font-family:"Anton",sans-serif;line-height:.82;letter-spacing:.01em;text-transform:uppercase}
+.title em{font-style:normal;color:var(--uv);text-shadow:0 0 18px rgba(204,255,0,.55)}
+.title small{display:block;font-family:"Space Mono",monospace;letter-spacing:.4em;color:var(--cyan);margin-top:5px}
+.rhead{font-family:"Space Mono",monospace;font-size:10px;color:var(--dim);text-align:right;line-height:1.7;letter-spacing:.06em}
+.rhead b{color:var(--mag)}
+
+/* ---- hero cards ---- */
+#grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px}
+.card{position:relative;border:1px solid var(--line);background:linear-gradient(180deg,var(--card),var(--card2));padding:8px 10px;overflow:hidden}
+.card .no{position:absolute;right:7px;top:5px;font-family:"Anton";font-size:24px;color:var(--num);line-height:1}
+.card .slot{position:absolute;left:8px;top:6px;font-family:"Anton";font-size:15px;color:#5a6147;line-height:1;display:none;letter-spacing:.02em}
+.card.inparty .slot{display:block}
+.card.inparty .nm{margin-left:18px}
+.card .nm{font-family:"Anton";font-size:18px;text-transform:uppercase;line-height:1;color:#fff}
+.card .gn{font-family:"Space Mono",monospace;font-size:8.5px;letter-spacing:.2em;margin-top:5px;text-transform:uppercase}
+.card .wpn{font-size:10.5px;font-weight:500;color:var(--dim);margin-top:7px;text-transform:uppercase;letter-spacing:.04em}
+.card .sig{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;margin-top:1px}
+.card .eq{position:absolute;left:10px;right:10px;bottom:8px;display:flex;gap:3px;align-items:flex-end;height:16px}
+.card .eq i{flex:1;background:#1a1d14;position:relative}
+.card .eq i span{position:absolute;left:0;right:0;bottom:0;display:block}
+.card.sel{border-color:var(--uv);box-shadow:0 0 0 1px var(--uv), inset 0 0 30px rgba(204,255,0,.08)}
+.card.sel .no{color:rgba(204,255,0,.16)}
+.card.lock{opacity:.4}
+.card.lock .lk{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:"Space Mono";font-size:10px;letter-spacing:.2em;color:var(--cyan)}
+
+/* ---- dossier ---- */
+#doss{border:1px solid var(--line);background:linear-gradient(180deg,#0a0b08,#060705);padding:13px 14px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+#doss .tag{font-family:"Space Mono";font-size:9px;letter-spacing:.28em;color:var(--cyan)}
+#doss h2{font-family:"Anton";font-size:38px;text-transform:uppercase;line-height:.86;margin-top:6px;color:#fff}
+#doss .gn{font-family:"Space Mono";font-size:9.5px;letter-spacing:.22em;margin-top:6px;text-transform:uppercase}
+#doss .sigbox{margin-top:11px;border-left:3px solid var(--mag);padding:2px 0 2px 10px}
+#doss .sigbox small{font-family:"Space Mono";font-size:8px;letter-spacing:.2em;color:var(--dim);display:block}
+#doss .sigbox b{font-family:"Anton";font-size:19px;text-transform:uppercase;color:var(--mag);text-shadow:0 0 16px rgba(255,45,149,.5)}
+#doss .wbox{margin-top:9px}
+#doss .wbox small{font-family:"Space Mono";font-size:8px;letter-spacing:.2em;color:var(--dim);display:block}
+#doss .wbox b{font-family:"Oswald";font-weight:600;font-size:16px;text-transform:uppercase;letter-spacing:.02em}
+#doss .dstats{margin-top:auto;display:flex;flex-direction:column;gap:6px;padding-top:10px}
+#doss .ds{display:grid;grid-template-columns:28px 1fr 14px;gap:7px;align-items:center}
+#doss .ds i{font-family:"Space Mono";font-style:normal;font-size:9px;color:var(--dim);letter-spacing:.06em}
+#doss .ds .t{height:7px;background:#15170f;display:flex;gap:2px}
+#doss .ds .t b{flex:1;background:#22261a}
+#doss .ds .nn{font-family:"Anton";font-size:13px;text-align:right}
+
+/* ---- LIVE preview arena ---- */
+#arena{position:relative;border:1px solid var(--line);background:radial-gradient(120% 90% at 50% 0%, #0c0f0a, #040503);overflow:hidden}
+#arena .alab{position:absolute;left:9px;top:8px;z-index:3;font-family:"Space Mono";font-size:8.5px;letter-spacing:.2em;color:var(--uv);text-shadow:0 0 10px rgba(204,255,0,.5)}
+#arena .alab .dotlive{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--mag);box-shadow:0 0 8px var(--mag);margin-right:5px;vertical-align:middle}
+#arena .scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 2px,transparent 2px 4px);pointer-events:none;z-index:4}
+#arena .ent{position:absolute;border-radius:50%;transform:translate(-50%,-50%)}
+#arena .hero{box-shadow:0 0 16px currentColor, inset 0 0 0 2px rgba(255,255,255,.25)}
+#arena .cd{position:absolute;border-radius:50%;background:rgba(0,0,0,.55);transform:translate(-50%,-50%)}
+#arena .dummy{background:#e8743b;box-shadow:0 0 8px rgba(232,116,59,.6)}
+#arena .nova{position:absolute;border-radius:50%;border:2px solid var(--mag);box-shadow:0 0 24px rgba(255,45,149,.7),inset 0 0 24px rgba(255,45,149,.35);transform:translate(-50%,-50%)}
+#arena .hp{position:absolute;height:3px;transform:translate(-50%,0);background:#1a1d14}
+#arena .hp>span{display:block;height:100%;background:#82c91e}
+#arena .dmg{position:absolute;font-family:"Anton";font-size:15px;color:#fff;transform:translate(-50%,-50%);text-shadow:0 0 8px rgba(255,45,149,.8)}
+
+/* ---- footer: conga + bg ---- */
+.clab{font-family:"Space Mono";font-size:9px;letter-spacing:.2em;color:var(--dim);white-space:nowrap}
+#conga{display:flex;align-items:center;overflow:hidden;gap:0}
+#conga .clab{margin-right:14px}
+.chip{display:flex;align-items:center;gap:5px;padding:3px 8px;border:1px solid var(--line);margin-right:5px;white-space:nowrap}
+.chip .sn{font-family:"Anton";font-size:12px;color:#5a6147}
+.chip .d{width:7px;height:7px;border-radius:50%}
+.chip b{font-family:"Oswald";font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.02em}
+.arr{color:#2a2d22;margin:0 1px}
+.start{margin-left:auto;font-family:"Anton";font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:#050505;background:var(--uv);padding:6px 13px;white-space:nowrap;box-shadow:0 0 18px rgba(204,255,0,.4)}
+#bgrow{display:flex;align-items:center;overflow:hidden}
+#bgrow .clab{margin-right:16px}
+.bgs{display:flex;gap:15px;align-items:center}
+.bgs b{font-family:"Space Mono";font-size:11px;letter-spacing:.13em;color:#33372a;text-transform:uppercase;white-space:nowrap}
+.bgs b.on{color:var(--cyan);text-shadow:0 0 14px rgba(0,229,255,.6)}
+.bgs b.auto{color:var(--uv);border:1px solid #2c3320;padding:2px 8px}
+.bgs b.auto.on{color:#050505;background:var(--uv);border-color:var(--uv);box-shadow:0 0 14px rgba(204,255,0,.5)}

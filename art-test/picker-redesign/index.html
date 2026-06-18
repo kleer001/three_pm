@@ -1,0 +1,43 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>3PM · Hero Picker — 4 Directions</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#fafafa;color:#1a1a1a;font-family:"Space Grotesk",system-ui,sans-serif;padding:34px 30px 60px}
+  h1{font-size:26px;letter-spacing:-.01em}
+  .lede{color:#555;font-size:14px;margin-top:6px;max-width:760px;line-height:1.5}
+  .lede b{color:#1a1a1a}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:26px;margin-top:28px;max-width:1320px}
+  .card{background:#fff;border:1px solid #e6e6e6;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+  .card img{display:block;width:100%;height:auto;border-bottom:1px solid #eee;background:#000}
+  .meta{padding:13px 16px 16px}
+  .meta .k{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.12em;color:#999}
+  .meta h2{font-size:18px;margin:3px 0 2px}
+  .meta .phil{font-size:12.5px;color:#666;line-height:1.5;margin-top:5px}
+  .meta .phil b{color:#1a1a1a}
+  .sw{display:inline-flex;gap:4px;margin-top:9px;vertical-align:middle}
+  .sw i{width:15px;height:15px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.12)}
+  .note{font-family:"Space Mono",monospace;font-size:11px;color:#888;margin-top:24px;max-width:760px;line-height:1.6}
+</style></head>
+<body>
+  <h1>3PM — Hero Picker · four in-idiom directions</h1>
+  <p class="lede">Same real roster &amp; data, four visions of <b>“2000s electronic-music raver, but clean.”</b> Each embraces the era's neon/gradient/chrome as a deliberate signature (not AI-slop), held together by a strict grid, clear hierarchy, and negative space.</p>
+  <div class="grid">
+    <div class="card"><img src="1-techno-readout.png" alt="Techno Readout">
+      <div class="meta"><div class="k">01 · CLINICAL</div><h2>Techno Readout</h2>
+        <div class="phil"><b>The Designers Republic × Pentagram.</b> The Warp Records / WipEout idiom: near-black engineering grid, monospace data, big unit numerals, technical glyphs, one acid accent. Built for dense info.</div>
+        <div class="sw"><i style="background:#0a0b0e"></i><i style="background:#c8ff2d"></i><i style="background:#e64980"></i><i style="background:#7b8696"></i></div></div></div>
+    <div class="card"><img src="2-y2k-aqua.png" alt="Y2K Aqua">
+      <div class="meta"><div class="k">02 · GLOSSY</div><h2>Y2K Aqua</h2>
+        <div class="phil"><b>Frutiger Aero × Mac OS X Aqua.</b> Early-2000s optimism: glassy translucent panels, candy gradients, gel buttons, glossy orbs, soft bloom. The one light-mode take — bright and shiny.</div>
+        <div class="sw"><i style="background:#2aa6d8"></i><i style="background:#23c08a"></i><i style="background:#e6357f"></i><i style="background:#bfefff"></i></div></div></div>
+    <div class="card"><img src="3-uv-rave.png" alt="UV Rave">
+      <div class="meta"><div class="k">03 · FLUORO</div><h2>UV Rave</h2>
+        <div class="phil"><b>Acid-house flyer, disciplined.</b> Pure black, fluoro UV palette, heavy condensed type, strobe-disc + halftone. All the flyer energy, locked to a strict grid so it reads clean, not cluttered.</div>
+        <div class="sw"><i style="background:#050505"></i><i style="background:#ccff00"></i><i style="background:#ff2d95"></i><i style="background:#00e5ff"></i></div></div></div>
+    <div class="card"><img src="4-winamp-spectrum.png" alt="Winamp Spectrum">
+      <div class="meta"><div class="k">04 · PLAYER-SKIN</div><h2>Winamp / Spectrum</h2>
+        <div class="phil"><b>MP3-era player skin.</b> Beveled chrome, LCD readouts, a graphic-EQ for stats, a hero “playlist,” spectrum analyzer. The most literally on-theme — the menu IS a music player.</div>
+        <div class="sw"><i style="background:#15171b"></i><i style="background:#39ff7a"></i><i style="background:#ffb000"></i><i style="background:#46d6ff"></i></div></div></div>
+  </div>
+  <p class="note">Stills rendered from live HTML/CSS (the game's own stack) → directly buildable. Grounded in the obsidian_vault design-critique skill (anti-slop: distinct display+mono pairing, brand-palette color, negative space, one detail at 120%). Open any source file in art-test/picker-redesign/ to see it live.</p>
+</body></html>

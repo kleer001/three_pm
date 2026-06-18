@@ -1,0 +1,109 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>3 · UV Rave</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{--uv:#ccff00;--mag:#ff2d95;--cyan:#00e5ff;--ink:#f2f4f0;--dim:#6f7566}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{background:#000}
+  .stage{width:800px;height:600px;position:relative;overflow:hidden;background:#050505;color:var(--ink);font-family:"Oswald",sans-serif}
+  /* big strobe disc + halftone */
+  .stage::before{content:"";position:absolute;width:520px;height:520px;right:-150px;top:-150px;border-radius:50%;
+    background:conic-gradient(from 0deg, transparent 0 8deg, rgba(255,45,149,.10) 8deg 16deg, transparent 16deg 24deg);
+    -webkit-mask:radial-gradient(circle, transparent 38%, #000 39%, #000 100%);mask:radial-gradient(circle, transparent 38%, #000 39%, #000 100%)}
+  .stage::after{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(204,255,0,.05) 1px, transparent 1.4px);background-size:7px 7px;pointer-events:none}
+  .ring{position:absolute;right:-110px;top:-110px;width:440px;height:440px;border-radius:50%;border:1px solid rgba(0,229,255,.18)}
+  .ring.b{width:300px;height:300px;right:-40px;top:-40px;border-color:rgba(204,255,0,.16)}
+  header{position:absolute;top:0;left:0;right:0;height:76px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 22px 12px;border-bottom:2px solid var(--uv)}
+  .title{font-family:"Anton",sans-serif;font-size:38px;line-height:.82;letter-spacing:.01em;text-transform:uppercase}
+  .title em{font-style:normal;color:var(--uv);text-shadow:0 0 18px rgba(204,255,0,.55)}
+  .title small{display:block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.42em;color:var(--cyan);margin-top:5px}
+  .rhead{font-family:"Space Mono",monospace;font-size:10px;color:var(--dim);text-align:right;line-height:1.7;letter-spacing:.06em}
+  .rhead b{color:var(--mag)}
+  .body{position:absolute;top:88px;left:22px;right:22px;bottom:104px;display:grid;grid-template-columns:1fr 224px;gap:14px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:9px}
+  .card{position:relative;border:1px solid #1c1f18;background:linear-gradient(180deg,#0b0c09,#070806);padding:9px 11px;overflow:hidden}
+  .card .no{position:absolute;right:8px;top:6px;font-family:"Anton";font-size:26px;color:#15170f;line-height:1}
+  .card .nm{font-family:"Anton";font-size:19px;text-transform:uppercase;letter-spacing:.01em;line-height:1;color:#fff}
+  .card .gn{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.22em;margin-top:5px;text-transform:uppercase}
+  .card .wpn{font-size:11px;font-weight:500;color:var(--dim);margin-top:8px;text-transform:uppercase;letter-spacing:.04em}
+  .card .sig{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;margin-top:1px}
+  .eq{position:absolute;left:11px;right:11px;bottom:9px;display:flex;gap:3px;align-items:flex-end;height:18px}
+  .eq i{flex:1;background:#1a1d14;position:relative}
+  .eq i span{position:absolute;left:0;right:0;bottom:0;display:block}
+  .badge{position:absolute;left:8px;top:7px;width:18px;height:18px;border-radius:50%;display:none;align-items:center;justify-content:center;font-family:"Anton";font-size:11px;color:#050505}
+  .card.inparty .badge{display:flex}
+  .card.sel{border-color:var(--uv);box-shadow:0 0 0 1px var(--uv), inset 0 0 30px rgba(204,255,0,.08)}
+  .card.sel .no{color:rgba(204,255,0,.18)}
+  .card.lock{opacity:.4}
+  .card.lock .lk{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:"Space Mono";font-size:10px;letter-spacing:.2em;color:var(--cyan)}
+  /* dossier */
+  .doss{border:1px solid #1c1f18;background:linear-gradient(180deg,#0a0b08,#060705);padding:14px 15px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+  .doss::before{content:"";position:absolute;right:-60px;bottom:-60px;width:180px;height:180px;border-radius:50%;border:1px solid rgba(255,45,149,.2)}
+  .doss .tag{font-family:"Space Mono";font-size:9px;letter-spacing:.3em;color:var(--cyan)}
+  .doss h2{font-family:"Anton";font-size:40px;text-transform:uppercase;line-height:.86;margin-top:7px;color:#fff}
+  .doss .gn{font-family:"Space Mono";font-size:10px;letter-spacing:.24em;margin-top:7px;text-transform:uppercase}
+  .doss .sigbox{margin-top:13px;border-left:3px solid var(--mag);padding:3px 0 3px 11px}
+  .doss .sigbox small{font-family:"Space Mono";font-size:8px;letter-spacing:.2em;color:var(--dim);display:block}
+  .doss .sigbox b{font-family:"Anton";font-size:21px;text-transform:uppercase;color:var(--mag);text-shadow:0 0 16px rgba(255,45,149,.5)}
+  .doss .wbox{margin-top:10px;font-size:13px}
+  .doss .wbox small{font-family:"Space Mono";font-size:8px;letter-spacing:.2em;color:var(--dim);display:block}
+  .doss .wbox b{font-family:"Oswald";font-weight:600;font-size:17px;text-transform:uppercase;letter-spacing:.02em}
+  .dstats{margin-top:auto;display:flex;flex-direction:column;gap:7px}
+  .ds{display:grid;grid-template-columns:30px 1fr 16px;gap:8px;align-items:center}
+  .ds i{font-family:"Space Mono";font-style:normal;font-size:9px;color:var(--dim);letter-spacing:.06em}
+  .ds .t{height:7px;background:#15170f;display:flex;gap:2px}
+  .ds .t b{flex:1;background:#22261a}
+  .ds .nn{font-family:"Anton";font-size:13px;text-align:right}
+  footer{position:absolute;left:0;right:0;bottom:0;height:92px;border-top:2px solid var(--uv);background:#060604;display:grid;grid-template-rows:1fr 1fr}
+  .conga{display:flex;align-items:center;padding:0 22px;border-bottom:1px solid #16180f;overflow:hidden}
+  .clab{font-family:"Space Mono";font-size:9px;letter-spacing:.2em;color:var(--dim);margin-right:14px;white-space:nowrap}
+  .chip{display:flex;align-items:center;gap:7px;padding:4px 10px;border:1px solid #1c1f18;margin-right:6px;white-space:nowrap}
+  .chip .d{width:9px;height:9px;border-radius:50%}
+  .chip b{font-family:"Oswald";font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.02em}
+  .arr{color:#2a2d22;margin:0 2px}
+  .start{margin-left:auto;font-family:"Anton";font-size:16px;text-transform:uppercase;letter-spacing:.04em;color:#050505;background:var(--uv);padding:7px 16px;white-space:nowrap;box-shadow:0 0 22px rgba(204,255,0,.45)}
+  .bgrow{display:flex;align-items:center;padding:0 22px;overflow:hidden}
+  .bgs{display:flex;gap:17px;align-items:center}
+  .bgs b{font-family:"Space Mono";font-size:11px;letter-spacing:.14em;color:#33372a;text-transform:uppercase;white-space:nowrap}
+  .bgs b.on{color:var(--cyan);text-shadow:0 0 14px rgba(0,229,255,.6)}
+</style></head>
+<body><div class="stage">
+  <div class="ring"></div><div class="ring b"></div>
+  <header>
+    <div class="title">SELECT <em>YOUR</em> CREW<small>MERRITON HIGH · 3:00 PM · DESCENT SOUTH</small></div>
+    <div class="rhead">ROSTER <b>09</b><br>UNLOCKED <b>08</b><br>SEED <b>1F4A</b></div>
+  </header>
+  <div class="body"><div class="grid" id="grid"></div><div class="doss" id="doss"></div></div>
+  <footer><div class="conga" id="conga"></div><div class="bgrow" id="bgrow"></div></footer>
+</div>
+<script src="data.js"></script>
+<script>
+const UV=['#ccff00','#ff2d95','#00e5ff'];
+const grid=document.getElementById('grid');
+ROSTER.forEach((h,i)=>{const inP=PARTY.indexOf(i),lk=h.lock>0;const ac=i===SELECTED?'var(--uv)':h.c;
+  const el=document.createElement('div');el.className='card'+(i===SELECTED?' sel':'')+(inP>=0?' inparty':'')+(lk?' lock':'');
+  el.innerHTML=`<div class="badge" style="background:${ac}">${inP>=0?inP+1:''}</div>
+    <div class="no">${String(i+1).padStart(2,'0')}</div>
+    <div class="nm">${h.n}</div>
+    <div class="gn" style="color:${h.c}">${h.g}</div>
+    <div class="wpn">${h.w}</div>
+    <div class="sig" style="color:${ac}">✦ ${h.s}</div>
+    <div class="eq">${STATS.map(([lab,k])=>`<i><span style="height:${h[k]/10*100}%;background:${ac}"></span></i>`).join('')}</div>
+    ${lk?`<div class="lk">⟳ RUN ${h.lock}</div>`:''}`;
+  grid.appendChild(el);});
+const h=ROSTER[SELECTED];
+document.getElementById('doss').innerHTML=`
+  <div class="tag">SELECTED · UNIT 0${SELECTED+1}</div>
+  <h2 style="color:#fff">${h.n}</h2>
+  <div class="gn" style="color:${h.c}">${h.g} · SLOT 3</div>
+  <div class="sigbox"><small>SIGNATURE</small><b>${h.s}</b></div>
+  <div class="wbox"><small>WEAPON</small><b>${h.w}</b></div>
+  <div class="dstats">${STATS.map(([lab,k])=>`<div class="ds"><i>${lab}</i><div class="t">${Array.from({length:10},(_,j)=>`<b style="${j<h[k]?`background:${h.c};box-shadow:0 0 6px ${h.c}`:''}"></b>`).join('')}</div><div class="nn">${h[k]}</div></div>`).join('')}</div>`;
+const conga=document.getElementById('conga');
+conga.innerHTML=`<span class="clab">CONGA ▸ HEAD→TAIL</span>`+PARTY.map((idx,o)=>{const x=ROSTER[idx];
+  return `<div class="chip"><span class="d" style="background:${x.c};box-shadow:0 0 8px ${x.c}"></span><b>${x.n}</b></div>`+(o<PARTY.length-1?'<span class="arr">▸</span>':'');}).join('')+
+  `<div class="start">▶ START THE WALK [${PARTY.length}]</div>`;
+document.getElementById('bgrow').innerHTML=`<span class="clab">VOID FEED</span><div class="bgs">`+BGS.map((b,i)=>`<b class="${i===BG?'on':''}">${i===BG?'◉ ':''}${b}</b>`).join('')+`</div>`;
+</script>
+</body></html>

@@ -1,0 +1,36 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>UV · Decks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="uv-base.css">
+<style>
+  header{position:absolute;top:0;left:22px;right:22px;height:66px;display:flex;align-items:flex-end;justify-content:space-between;padding-bottom:10px;border-bottom:2px solid var(--uv)}
+  .title{font-size:30px}.title small{font-size:9px}
+  /* grid + dossier on top */
+  #grid{position:absolute;left:22px;top:78px;width:506px;height:282px}
+  #doss{position:absolute;right:22px;top:78px;width:234px;height:282px}
+  #doss h2{font-size:32px}#doss .dstats{display:none}
+  /* wide cinematic preview strip */
+  #arena{position:absolute;left:22px;right:22px;top:370px;height:122px}
+  footer{position:absolute;left:0;right:0;bottom:0;height:92px;border-top:2px solid var(--uv);background:#060604;display:grid;grid-template-rows:1fr 1fr}
+  #conga{padding:0 22px;border-bottom:1px solid #16180f}#bgrow{padding:0 22px}
+</style></head>
+<body><div class="stage">
+  <header><div class="title">SELECT <em>YOUR</em> CREW<small>MERRITON HIGH · 3:00 PM · DESCENT SOUTH</small></div>
+    <div class="rhead">ROSTER <b>09</b><br>UNLOCKED <b>08</b><br>SEED <b>1F4A</b></div></header>
+  <div id="grid"></div><div id="doss"></div><div id="arena"></div>
+  <footer><div id="conga"></div><div id="bgrow"></div></footer>
+</div>
+<script src="data.js"></script><script src="uv-render.js"></script>
+<script>
+  // The wide strip reads better with the hero centred and the action spread horizontally.
+  const a=document.getElementById('arena');
+  a.querySelector('.hero').style.cssText="left:50%;top:50%;width:22px;height:22px;color:"+ROSTER[SELECTED].c+";background:"+ROSTER[SELECTED].c;
+  a.querySelector('.cd').style.cssText="left:50%;top:50%;width:9px;height:9px";
+  a.querySelector('.nova').style.cssText="left:50%;top:50%;width:0;height:0;padding-bottom:0;width:230px;height:230px;margin:0";
+  const novel=a.querySelector('.nova'); novel.style.width="230px"; novel.style.height="230px"; novel.style.paddingBottom="0";
+  const d=a.querySelectorAll('.dummy'),hp=a.querySelectorAll('.hp'),dm=a.querySelectorAll('.dmg');
+  d[0].style.cssText="left:30%;top:62%;width:18px;height:18px";d[1].style.cssText="left:72%;top:40%;width:18px;height:18px";d[0].className="ent dummy";d[1].className="ent dummy";
+  hp[0].style.left="30%";hp[0].style.top="50%";hp[1].style.left="72%";hp[1].style.top="28%";hp[2].style.left="50%";hp[2].style.top="34%";
+  dm[0].style.left="30%";dm[0].style.top="40%";dm[1].style.left="72%";dm[1].style.top="20%";
+</script>
+</body></html>

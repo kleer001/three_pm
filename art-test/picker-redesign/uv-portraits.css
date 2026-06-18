@@ -1,0 +1,50 @@
+/* Portrait layer for the 3A "Console" layout. Loaded after uv-base.css.
+   Four card placements (set via #grid.mode-*) + a larger full-body in the dossier.
+   The arena scanline interlacing is dropped here (too busy). */
+
+#arena .scan{display:none}
+
+/* portrait base — figures are transparent cutouts on hero-colour art */
+.card{overflow:hidden}
+.card .por{position:absolute;width:auto;pointer-events:none;
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.55)) drop-shadow(0 0 1px rgba(0,0,0,.5))}
+.card .av{position:absolute;border-radius:3px;overflow:hidden;border:1px solid var(--line);background:#0e1009}
+.card .av img{position:absolute;left:50%;transform:translateX(-50%);width:auto}
+
+/* keep the typographic header clear of figures */
+.card .nm,.card .gn,.card .sig{position:relative;z-index:2}
+.card .scrim{position:absolute;inset:0;z-index:1;pointer-events:none}
+
+/* --- mode RIGHT: figure stands at the right edge, text left --- */
+#grid.mode-right .card .por{right:-6px;bottom:-3px;height:128px}
+#grid.mode-right .card .nm,
+#grid.mode-right .card .gn,
+#grid.mode-right .card .sig{max-width:60%}
+#grid.mode-right .card .scrim{background:linear-gradient(90deg,var(--card) 30%, transparent 78%)}
+
+/* --- mode LEFT: figure at the left edge, text right --- */
+#grid.mode-left .card{padding-left:74px}
+#grid.mode-left .card .por{left:-10px;bottom:-3px;height:128px}
+#grid.mode-left .card .slot{left:auto;right:34px}
+#grid.mode-left .card.inparty .nm{margin-left:0}
+#grid.mode-left .card .scrim{background:linear-gradient(270deg,var(--card) 22%, transparent 70%)}
+
+/* --- mode GHOST: figure full-bleed behind the text, faded --- */
+#grid.mode-ghost .card .por{right:-14px;bottom:-6px;height:150px;opacity:.42;filter:grayscale(.15) drop-shadow(0 0 1px #000)}
+#grid.mode-ghost .card .scrim{background:linear-gradient(180deg,var(--card) 4%, rgba(11,12,9,.35) 55%, rgba(11,12,9,.78) 100%)}
+#grid.mode-ghost .card.sel .por{opacity:.6}
+
+/* --- mode AVATAR: a head-crop chip in the corner --- */
+#grid.mode-avatar .card{padding-left:56px}
+#grid.mode-avatar .card .av{left:9px;top:24px;width:40px;height:40px}
+#grid.mode-avatar .card .av img{top:0;height:150px}
+#grid.mode-avatar .card .slot{left:auto;right:32px}
+#grid.mode-avatar .card.inparty .nm{margin-left:0}
+
+/* --- dossier: the larger full-body when selected --- */
+#doss{padding-right:92px}
+#doss .bodyshot{position:absolute;right:4px;bottom:0;height:188px;width:auto;
+  filter:drop-shadow(0 3px 6px rgba(0,0,0,.6))}
+#doss .bodyshot.glow{filter:drop-shadow(0 3px 6px rgba(0,0,0,.6))}
+#doss::before{content:"";position:absolute;right:14px;bottom:0;width:74px;height:150px;
+  background:radial-gradient(60% 70% at 50% 70%, rgba(204,255,0,.10), transparent 70%);pointer-events:none}

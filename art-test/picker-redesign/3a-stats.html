@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>3A · V4 — stat placements</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0b0c09;color:#e7ece2;font-family:"Space Grotesk",system-ui,sans-serif;padding:34px 30px 60px}
+  h1{font-size:25px}h1 b{color:#ccff00}
+  .lede{color:#9aa090;font-size:13.5px;margin-top:7px;max-width:840px;line-height:1.55}
+  .lede b{color:#e7ece2}
+  .chips{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap}
+  .chips span{font-family:"Space Mono",monospace;font-size:10.5px;color:#ccff00;border:1px solid #2c3320;padding:5px 10px;border-radius:4px}
+  .key{display:flex;gap:18px;margin-top:14px;font-size:12px;color:#9aa090;flex-wrap:wrap}
+  .key b{color:#e7ece2}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:24px;margin-top:24px;max-width:1340px}
+  .card{background:#070806;border:1px solid #1c1f18;border-radius:10px;overflow:hidden}
+  .card img{display:block;width:100%;height:auto;border-bottom:1px solid #1c1f18;background:#050505}
+  .meta{padding:13px 16px 16px}
+  .meta .k{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;color:#6f7566}
+  .meta h2{font-size:18px;margin:3px 0 4px}.meta h2 em{font-style:normal;color:#ff2d95}
+  .meta p{font-size:12.5px;color:#9aa090;line-height:1.5}.meta p b{color:#e7ece2}
+  .note{font-family:"Space Mono",monospace;font-size:11px;color:#6f7566;margin-top:24px;max-width:840px;line-height:1.6}
+</style></head>
+<body>
+  <h1>3A · V4 Avatar — four <b>stat treatments</b></h1>
+  <p class="lede">Stats brought back to the cards, four ways. Also applied: cardinal unit numbers dropped (only the <b>place in line</b> remains, top-right), and three avatar states — <b>full</b> for the party, <b>dim</b> for unlocked-but-unpicked, <b>greyed</b> for not-yet-won.</p>
+  <div class="chips"><span>＋ stats on cards</span><span>＋ place-in-line marker</span><span>－ cardinal numbering</span><span>＋ greyed / dim / full states</span></div>
+  <div class="key"><span>● <b>Party</b> — full colour + IN LINE №</span><span>● <b>Unlocked, unpicked</b> (Dash, ZigZag) — dimmed</span><span>● <b>Not won</b> (Jasper, Valentine) — greyed + RUN №</span></div>
+  <div class="grid">
+    <div class="card"><img src="3A-stats-A-bars.png" alt="Bars">
+      <div class="meta"><div class="k">A · BARS</div><h2>Labelled <em>bars</em> (2×2)</h2>
+        <p>Four labelled meters in a 2×2 block. The balanced default — quick to compare across heroes, doesn't shout. Closest to the in-game HUD.</p></div></div>
+    <div class="card"><img src="3A-stats-B-eq.png" alt="EQ">
+      <div class="meta"><div class="k">B · EQUALISER</div><h2>Mini <em>equaliser</em></h2>
+        <p>Stats as a tiny vertical EQ in the corner. The most on-theme — every card looks like a channel strip. Visual, less precise to read exact values.</p></div></div>
+    <div class="card"><img src="3A-stats-C-num.png" alt="Numeric">
+      <div class="meta"><div class="k">C · NUMERIC</div><h2>Mono <em>readout</em></h2>
+        <p>Plain “SPD 5 · CON 5 · STR 4 · MAG 7”. Most legible and unambiguous; the data-forward tDR option. Least decorative.</p></div></div>
+    <div class="card"><img src="3A-stats-D-big.png" alt="Big">
+      <div class="meta"><div class="k">D · BIG NUMERALS</div><h2>Big <em>colour numerals</em></h2>
+        <p>Four large numbers in the hero's colour, tiny labels under. Boldest and most poster-like — the stat IS the graphic. Chad's 8/8 really pops.</p></div></div>
+  </div>
+  <p class="note">All on the V4 avatar base. Pick a stat treatment (and say if the dim/greyed contrast needs tuning) and I'll lock the 3A spec to port into partySelectScene.</p>
+</body></html>

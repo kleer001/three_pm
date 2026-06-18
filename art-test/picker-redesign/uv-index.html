@@ -1,0 +1,43 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>UV Rave · 4 Variations</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0b0c09;color:#e7ece2;font-family:"Space Grotesk",system-ui,sans-serif;padding:34px 30px 60px}
+  h1{font-size:25px;letter-spacing:-.01em}
+  h1 b{color:#ccff00}
+  .lede{color:#9aa090;font-size:13.5px;margin-top:7px;max-width:780px;line-height:1.55}
+  .lede b{color:#e7ece2}
+  .chips{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+  .chips span{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.04em;color:#ccff00;border:1px solid #2c3320;padding:5px 11px;border-radius:4px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:24px;margin-top:26px;max-width:1340px}
+  .card{background:#070806;border:1px solid #1c1f18;border-radius:10px;overflow:hidden}
+  .card img{display:block;width:100%;height:auto;border-bottom:1px solid #1c1f18;background:#050505}
+  .meta{padding:13px 16px 16px}
+  .meta .k{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;color:#6f7566}
+  .meta h2{font-size:18px;margin:3px 0 4px}
+  .meta h2 em{font-style:normal;color:#ff2d95}
+  .meta p{font-size:12.5px;color:#9aa090;line-height:1.5}
+  .meta p b{color:#e7ece2}
+  .note{font-family:"Space Mono",monospace;font-size:11px;color:#6f7566;margin-top:24px;max-width:820px;line-height:1.6}
+  .note b{color:#ccff00}
+</style></head>
+<body>
+  <h1>UV Rave — four <b>compositions</b></h1>
+  <p class="lede">Same direction (black + fluoro, heavy condensed type, strobe/halftone, strict grid), four ways to seat the <b>live action-preview</b>. All three notes applied: the preview arena is added, the colored circle badges are gone (party order now uses recessed dark-grey numerals, like the unit number), and <b>“⟳ Automatic”</b> leads the background menu.</p>
+  <div class="chips"><span>＋ preview arena</span><span>＋ dark-grey party numerals</span><span>＋ Automatic backdrop</span></div>
+  <div class="grid">
+    <div class="card"><img src="3a-uv-console.png" alt="Console">
+      <div class="meta"><div class="k">3A · CONSOLE</div><h2>Right <em>rail</em></h2>
+        <p>Closest to today's layout. Roster grid dominant; the dossier and a compact preview arena stack in the right rail. Calm, dense, everything visible at once.</p></div></div>
+    <div class="card"><img src="3b-uv-booth.png" alt="Booth">
+      <div class="meta"><div class="k">3B · BOOTH</div><h2>Preview as <em>showpiece</em></h2>
+        <p>The live arena goes big on the left with the dossier beneath it; roster moves to the right. The action becomes the star — fitting for a music game.</p></div></div>
+    <div class="card"><img src="3c-uv-decks.png" alt="Decks">
+      <div class="meta"><div class="k">3C · DECKS</div><h2>Cinematic <em>strip</em></h2>
+        <p>Grid + dossier up top, a full-width letterbox preview across the middle — a “live cam” of the hero in the field. Most dramatic; trades some dossier detail for width.</p></div></div>
+    <div class="card"><img src="3d-uv-flyer.png" alt="Flyer">
+      <div class="meta"><div class="k">3D · FLYER</div><h2>Tower <em>overlay</em></h2>
+        <p>A tall preview tower on the right with the dossier laid over its base — image-up, info-down, like an actual rave flyer. The most “poster”, the most attitude.</p></div></div>
+  </div>
+  <p class="note">Two known nits to tidy when one's chosen: <b>3B</b> clips the dossier's stat bars (tight tower), <b>3D</b> clips the last stat row. Both are spacing fixes. Pick one (or mix — e.g. Booth's big arena with Console's full dossier) and I'll port it into the real partySelectScene canvas.</p>
+</body></html>

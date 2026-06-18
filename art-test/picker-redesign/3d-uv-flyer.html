@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>UV · Flyer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="uv-base.css">
+<style>
+  header{position:absolute;top:0;left:22px;right:22px;height:70px;display:flex;align-items:flex-end;justify-content:space-between;padding-bottom:11px;border-bottom:2px solid var(--uv)}
+  .title{font-size:32px}.title small{font-size:9px}
+  #grid{position:absolute;left:22px;top:84px;width:446px;bottom:104px}
+  /* tall preview tower on the right; dossier laid over its base */
+  #arena{position:absolute;right:22px;top:84px;width:288px;bottom:104px}
+  #doss{position:absolute;right:22px;width:288px;height:206px;bottom:104px;z-index:2;
+    background:linear-gradient(180deg, rgba(6,7,5,0) 0%, rgba(6,7,5,.86) 30%, #060705 60%);
+    border:0;border-left:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:0 15px 13px}
+  #doss .tag{display:none}
+  #doss h2{font-size:42px;margin-top:0}
+  #doss .dstats{padding-top:8px}
+  footer{position:absolute;left:0;right:0;bottom:0;height:92px;border-top:2px solid var(--uv);background:#060604;display:grid;grid-template-rows:1fr 1fr}
+  #conga{padding:0 22px;border-bottom:1px solid #16180f}#bgrow{padding:0 22px}
+  .ringdeco.r1{right:90px;top:120px;width:240px;height:240px;border-color:rgba(255,45,149,.16)}
+</style></head>
+<body><div class="stage">
+  <header><div class="title">SELECT <em>YOUR</em> CREW<small>MERRITON HIGH · 3:00 PM · DESCENT SOUTH</small></div>
+    <div class="rhead">ROSTER <b>09</b><br>UNLOCKED <b>08</b><br>SEED <b>1F4A</b></div></header>
+  <div class="ringdeco r1"></div>
+  <div id="grid"></div><div id="arena"></div><div id="doss"></div>
+  <footer><div id="conga"></div><div id="bgrow"></div></footer>
+</div>
+<script src="data.js"></script><script src="uv-render.js"></script>
+<script>
+  // Flyer: push the action high in the tower so it sits above the dossier overlay.
+  const a=document.getElementById('arena');
+  a.querySelector('.hero').style.top="20%";
+  a.querySelector('.cd').style.top="20%";
+  a.querySelector('.nova').style.top="20%";
+  const hp=a.querySelectorAll('.hp'),d=a.querySelectorAll('.dummy'),dm=a.querySelectorAll('.dmg');
+  hp[2].style.top="11%";
+  d[0].style.top="40%";hp[0].style.top="33%";dm[0].style.top="26%";
+  d[1].style.top="34%";hp[1].style.top="27%";dm[1].style.top="20%";
+</script>
+</body></html>

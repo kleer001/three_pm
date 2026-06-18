@@ -1,0 +1,128 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>4 · Winamp Spectrum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{--lcd:#39ff7a;--amber:#ffb000;--cyan:#46d6ff;--steel:#2a2d34;--steel2:#3a3e47;--ink:#aeb6bf}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{background:#000}
+  .stage{width:800px;height:600px;position:relative;overflow:hidden;font-family:"Share Tech Mono",monospace;color:var(--ink);
+    background:linear-gradient(180deg,#202329,#15171b);padding:8px}
+  .bevel{border-top:1px solid #4a4f59;border-left:1px solid #3a3e47;border-right:1px solid #101216;border-bottom:1px solid #0c0e11}
+  .inset{border-top:1px solid #0c0e11;border-left:1px solid #0c0e11;border-right:1px solid #3a3e47;border-bottom:1px solid #3a3e47;background:#0a0c0a}
+  /* titlebar */
+  .tb{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;
+    background:repeating-linear-gradient(90deg,#3a3f49 0 2px,#2c313a 2px 4px);position:relative}
+  .tb .t{font-family:"VT323";font-size:18px;letter-spacing:.04em;color:#cdd6df;text-shadow:0 1px 0 #000}
+  .tb .t b{color:var(--lcd)}
+  .tb .btns{display:flex;gap:4px}
+  .tb .btns i{width:13px;height:13px;display:inline-block;background:linear-gradient(180deg,#444a54,#23272e);font-style:normal;font-size:9px;text-align:center;line-height:13px;color:#aeb6bf}
+  .wrap{position:absolute;top:34px;left:8px;right:8px;bottom:8px;display:flex;flex-direction:column;gap:7px}
+  .main{display:grid;grid-template-columns:1fr 312px;gap:7px;flex:1;min-height:0}
+  /* ---- left: NOW PLAYING LCD ---- */
+  .np{padding:7px;display:flex;flex-direction:column;gap:7px}
+  .lcd{background:#06140b;padding:9px 11px;position:relative;flex:0 0 auto}
+  .lcd::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 2px,transparent 2px 4px);pointer-events:none}
+  .lcd .small{font-family:"Share Tech Mono";font-size:10px;color:#1f8a4a;letter-spacing:.18em}
+  .lcd .name{font-family:"VT323";font-size:44px;line-height:.8;color:var(--lcd);text-shadow:0 0 12px rgba(57,255,122,.55);margin-top:4px}
+  .lcd .meta{font-family:"VT323";font-size:21px;color:var(--amber);text-shadow:0 0 8px rgba(255,176,0,.4);margin-top:7px;letter-spacing:.02em}
+  .lcd .ticker{font-family:"VT323";font-size:17px;color:#2aa85c;margin-top:4px;white-space:nowrap;overflow:hidden}
+  /* graphic EQ */
+  .eqwrap{flex:1;display:grid;grid-template-columns:1fr 132px;gap:7px;min-height:0}
+  .eq{background:#06140b;padding:9px;position:relative;display:flex;align-items:flex-end;justify-content:space-around;gap:10px}
+  .eq::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 2px,transparent 2px 4px);pointer-events:none}
+  .eqcol{display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end}
+  .eqbars{display:flex;flex-direction:column-reverse;gap:2px;width:26px}
+  .seg{height:5px;background:#0e2c19}
+  .eqcol .lab{font-family:"VT323";font-size:17px;color:#2aa85c}
+  .eqcol .val{font-family:"VT323";font-size:21px;color:var(--lcd);text-shadow:0 0 8px rgba(57,255,122,.5)}
+  /* spectrum mini */
+  .spec{background:#06140b;padding:8px;display:flex;flex-direction:column}
+  .spec .h{font-family:"Share Tech Mono";font-size:9px;color:#1f8a4a;letter-spacing:.14em;margin-bottom:7px}
+  .specbars{flex:1;display:flex;align-items:flex-end;gap:2px}
+  .specbars i{flex:1;background:linear-gradient(0deg,#39ff7a,#ffb000);opacity:.85}
+  .spec .pre{font-family:"VT323";font-size:18px;color:var(--cyan);margin-top:7px}
+  /* ---- right: PLAYLIST ---- */
+  .pl{padding:6px;display:flex;flex-direction:column}
+  .pl .h{display:flex;justify-content:space-between;font-family:"Share Tech Mono";font-size:10px;color:#7f8893;letter-spacing:.1em;padding:2px 6px 7px}
+  .pl .h b{color:var(--lcd)}
+  .rows{flex:1;display:flex;flex-direction:column}
+  .r{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;padding:5px 7px;font-family:"VT323";font-size:19px;line-height:1;border-bottom:1px solid #15181d}
+  .r .num{color:#5b636d}
+  .r .nm{color:#d6dde4;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden}
+  .r .nm .d{width:9px;height:9px;flex:0 0 auto;box-shadow:0 0 6px currentColor}
+  .r .nm em{font-style:normal;color:#6b7480;font-size:15px}
+  .r .dur{color:#7f8893;font-size:16px}
+  .r.sel{background:linear-gradient(90deg,#123,#0c1a12);box-shadow:inset 0 0 0 1px #1f8a4a}
+  .r.sel .num{color:var(--lcd)}
+  .r.sel .nm{color:var(--lcd);text-shadow:0 0 8px rgba(57,255,122,.4)}
+  .r.inparty .dur{color:var(--amber)}
+  .r.lock{opacity:.45}.r.lock .dur{color:#5b636d}
+  /* ---- transport ---- */
+  .trans{height:54px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:0 10px}
+  .tbtns{display:flex;gap:5px}
+  .tbtns b{width:34px;height:30px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#cdd6df;
+    background:linear-gradient(180deg,#3a3f49,#23272e)}
+  .play{padding:0 22px;height:34px;display:flex;align-items:center;gap:9px;font-family:"VT323";font-size:24px;color:#06140b;
+    background:linear-gradient(180deg,#5dffa0,#23c06a);box-shadow:0 0 18px rgba(57,255,122,.4);letter-spacing:.02em}
+  .vis{display:flex;align-items:center;gap:9px;font-family:"VT323";font-size:19px;color:var(--cyan);padding:5px 11px}
+  .vis .arr{color:#4a505a}
+  .vis b{color:var(--cyan);text-shadow:0 0 10px rgba(70,214,255,.5)}
+  .vis .o{color:#5b636d}
+</style></head>
+<body><div class="stage">
+  <div class="tb bevel"><div class="t">3PM ▸ <b>UNIT SELECTOR</b> ▸ merriton.high</div>
+    <div class="btns"><i>_</i><i>□</i><i>×</i></div></div>
+  <div class="wrap">
+    <div class="main">
+      <div class="np inset bevel">
+        <div class="lcd" id="lcd"></div>
+        <div class="eqwrap">
+          <div class="eq" id="eq"></div>
+          <div class="spec"><div class="h">▏SIGNATURE OUTPUT</div><div class="specbars" id="spec"></div><div class="pre" id="sigpre"></div></div>
+        </div>
+      </div>
+      <div class="pl inset bevel">
+        <div class="h"><span>▏ROSTER.PLS</span><span><b>09</b> TRACKS · 08 FREE</span></div>
+        <div class="rows" id="rows"></div>
+      </div>
+    </div>
+    <div class="trans bevel">
+      <div class="tbtns"><b>◄◄</b><b>■</b><b>►►</b></div>
+      <div class="play" id="play"></div>
+      <div class="vis" id="vis"></div>
+    </div>
+  </div>
+</div>
+<script src="data.js"></script>
+<script>
+const h=ROSTER[SELECTED];
+// LCD now playing
+document.getElementById('lcd').innerHTML=`
+  <div class="small">▶ NOW SELECTING · SLOT 03 · ${String(SELECTED+1).padStart(2,'0')}/09</div>
+  <div class="name">${h.n.toUpperCase()}</div>
+  <div class="meta">${h.g.toUpperCase()} · ${h.w.toUpperCase()}</div>
+  <div class="ticker">✦ SIG: ${h.s.toUpperCase()} — charges off damage, drops a nova ✦ SIG: ${h.s.toUpperCase()} —</div>`;
+// graphic EQ (vertical segmented, 12 segs)
+document.getElementById('eq').innerHTML=STATS.map(([lab,k])=>{
+  const segs=Math.round(h[k]/10*12);
+  return `<div class="eqcol"><div class="val">${h[k]}</div><div class="eqbars">`+
+    Array.from({length:12},(_,j)=>{const on=j<segs;const col=j>=10?'#ff4040':j>=8?'#ffb000':'#39ff7a';
+      return `<div class="seg" style="${on?`background:${col};box-shadow:0 0 5px ${col}`:''}"></div>`;}).join('')+
+    `</div><div class="lab">${lab}</div></div>`;}).join('');
+// spectrum (decorative, seeded by name) + sig preset
+const seed=[...h.n].reduce((a,c)=>a+c.charCodeAt(0),0);
+document.getElementById('spec').innerHTML=Array.from({length:18},(_,j)=>{const v=30+((seed*7+j*j*13)%70);return `<i style="height:${v}%"></i>`;}).join('');
+document.getElementById('sigpre').textContent='◉ '+h.s.toUpperCase();
+// playlist
+document.getElementById('rows').innerHTML=ROSTER.map((x,i)=>{const inP=PARTY.indexOf(i),lk=x.lock>0;
+  const dur=lk?`run ${x.lock}`:(inP>=0?`P${inP+1} ▸`:'—');
+  return `<div class="r ${i===SELECTED?'sel':''} ${inP>=0?'inparty':''} ${lk?'lock':''}">
+    <div class="num">${String(i+1).padStart(2,'0')}</div>
+    <div class="nm"><span class="d" style="background:${x.c};color:${x.c}"></span>${x.n} <em>· ${x.g}</em></div>
+    <div class="dur">${dur}</div></div>`;}).join('');
+// transport
+document.getElementById('play').innerHTML=`► START · ${PARTY.length} LOADED`;
+document.getElementById('vis').innerHTML=`<span class="o">VIS ▸</span> <span class="arr">◄</span> <b>${BGS[BG].toUpperCase()}</b> <span class="arr">►</span> <span class="o">${BG+1}/9</span>`;
+</script>
+</body></html>
