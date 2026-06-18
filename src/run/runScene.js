@@ -14,6 +14,7 @@ import { POWERUPS, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag, 
 import { applyHeroUpgrades } from "../meta/save.js";
 import { hitRect } from "../input/input.js";
 import { BALANCE, THEME } from "./balance.js";
+import { track, newRunId } from "./telemetry.js";
 import { createVoidRenderer } from "./voidBackgrounds.js";
 import { createCombat } from "./combatKit.js";
 import { disc, ring, bar, glyph, clamp, drawMember } from "./draw.js";
@@ -133,6 +134,27 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   };
 
   const runState = { cash: 0, powerups: [], kills: 0 };
+
+  // Telemetry (droppable; see telemetry.js). One run = run_start → band_reached* →
+  // run_end, correlated by runId. deepestBand drives the descent funnel (how far
+  // south players actually get) and run_end keys the death "heatmap" off the same
+  // fraction the save uses. No-op locally and whenever the page has no analytics.
+  const runId = newRunId();
+  const runStartedAt = Date.now();
+  let deepestBand = 0, ended = false;
+  track("run_start", { run_id: runId, hero_id: head.id, weapon: head.weaponId, party_size: party.length, seed });
+  // Emit run_end exactly once, whatever lethal/victory path got here. distanceFraction
+  // is the same 0..1 progress the RunResult banks; band is its 1..10 bucket.
+  const emitRunEnd = (won) => {
+    if (ended) return; ended = true;
+    const frac = won ? 1 : distanceFraction(hero, level, TS);
+    track("run_end", {
+      run_id: runId, hero_id: head.id, seed, won, cause: deathCause,
+      distance_frac: Math.round(frac * 100) / 100, band: Math.min(10, Math.floor(frac * 10) + 1),
+      kills: runState.kills, duration_s: Math.round((Date.now() - runStartedAt) / 1000), party_size: party.length,
+    });
+  };
+
   const activeBuffs = []; // live timed buffs (BPM Boost / Slow Jam); tick on unscaled time
   const base = snapshotBase(head.stats || HERO.stats, { id: head.weaponId, ...BALANCE.weapons[head.weaponId] });
   const weapon = { ...base.weapon, damage: { ...base.weapon.damage } };
@@ -218,7 +240,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   let paused = false, pEsc = false; // Esc toggles a full freeze during free descent
   let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
   // One place to end the run as a loss with its cause — every lethal path routes here.
-  const loseRun = (cause) => { outcome = "lose"; deathCause = cause; };
+  const loseRun = (cause) => { outcome = "lose"; deathCause = cause; emitRunEnd(false); };
   let nearShop = null;  // shop the hero is standing on this frame
   // Stepping onto a shop pauses the run and opens a pick-one-item modal. shopLatch
   // keeps it from instantly reopening while the hero still overlaps after leaving;
@@ -866,8 +888,13 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     hero.y = clamp(hero.y, minY, cam.y + VIEW_H - MARGIN);
     cam.x = clamp(hero.x - VIEW_W / 2, 0, mapW - VIEW_W);
 
+    // Descent funnel: fire band_reached once per newly-entered tenth of the way home,
+    // so analytics shows where runs thin out (telemetry.js no-ops if analytics is off).
+    const band = Math.min(10, Math.floor(distanceFraction(hero, level, TS) * 10) + 1);
+    if (band > deepestBand) { deepestBand = band; track("band_reached", { run_id: runId, hero_id: head.id, band, t_s: Math.round((Date.now() - runStartedAt) / 1000) }); }
+
     const [tx, ty] = tileOf(hero);
-    if (homeSet.has(ty * level.w + tx)) outcome = "win";
+    if (homeSet.has(ty * level.w + tx)) { outcome = "win"; emitRunEnd(true); }
   }
 
   // The paused stall: a centered card list of the shop's stock. Reuses the

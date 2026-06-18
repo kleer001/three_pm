@@ -128,3 +128,4 @@ These freeze no interfaces and own no game data — they're guidance, not spec.
 | File | Holds |
 |---|---|
 | `playtesting-and-launch-roadmap.md` | Research-backed playbook for taking 3pm from playable slice to public itch.io / GitHub Pages release: recruiting/running playtests, honest metrics & telemetry, milestone ladder, indie failure modes |
+| `playtest-session-kit.md` | Hand-tools: recruiting message, moderated-session script, debrief, one-page survey, and the analytics setup that activates `src/run/telemetry.js` |
