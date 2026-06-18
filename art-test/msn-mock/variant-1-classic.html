@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MSN mock · Authentic 2002</title>
+<style>
+  /* Faithful MSN Messenger 6.x — light XP chrome */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font: 11px "Tahoma", "Segoe UI", sans-serif;
+    background: #5a7edc; /* bliss-blue desktop */
+    display: grid; place-items: center; min-height: 100vh; color: #000;
+  }
+  .im {
+    width: 460px; background: #fff;
+    border: 1px solid #003c74; border-radius: 6px 6px 0 0;
+    box-shadow: 0 8px 30px rgba(0,0,0,.45); overflow: hidden;
+  }
+  /* title bar */
+  .title {
+    background: linear-gradient(#0058e6, #3a93ff 8%, #1f6ff0 50%, #0a52d6);
+    color: #fff; font-weight: bold; padding: 4px 6px;
+    display: flex; align-items: center; gap: 6px; text-shadow: 0 1px 1px #003;
+  }
+  .title .ico { width: 14px; height: 14px; background: #ffd14a; border-radius: 50%;
+    border: 1px solid #b8860b; box-shadow: inset 0 0 0 2px #fff6c4; }
+  .title .sp { flex: 1; }
+  .title .btn { width: 20px; height: 18px; border-radius: 3px; border: 1px solid #fff;
+    background: linear-gradient(#7db4ff,#1f6ff0); color:#fff; text-align:center; line-height:16px; font-weight:bold; }
+  .title .btn.x { background: linear-gradient(#ff8a7a,#e23b22); border-color:#fff; }
+  /* menu strip */
+  .menu { display:flex; gap:14px; padding:3px 10px; color:#0a3; border-bottom:1px solid #d6e3ff;
+    background:#f3f7ff; color:#234; }
+  .menu span { color:#0046b8; }
+  /* the convo header — who you're talking to */
+  .to { display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid #e3ecff; }
+  .av { width:40px; height:40px; border-radius:4px; border:2px solid #b9c9ee;
+    display:grid; place-items:center; font-size:18px; }
+  .to .who { font-weight:bold; color:#0a2c6e; }
+  .to .who small { display:block; font-weight:normal; color:#7a8aa8; font-style:italic; }
+  /* history */
+  .log { height:248px; overflow:auto; padding:10px 12px; background:
+    repeating-linear-gradient(#fff,#fff 22px,#fbfdff 22px,#fbfdff 44px); }
+  .line { margin:0 0 7px; line-height:1.45; }
+  .nick { font-weight:bold; }
+  .nick.them { color:#c0392b; }
+  .nick.you  { color:#1f6ff0; }
+  .nick.sys  { color:#7a8aa8; }
+  .sys { color:#5a6a86; font-style:italic; }
+  .sys b { color:#0a7d2c; font-style:normal; }
+  .wink { color:#888; font-style:italic; }
+  .typing { color:#7a8aa8; font-style:italic; }
+  .dot { animation: blink 1.2s infinite; } .dot:nth-child(2){animation-delay:.2s} .dot:nth-child(3){animation-delay:.4s}
+  @keyframes blink { 0%,60%,100%{opacity:.2} 30%{opacity:1} }
+  /* composer */
+  .compose { border-top:1px solid #e3ecff; padding:6px 10px; }
+  .toolbar { display:flex; gap:8px; color:#0046b8; padding-bottom:4px; font-weight:bold; }
+  .box { border:1px solid #b9c9ee; border-radius:3px; height:46px; padding:6px; color:#333; }
+  .send { float:right; margin-top:5px; padding:3px 16px; border:1px solid #003c74; border-radius:3px;
+    background:linear-gradient(#eaf3ff,#c9ddff); font-weight:bold; color:#003c74; }
+  .caption { color:#dbe6ff; margin-top:10px; font-size:11px; text-align:center; }
+</style>
+</head>
+<body>
+  <div class="im">
+    <div class="title">
+      <span class="ico"></span>
+      <span>Jess - Conversation</span>
+      <span class="sp"></span>
+      <span class="btn">_</span><span class="btn">□</span><span class="btn x">×</span>
+    </div>
+    <div class="menu"><span>File</span><span>Edit</span><span>Actions</span><span>Tools</span><span>Help</span></div>
+    <div class="to">
+      <div class="av" style="background:#ffe1ef">🎧</div>
+      <div class="who">♥jess♥ <small>~live for the drop~ (listening to: walkman, side B)</small></div>
+    </div>
+
+    <div class="log">
+      <p class="line"><span class="sys">♪ A new message! <b>♥jess♥</b> has been added to the conversation.</span></p>
+      <p class="line"><span class="nick them">♥jess♥</span> says: MARVIN. omg. it's Jess — chem class, 4th period??</p>
+      <p class="line"><span class="nick them">♥jess♥</span> says: i see it too. the street. the <i>things</i>. you're NOT crazy 🙂</p>
+      <p class="line"><span class="nick them">♥jess♥</span> says: i've got my walkman + 2 spare AAs. meet by the flagpole after the bell</p>
+      <p class="line"><span class="nick them">♥jess♥</span> says: we walk home together now. don't be weird about it</p>
+      <p class="line"><span class="wink">♥jess♥ just sent you a Wink: <i>“NUDGE”</i> 〰️</span></p>
+      <p class="line"><span class="sys">———  <b>3:00 PM. the bell rang.</b>  ———</span></p>
+      <p class="line"><span class="sys">❖ you made it <b>1,200m</b> before the dark caught up</span></p>
+      <p class="line"><span class="sys">❖ <b>$450</b> in lunch money recovered</span></p>
+      <p class="line"><span class="sys">❖ <b>35</b> of them. flattened.</span></p>
+      <p class="line"><span class="sys">❖ <b>Day 6</b>. see you tomorrow <i>(again)</i>.</span></p>
+      <p class="line typing">♥jess♥ is typing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></p>
+    </div>
+
+    <div class="compose">
+      <div class="toolbar">😊  A  ⏎  📎  🎁</div>
+      <div class="box">this is fine. this is a completely normal Tuesday.</div>
+      <span class="send">Send ▸</span>
+      <div style="clear:both"></div>
+    </div>
+  </div>
+  <p class="caption">① AUTHENTIC 2002 — faithful MSN 6.x chrome · the post-run summary delivered as a chat · press any key to skip</p>
+</body>
+</html>

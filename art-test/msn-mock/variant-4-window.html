@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MSN mock · Floating Window</title>
+<style>
+  /* Compact chat buzzing over the darkened last frame of the run */
+  :root{ --lime:#CCFF00; --mag:#FF2D95; --cyan:#00E5FF; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{ font:12px "Space Mono","Consolas",monospace; color:#e8e8ff; overflow:hidden;
+    display:grid; place-items:center;
+    /* faux last-frame of the run: a neon suburb at dusk, heavily darkened */
+    background:
+      linear-gradient(rgba(0,0,0,.72), rgba(0,0,0,.82)),
+      repeating-linear-gradient(90deg,#10131c 0 38px,#0c0f17 38px 76px),
+      radial-gradient(60% 40% at 50% 12%, #3a1f5c 0%, #160a26 50%, #05050a 100%); }
+  /* suggest streetlight pools + the conga train as little dots, just for context */
+  .frame{position:fixed;inset:0;pointer-events:none}
+  .lamp{position:absolute;width:160px;height:160px;border-radius:50%;
+    background:radial-gradient(circle, rgba(255,196,84,.16), transparent 70%)}
+  .train{position:absolute;left:50%;top:64%;transform:translateX(-50%);display:flex;gap:9px}
+  .train b{width:12px;height:12px;border-radius:50%;display:block}
+  .win{ position:relative; width:340px; background:rgba(8,8,14,.96);
+    border:1px solid var(--mag); border-radius:9px; overflow:hidden;
+    box-shadow:0 0 0 1px #000, 0 18px 50px rgba(0,0,0,.7), 0 0 40px rgba(255,45,149,.4);
+    animation:buzz 1.6s ease-in-out 1; }
+  @keyframes buzz{ 0%,100%{transform:translate(0,0)} 10%{transform:translate(-3px,2px)}
+    20%{transform:translate(3px,-2px)} 30%{transform:translate(-3px,-1px)} 40%{transform:translate(2px,2px)}
+    50%{transform:translate(-2px,0)} 60%{transform:translate(1px,-1px)} 70%{transform:translate(0,0)} }
+  .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;
+    background:linear-gradient(90deg, rgba(255,45,149,.3), rgba(0,229,255,.12));
+    border-bottom:1px solid rgba(255,45,149,.5);
+    font:700 11px "Oswald",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#fff}
+  .bar .ico{width:11px;height:11px;border-radius:50%;background:var(--lime);box-shadow:0 0 9px var(--lime)}
+  .bar .sp{flex:1}.bar .x{color:var(--mag)}
+  .who{display:flex;gap:9px;align-items:center;padding:9px 11px;border-bottom:1px solid rgba(0,229,255,.18)}
+  .who .av{width:36px;height:36px;border-radius:6px;display:grid;place-items:center;font-size:18px;
+    background:radial-gradient(circle,rgba(255,45,149,.4),transparent 70%);border:1px solid var(--mag)}
+  .who .n{font:700 13px "Oswald";letter-spacing:.05em;color:#fff}
+  .who .n small{display:block;font:400 10px "Space Mono";color:var(--cyan);opacity:.8}
+  .log{padding:11px 13px}
+  .line{margin:0 0 7px;line-height:1.45}
+  .nick{font-weight:bold;color:var(--mag);text-shadow:0 0 8px rgba(255,45,149,.5)}
+  .sys{color:#8fa;opacity:.85;font-style:italic;font-size:11px}
+  .sys b{color:var(--lime);font-style:normal}
+  .stat{display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;
+    border-top:1px dashed rgba(0,229,255,.25);font-size:11px;color:#bdd}
+  .stat b{color:var(--lime)}
+  .nudge{position:absolute;top:8px;right:42px;color:var(--cyan);font-size:10px;opacity:.8;letter-spacing:.1em}
+  .hint{position:fixed;bottom:16px;color:#778;font-size:10px;letter-spacing:.1em;text-align:center;width:100%}
+  .hint b{color:var(--mag)}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="lamp" style="left:8%;top:18%"></div>
+    <div class="lamp" style="left:74%;top:30%"></div>
+    <div class="lamp" style="left:40%;top:6%"></div>
+    <div class="train">
+      <b style="background:#00E5FF;box-shadow:0 0 8px #00E5FF"></b>
+      <b style="background:#CCFF00"></b><b style="background:#FF2D95"></b>
+      <b style="background:#b07bff"></b><b style="background:#ff8a3d"></b>
+    </div>
+  </div>
+
+  <div class="win">
+    <div class="bar"><span class="ico"></span><span>Messenger</span><span class="sp"></span><span>— □ <span class="x">×</span></span></div>
+    <span class="nudge">〰️ NUDGE 〰️</span>
+    <div class="who">
+      <div class="av">🎧</div>
+      <div class="n">♥jess♥<small>~live for the drop~ · just signed in</small></div>
+    </div>
+    <div class="log">
+      <p class="line"><span class="nick">♥jess♥</span> Marvin!! it's Jess from chem. i see it too 🙂 you're not crazy</p>
+      <p class="line"><span class="nick">♥jess♥</span> walkman's charged. flagpole after the bell — we walk home together now</p>
+      <div class="stat"><span>Day 6 · 1,200m</span><span>💰 <b>$450</b> · 💀 <b>35</b></span></div>
+    </div>
+  </div>
+  <p class="hint">④ FLOATING WINDOW — buzzes in over the run's last frame · intimate, minimal · <b>[any key]</b> to skip</p>
+</body>
+</html>

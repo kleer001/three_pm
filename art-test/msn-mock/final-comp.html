@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3pm · MSN summary comp · 800×600</title>
+<link rel="stylesheet" href="desktop.css">
+<style>
+  /* Fixed game-canvas comp. Rects come from /tmp/msn_layout.json. */
+  body { margin:0; background:#111; display:grid; place-items:center; min-height:100vh; }
+  #screen { position:relative; width:800px; height:600px; overflow:hidden;
+    background:#3a7bc8 url('bg/bliss-classic.png') center/cover no-repeat;
+    box-shadow:0 0 0 1px #000, 0 12px 40px rgba(0,0,0,.6); }
+
+  /* icon field — fills its rect, sits behind the windows so only slivers show */
+  .iconfield { position:absolute; overflow:hidden; display:grid;
+    grid-template-columns:repeat(3,86px); grid-auto-rows:78px; gap:4px 4px; z-index:1; }
+  .iconfield .ic { width:84px; text-align:center; color:#fff; padding:4px 2px;
+    text-shadow:0 1px 2px rgba(0,0,0,.85); }
+  .iconfield .ic .g { font-size:30px; line-height:1; }
+  .iconfield .ic .l { display:block; margin-top:3px; font-size:11px; line-height:1.15; }
+
+  /* windows fill the exact height from the tool: log/body areas flex to fill */
+  #screen .win { display:flex; flex-direction:column; z-index:5; box-shadow:none; }
+  .conv2 .cvbody { flex:1; min-height:0; }
+  .conv2 .cvmain { display:flex; flex-direction:column; min-height:0; }
+  .conv2 .cvmain .log { flex:1; height:auto; }
+  .cl2 .body { flex:1; height:auto; }
+  #screen .taskbar { z-index:8; }
+
+  /* composition-specific MSN chrome (from the matched reference) */
+  .cvbar { display:flex; align-items:flex-end; gap:2px; padding:4px 6px 3px;
+    background:linear-gradient(#eef4fb,#cdd9ec); border-bottom:1px solid #9fb3d0; }
+  .cvbar .ab { display:flex; flex-direction:column; align-items:center; gap:1px;
+    padding:2px 7px; border-radius:4px; color:#234; font-size:10px; }
+  .cvbar .ab .g { font-size:17px; line-height:1; }
+  .cvbar .sp { flex:1; }
+  .cvbar .logo { font:italic bold 14px Tahoma; color:#1f6ff0; padding-right:4px; }
+  .cvbar .logo b { color:#ff8a00; font-style:normal; }
+  .cvbody { display:flex; background:#fff; }
+  .cvmain { flex:1; min-width:0; }
+  .toline { padding:5px 9px; border-bottom:1px solid #e3ecff; color:#333; }
+  .toline b { color:#0a2c6e; }
+  .infobar { display:flex; gap:6px; padding:5px 9px; background:#fffbe0;
+    border-bottom:1px solid #efe3a0; color:#5a4a1a; }
+  .safety { display:flex; gap:6px; padding:5px 9px; color:#7a8aa8; border-bottom:1px solid #eef2f8; }
+  .cvdps { width:78px; flex:0 0 auto; border-left:1px solid #e3ecff;
+    display:flex; flex-direction:column; align-items:center; gap:8px; padding:9px 0; background:#f7faff; }
+  .cvdps .d { width:62px; height:62px; border:3px solid #b9c9ee; border-radius:3px;
+    display:grid; place-items:center; font-size:30px; background:#eef; }
+  .cvdps .d.you { background:#fdeef6; }
+  .cvfmt { display:flex; align-items:center; gap:10px; padding:4px 9px; background:#ece9d8;
+    border-top:1px solid #aca899; border-bottom:1px solid #fff; color:#0046b8; }
+  .cvfmt .vc { color:#c0392b; font-weight:bold; }
+  .cventry { display:flex; gap:6px; padding:6px; background:#ece9d8; }
+  .cventry .box { flex:1; margin:0; height:50px; }
+  .cventry .sendbig { width:84px; border:1px solid #7a96c8; border-radius:3px;
+    background:linear-gradient(#fbfdff,#dbe7ff 55%,#c2d6f6); display:grid; place-items:center;
+    font-weight:bold; color:#33507a; }
+  .adlink { padding:6px 9px; color:#1f6ff0; text-decoration:underline; font-size:11px;
+    background:#fff; border-bottom:1px solid #eef; line-height:1.3; }
+  .addc { display:flex; align-items:center; gap:6px; padding:5px 9px; background:#fff;
+    border-bottom:1px solid #eef; color:#2a7d2a; font-weight:bold; }
+  .bud.away .st { color:#d99a00; } .bud.busy .st { color:#c0392b; }
+  .bud.away .nm, .bud.busy .nm { color:#222; }
+  .nm em { color:#9a3; font-style:italic; }
+  .clmark { display:flex; align-items:center; justify-content:center; gap:5px; padding:9px;
+    background:linear-gradient(#f3f7ff,#e2ebfa); border-top:1px solid #cdd9ec;
+    font:italic bold 15px Tahoma; color:#1f6ff0; }
+  .clmark b { color:#ff8a00; font-style:normal; }
+  .clmark small { color:#8a98b0; font:normal 9px Tahoma; }
+</style>
+</head>
+<body>
+<div id="screen">
+
+  <!-- icon field: rect x4 y3 277×564, behind windows; only slivers peek out -->
+  <div class="iconfield" style="left:4px; top:3px; width:277px; height:564px;">
+    <div class="ic"><span class="g">🖥️</span><span class="l">My Computer</span></div>
+    <div class="ic"><span class="g">🗑️</span><span class="l">Recycle Bin</span></div>
+    <div class="ic"><span class="g">📂</span><span class="l">My Documents</span></div>
+    <div class="ic"><span class="g">🪟</span><span class="l">Internet Explorer</span></div>
+    <div class="ic"><span class="g">💾</span><span class="l">Local Disk (C:)</span></div>
+    <div class="ic"><span class="g">💿</span><span class="l">DVD-RW (D:)</span></div>
+    <div class="ic"><span class="g">🐸</span><span class="l">LimeWire</span></div>
+    <div class="ic"><span class="g">🎵</span><span class="l">Winamp</span></div>
+    <div class="ic"><span class="g">🖼️</span><span class="l">screenshot.bmp</span></div>
+    <div class="ic"><span class="g">📄</span><span class="l">eng_essay.doc</span></div>
+    <div class="ic"><span class="g">🎮</span><span class="l">runescape.lnk</span></div>
+    <div class="ic"><span class="g">💬</span><span class="l">AIM.lnk</span></div>
+    <div class="ic"><span class="g">📷</span><span class="l">webcam_pics</span></div>
+    <div class="ic"><span class="g">🗒️</span><span class="l">diary.txt</span></div>
+    <div class="ic"><span class="g">🔑</span><span class="l">passwords.txt</span></div>
+    <div class="ic"><span class="g">📀</span><span class="l">Nero Burning</span></div>
+    <div class="ic"><span class="g">🌼</span><span class="l">ICQ.lnk</span></div>
+    <div class="ic"><span class="g">🎯</span><span class="l">Halo.lnk</span></div>
+    <div class="ic"><span class="g">💑</span><span class="l">me_n_jess.jpg</span></div>
+    <div class="ic"><span class="g">🎧</span><span class="l">My Music</span></div>
+    <div class="ic"><span class="g">🎨</span><span class="l">My Pictures</span></div>
+  </div>
+
+  <!-- conversation: rect x67 y27 485×499 -->
+  <div class="win conv2" style="left:32px; top:25px; width:487px; height:500px;">
+    <div class="tb"><span class="ti" style="background:#fff">🦋</span>
+      <span class="t">Jess - Conversation</span>
+      <span class="ctrls"><span class="cb">_</span><span class="cb">□</span><span class="cb x">×</span></span></div>
+    <div class="cvbar">
+      <div class="ab"><span class="g">✉️</span>Invite</div>
+      <div class="ab"><span class="g">📁</span>Send Files</div>
+      <div class="ab"><span class="g">🎙️</span>Voice</div>
+      <div class="ab"><span class="g">🎲</span>Activities</div>
+      <div class="ab"><span class="g">🎮</span>Games</div>
+      <span class="sp"></span>
+      <span class="logo"><b>msn</b>🦋</span>
+    </div>
+    <div class="cvbody">
+      <div class="cvmain">
+        <div class="toline">To: <b>♥jess♥</b> &lt;jess_lives4thedrop@hotmail.com&gt;</div>
+        <div class="infobar"><span>ⓘ</span><span>♥jess♥ might not reply right away — she's still walking home.</span></div>
+        <div class="safety"><span>🔑</span><span>Never tell anyone the way home, even if they say they're your friend.</span></div>
+        <div class="log">
+          <p class="line"><span class="sys">♪ <b>♥jess♥</b> has been added to the conversation.</span></p>
+          <p class="line"><span class="nk them">♥jess♥</span> says: MARVIN. omg. it's Jess — chem class, 4th period??</p>
+          <p class="line"><span class="nk them">♥jess♥</span> says: i see it too. the street. the <i>things</i>. you're NOT crazy 🙂</p>
+          <p class="line"><span class="nk them">♥jess♥</span> says: got my walkman + 2 spare AAs. flagpole after the bell</p>
+          <p class="line"><span class="nk them">♥jess♥</span> says: we walk home together now. don't be weird about it</p>
+          <p class="line"><span class="wink">♥jess♥ just sent you a Nudge! 〰️</span></p>
+          <p class="line"><span class="sys">———  <b>3:00 PM. the bell rang.</b>  ———</span></p>
+          <p class="line"><span class="sys">❖ you made it <b>1,200m</b> before the dark caught up</span></p>
+          <p class="line"><span class="sys">❖ <b>$450</b> in lunch money recovered · 💀 <b>35</b> flattened</span></p>
+          <p class="line"><span class="sys">❖ <b>Day 6</b>. see you tomorrow <i>(again)</i>.</span></p>
+        </div>
+      </div>
+      <div class="cvdps">
+        <div class="d">🎧</div>
+        <div class="d you">🙂</div>
+      </div>
+    </div>
+    <div class="cvfmt"><span class="em">A</span><span class="em">😊</span><span class="vc">🎤 Voice Clip</span><span class="em">🎁</span><span class="em">〰️</span></div>
+    <div class="cventry">
+      <div class="box">this is fine. this is a completely normal Tuesday.</div>
+      <div class="sendbig">Send</div>
+    </div>
+  </div>
+
+  <!-- contacts: rect x559 y13 234×537 -->
+  <div class="win cl cl2" style="left:559px; top:13px; width:234px; height:537px;">
+    <div class="tb"><span class="ti" style="background:#fff">🦋</span>
+      <span class="t">MSN Messenger</span>
+      <span class="ctrls"><span class="cb">_</span><span class="cb">□</span><span class="cb x">×</span></span></div>
+    <div class="mbar"><span><u>F</u>ile</span><span><u>C</u>ontacts</span><span><u>A</u>ctions</span><span><u>T</u>ools</span><span><u>H</u>elp</span></div>
+    <div class="self"><div class="dp">🙂</div>
+      <div class="nm"><b>marv™ (Online) ▾</b><small>«this is fine.»</small></div>
+      <span class="bfly">🦋</span></div>
+    <div class="adlink">Click here to learn about the Merriton High Attendance Improvement Program.</div>
+    <div class="addc"><span>👤➕</span> Add a Contact</div>
+    <div class="body">
+      <div class="grp">Online (4)</div>
+      <div class="bud on"><span class="st">●</span><span class="nm">♥jess♥ <small>just signed in!</small></span></div>
+      <div class="bud on"><span class="st">●</span><span class="nm">TANK²⁰⁰² <small>— bench &gt; apocalypse</small></span></div>
+      <div class="bud busy"><span class="st">●</span><span class="nm">x_raven_x <em>(Busy)</em> <small>— do not perceive me</small></span></div>
+      <div class="bud away"><span class="st">●</span><span class="nm">»Dash« <em>(Away)</em> <small>— brb outrunning it</small></span></div>
+      <div class="grp">Offline (5)</div>
+      <div class="bud dead"><span class="st">✝</span><span class="nm">becca_b <small>last seen 3:00 PM</small></span></div>
+      <div class="bud off"><span class="st">○</span><span class="nm">sparkplug <small>(Offline)</small></span></div>
+      <div class="bud off"><span class="st">○</span><span class="nm">xX_pyro_Xx <small>(Offline)</small></span></div>
+      <div class="bud off"><span class="st">○</span><span class="nm">mom 🚫 <small>(Offline)</small></span></div>
+      <div class="bud off"><span class="st">○</span><span class="nm">Merriton_High <small>(Offline)</small></span></div>
+    </div>
+    <div class="clmark"><b>msn</b>🦋 Messenger <small>.net</small></div>
+  </div>
+
+  <!-- taskbar: full width bottom 30px -->
+  <div class="taskbar">
+    <div class="start"><span class="o">⊞</span> start</div>
+    <div class="tasks">
+      <div class="tk">🦋 MSN Messenger</div>
+      <div class="tk active">🦋 Jess - Conversation</div>
+      <div class="tk">🦋 Welcome to MSN…</div>
+    </div>
+    <div class="tray"><span class="g">🔊</span><span class="g">🦋</span><span class="clock">3:00 PM</span></div>
+  </div>
+
+</div>
+</body>
+</html>
