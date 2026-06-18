@@ -135,6 +135,13 @@ Discord screenshare**; do a few in-person sessions for depth when you can.
   "What worked, and what would you change?" A targeted prompt —
   **"What was the single most frustrating moment?"** — gives an easy channel for
   honest criticism.
+- **A field-tested core question set — Schell Games' "FFWWDD."** Asked in the
+  player's own words: (1) most **F**rustrating moment? (2) **F**avorite moment?
+  (3) anything you **W**anted to do but couldn't? (4) magic **W**and — what would
+  you add, change, or remove? (5) what were you **D**oing when that happened?
+  (6) how would you **D**escribe this game to a friend? The last one is the
+  highest-value probe: if they describe a *different* game than the one you built,
+  that gap between intended and received experience is itself the finding.
 - **Two traps:** **"Would you pay for this?"** — stated purchase intent correlates
   poorly with real buying (overstated ~40%); for a free game, doubly meaningless.
   And **NPS / "would you recommend"** can *invert* in games (people report
@@ -330,7 +337,7 @@ scope," "50k wishlists/5% convert" as *directional blog figures*).
 - cs.cornell.edu/courses/cs3152/2020sp/lectures/23-Playtesting.pdf
 - gamedeveloper.com/programming/6-steps-to-a-successful-playtesting-process-for-an-indie-developer
 - gamedeveloper.com/business/10-insightful-playtest-questions
-- schellgames.com/blog/the-definitive-guide-to-playtest-questions
+- sglabs.schellgames.com/post/160052690343/the-definitive-guide-to-playtest-questions
 
 **Telemetry / analytics**
 - gamineai.com/blog/the-first-10-telemetry-events-every-indie-game-should-ship-and-why
@@ -338,7 +345,6 @@ scope," "50k wishlists/5% convert" as *directional blog figures*).
 - gameanalytics.com/blog/exploring-gaming-funnels
 - docs.gameanalytics.com/products-and-features/analytics-iq/funnels/
 - itch.io/updates/you-can-now-use-google-analytics-with-itchio
-- itch.io/docs/creators/analytics
 - github.com/itchio/itch.io/issues/822 (HTML5 launch not tracked)
 - github.com/itchio/itch.io/issues/626
 - plausible.io/cookieless-web-analytics
@@ -347,7 +353,7 @@ scope," "50k wishlists/5% convert" as *directional blog figures*).
 - posthog.com/blog/best-gdpr-compliant-analytics-tools
 - posthog.com/pricing
 - umami.is/docs/track-events
-- goatcounter.com
+- github.com/arp242/goatcounter (privacy-friendly analytics; canonical repo)
 - developers.cloudflare.com/web-analytics/faq/
 - supabase.com/docs/guides/functions
 - en.wikipedia.org/wiki/Survivorship_bias
@@ -377,7 +383,7 @@ scope," "50k wishlists/5% convert" as *directional blog figures*).
 - wayline.io/blog/scope-creep-solo-indie-game-development
 - wayline.io/blog/solo-dev-roadmap-building-games-without-burning-out
 - wayline.io/blog/how-can-indie-developers-effectively-playtest-their-games
-- iabdi.com/designblog/2026/1/13/ (first-60-seconds)
+- game-wisdom.com/critical/onboarding-game-design (first-60-seconds / onboarding)
 - maf.ad/en/blog/game-retention/
 - gridsagegames.com/blog/2017/02/adjustable-difficulty/ (Cogmind on difficulty)
 - gamedeveloper.com/design/balancing-inverse-difficulty-curves-in-game-design
