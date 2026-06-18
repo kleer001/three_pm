@@ -279,9 +279,18 @@ first step.
 
 ## 4. Concrete next-30-days plan
 
-1. **Instrument 5 events now** (run-start, distance-band reached, death/quit *with
-   Y-position*, reached-home, session length) via **PostHog free tier** embedded
-   in `index.html`. Normalize everything against runs-started.
+> **⚠️ TODO / not yet done — the analytics snippet.** The telemetry *code* is
+> already wired (`src/run/telemetry.js` + `runScene.js` emit `run_start` /
+> `band_reached` / `run_end`), but it stays a **no-op until the PostHog snippet is
+> pasted into `index.html`** — deliberately left out for now. Until then the game
+> logs `[telemetry] disabled` and sends nothing. **To switch it on later:** follow
+> `playtest-session-kit.md` §5 (create a PostHog project, paste the loader +
+> `posthog.init(..., { persistence: 'memory' })` into `index.html`, deploy). Gate
+> it to the deployed Pages/itch host if you don't want events from localhost.
+
+1. **Turn on the 5 events** — the code is done; the only remaining step is the
+   **PostHog snippet in `index.html`** (see the TODO above + kit §5). Then normalize
+   everything against runs-started.
 2. **Recruit a panel of ~8–10** via r/playmygame (New), a r/gamedev Feedback
    Friday post, and target-game communities; collect emails.
 3. **Run 5 moderated remote sessions** (Discord screenshare, think-aloud, *stay
