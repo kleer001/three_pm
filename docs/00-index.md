@@ -122,3 +122,9 @@ the JSON files themselves are owned by 05 (characters), 06 (enemies), 07
 | `wendolyn` | Wendolyn Crowe | The Occultist | glass-cannon mage | 5 / 2 / 3 / 9 — magic peak, con dump | 3 |
 | `dash_velocity` | Dash Velocity | The Track Star | fast skirmisher | 9 / 2 / 5 / 4 — speed peak, con dump | 5 |
 | `robotics` | Eugene Okafor | The Robotics Nerd | zoner / control-tank | 2 / 8 / 3 / 8 — con + magic high, speed dump | 8 |
+
+## Process & production docs (not part of the design contract)
+These freeze no interfaces and own no game data — they're guidance, not spec.
+| File | Holds |
+|---|---|
+| `playtesting-and-launch-roadmap.md` | Research-backed playbook for taking 3pm from playable slice to public itch.io / GitHub Pages release: recruiting/running playtests, honest metrics & telemetry, milestone ladder, indie failure modes |
