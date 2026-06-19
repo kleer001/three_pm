@@ -5,6 +5,7 @@
 // breakdown and waits for a single confirm to advance to META.
 import { THEME } from "./balance.js";
 import { load, save, recordRun, computePayout, PAYOUT } from "../meta/save.js";
+import { sfx } from "../audio/sfx.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 
@@ -39,10 +40,10 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
 
   function update() {
     if (!input.down("Space") && !input.down("Enter")) armed = true;
-    if (armed && (input.down("Space") || input.down("Enter"))) done = true;
+    if (armed && (input.down("Space") || input.down("Enter")) && !done) { done = true; sfx.play("uiSelect"); }
     // Touch: any tap advances. A fresh touchstart only queues after the death-fire
     // finger lifts, so a held touch can't instantly skip the screen (no arming needed).
-    while (input.consumeTap()) done = true;
+    while (input.consumeTap()) { if (!done) sfx.play("uiSelect"); done = true; }
   }
 
   function render() {

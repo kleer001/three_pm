@@ -8,6 +8,7 @@ import { hitRect } from "../input/input.js";
 import { isHeroUnlocked, save, purchaseUpgrade, UPGRADES, upgradeRank, nextCost } from "../meta/save.js";
 import { createPartyPreview } from "./partyPreview.js";
 import { VOID_BACKGROUNDS } from "./voidBackgrounds.js";
+import { sfx } from "../audio/sfx.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 const COLS = 3;
@@ -38,7 +39,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   // Spend banked credits on the highlighted hero's upgrade (spec 08): persist via
   // save() so the next run's load() sees it, and re-bind blob so the panel + the
   // unlock gate read the new state. A no-op when maxed/broke (purchaseUpgrade).
-  const buyUpgrade = (heroId, upId) => { blob = save(purchaseUpgrade(blob, heroId, upId)); };
+  const buyUpgrade = (heroId, upId) => { blob = save(purchaseUpgrade(blob, heroId, upId)); sfx.play("uiSelect"); };
   // The highlighted hero's tree as [upgradeId, def] pairs, or [] when the focus is
   // on Start/BG/a locked card (no buyable hero) — the one source render + input share.
   function upgradeEntries() {
@@ -97,6 +98,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
   function toggle(c) {
     if (!unlocked(c)) return;
+    sfx.play("uiSelect"); // add/drop a hero
     const at = party.indexOf(c.id);
     if (at >= 0) { party.splice(at, 1); return; } // already in → drop it (the rest renumber)
     if (party.length >= MAX) party.shift();        // full → evict the head (FIFO), the rest shift up
@@ -109,10 +111,10 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     // `U` pops the highlighted hero's upgrade tree over the board (only when one is buyable);
     // `U` again or Esc closes it. While open, the modal owns input — the board is frozen.
     const u = input.down("KeyU");
-    if (u && !pU && (upgradeModal || upgradeEntries().length)) upgradeModal = !upgradeModal;
+    if (u && !pU && (upgradeModal || upgradeEntries().length)) { upgradeModal = !upgradeModal; sfx.play(upgradeModal ? "uiSelect" : "uiBack"); }
     pU = u;
     const esc = input.down("Escape");
-    if (esc && !pEsc && upgradeModal) upgradeModal = false;
+    if (esc && !pEsc && upgradeModal) { upgradeModal = false; sfx.play("uiBack"); }
     pEsc = esc;
     if (upgradeModal && !upgradeEntries().length) upgradeModal = false; // safety: no hero to buy for
 
@@ -121,6 +123,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
     // The action-preview animates underneath regardless; rebuild on highlight/party change.
     const pkey = party.join(",");
+    if (i !== prevI) sfx.play("uiMove"); // navigation tick — one chokepoint for all focus moves
     if (i !== prevI || pkey !== prevKey) { syncPreview(); prevI = i; prevKey = pkey; }
     prev().update(dt);
   }
@@ -150,13 +153,13 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
     const confirm = input.down("Space") || input.down("Enter");
     if (armed && confirm && !pConfirm) {
-      if (i === START || i === BG) { if (party.length) confirmed = true; } // BG: Space also starts
+      if (i === START || i === BG) { if (party.length) { confirmed = true; sfx.play("uiSelect"); } } // BG: Space also starts
       else toggle(roster[i]);
     }
     pConfirm = confirm;
 
     const clear = input.down("KeyC");
-    if (clear && !pClear) party = []; // C wipes the whole selection
+    if (clear && !pClear) { party = []; sfx.play("uiBack"); } // C wipes the whole selection
     pClear = clear;
 
     // Touch: tap a card to toggle it into/out of the party; tap Start to begin; tap a
@@ -165,7 +168,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     for (let tap; (tap = input.consumeTap()); ) {
       const card = cards.find((r) => hitRect(tap, r));
       if (card) { if (unlocked(roster[card.index])) { i = card.index; toggle(roster[card.index]); } } // ignore taps on locked
-      else if (hitRect(tap, start)) { i = START; if (party.length) confirmed = true; }
+      else if (hitRect(tap, start)) { i = START; if (party.length) { confirmed = true; sfx.play("uiSelect"); } }
       else if (Math.abs(tap.y - CAR_CY) < 24) { // tap a name in the carousel band → pick the nearest
         let best = null;
         for (const c of carouselCells()) if (!best || Math.abs(tap.x - c.cx) < Math.abs(tap.x - best.cx)) best = c;

@@ -7,6 +7,7 @@
 import { BALANCE, THEME } from "../run/balance.js";
 import { load } from "./save.js";
 import { createVoidRenderer } from "../run/voidBackgrounds.js";
+import { sfx } from "../audio/sfx.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 
@@ -30,8 +31,8 @@ export function createMetaScene(ctx, input, nextSeed, bgId) {
   function update(dt) {
     clock += dt; // real-time clock drives the void animation
     if (!input.down("Space") && !input.down("Enter")) armed = true; // release the held end-of-run confirm first
-    if (armed && (input.down("Space") || input.down("Enter"))) done = true;
-    while (input.consumeTap()) done = true; // any tap heads out
+    if (armed && (input.down("Space") || input.down("Enter")) && !done) { done = true; sfx.play("uiSelect"); }
+    while (input.consumeTap()) { if (!done) sfx.play("uiSelect"); done = true; } // any tap heads out
   }
 
   function render() {

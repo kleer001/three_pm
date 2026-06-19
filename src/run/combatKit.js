@@ -13,6 +13,8 @@
 //   projectileBlocked(x, y) -> bool,                             // wall (run) / arena bounds (preview)
 //   onDeath(t, attacker),                                        // loot + run-loss (run) / no-op (preview)
 //   cullDeployable(d) -> bool,                                   // left behind by the scroll (run) / never (preview)
+//   sfx(name),                                                   // play a sound (run) / omitted → silent (preview)
+//   shake(mag),                                                  // kick the camera (run) / omitted → no-op (preview)
 // }
 import { BALANCE, THEME } from "./balance.js";
 import { weaponDamage, applyDamage, canCast, spendMana } from "./combat.js";
@@ -23,6 +25,10 @@ const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 export function createCombat(env) {
   const { enemies, projectiles, blasts, fields, deployables, swings, floaters } = env;
+  // Sound hook: real in the run, omitted in the party-select preview (a null object so the
+  // shared combat code stays one path — no `?.` at every fire/hit site).
+  const sfx = env.sfx || (() => {});
+  const shake = env.shake || (() => {}); // camera kick on big pulses; same preview null-object
 
   // A landed hit's HP loss, surfaced as a rising number at the target (spec: honest hits).
   function spawnHitNumber(t, dealt) { floaters.push({ x: t.x, y: t.y, value: Math.round(dealt), t: 0 }); }
@@ -40,9 +46,9 @@ export function createCombat(env) {
   // they agree, and so every death routes through the one env.onDeath hook.
   function applyHit(attacker, t, damage, kbMult, kdx, kdy, freeze) {
     const dealt = applyDamage(t, weaponDamage(damage, attacker, t.derived.maxHp, t.hp));
-    if (dealt > 0) { spawnHitNumber(t, dealt); creditCharge(attacker, dealt, false); if (t.signature) creditCharge(t, dealt, true); }
+    if (dealt > 0) { spawnHitNumber(t, dealt); creditCharge(attacker, dealt, false); if (t.signature) creditCharge(t, dealt, true); sfx(t.faction === "player" ? "hurt" : "hit"); }
     if (kbMult) env.knockback(t, kdx, kdy, attacker.derived.knockback * kbMult);
-    if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
+    if (freeze && t.def) { t.freezeCount++; t.frozenT = FREEZE_DUR; sfx("freeze"); if (t.freezeCount >= t.def.freezesToKill) t.dead = true; }
     if (t.dead) env.onDeath(t, attacker);
   }
 
@@ -63,6 +69,7 @@ export function createCombat(env) {
   function detonate(p) {
     blast(p.x, p.y, p.radius, p.attacker, p.damage, p.knockback, p.freeze);
     blasts.push({ x: p.x, y: p.y, r: p.radius, t: 0 });
+    sfx("explode"); shake(10);
   }
 
   // Nearest living enemy to a point, with its distance — the shared auto-aim pick.
@@ -86,10 +93,12 @@ export function createCombat(env) {
     const aim = w.arc >= 360 ? null : { x: dx / m, y: dy / m, cosHalf: Math.cos((w.arc * Math.PI) / 360) };
     blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.knockback, w.freeze, aim);
     swings.push({ x: attacker.x, y: attacker.y, r: w.radius, ax: dx / m, ay: dy / m, arc: w.arc, t: 0 });
+    sfx("swing");
     return true;
   }
 
   function fireShot(attacker, vx, vy, o) {
+    sfx(attacker.faction === "enemy" ? "enemyShoot" : "shoot");
     projectiles.push({
       x: attacker.x, y: attacker.y, ox: attacker.x, oy: attacker.y, vx, vy, life: o.life, life0: o.life, dead: false,
       faction: attacker.faction, attacker, damage: o.damage,
@@ -109,11 +118,13 @@ export function createCombat(env) {
       if (near && near.d <= w.radius) {
         blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.knockback, w.freeze);
         blasts.push({ x: attacker.x, y: attacker.y, r: w.radius, t: 0 });
+        sfx("nova"); shake(6);
         fired = true;
       }
     } else if (w.shape === "field") {
       if (near && near.d <= w.range) {
         fields.push({ x: attacker.x, y: attacker.y, r: w.radius, life: w.lifespan, tick: 0, weapon: w, attacker });
+        sfx("field");
         fired = true;
       }
     } else if (w.shape === "melee-arc") {
@@ -169,6 +180,7 @@ export function createCombat(env) {
     const dmg = { ...sig.damage, base: sig.damage.base + attacker.damageTaken * sig.takenScale };
     blast(attacker.x, attacker.y, sig.radius, attacker, dmg, sig.knockback, sig.freeze);
     blasts.push({ x: attacker.x, y: attacker.y, r: sig.radius, t: 0 });
+    sfx("explode"); shake(12);
     attacker.charge = 0; attacker.damageTaken = 0;
   }
 

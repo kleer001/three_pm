@@ -17,6 +17,7 @@ import { BALANCE, THEME } from "./balance.js";
 import { track, newRunId } from "./telemetry.js";
 import { createVoidRenderer } from "./voidBackgrounds.js";
 import { createCombat } from "./combatKit.js";
+import { sfx } from "../audio/sfx.js";
 import { disc, ring, bar, glyph, clamp, drawMember } from "./draw.js";
 
 const VIEW_W = 800, VIEW_H = 600;
@@ -211,6 +212,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   // Route an acquired powerup id: timed `buff` kinds (BPM Boost / Slow Jam) start a live
   // timer; everything else joins the held set and rebuilds hero+weapon from base.
   function acquire(defId) {
+    sfx.play("pickup");
     const def = POWERUPS[defId];
     if (def.kind === "buff") {
       activeBuffs.push({ id: defId, kind: def.effect, mult: def.mult, t: def.duration,
@@ -228,6 +230,11 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const shops = placeShops();
 
   const cam = { x: 0, y: 0 };
+  // Screen shake: a magnitude (px) that decays each frame and perturbs the render camera.
+  // Big AoE pulses and a hero getting shoved raise it; render jitters the world, not the HUD.
+  let shake = 0;
+  const SHAKE_MAX = 16, SHAKE_DECAY = 70; // cap, and px/sec linear falloff
+  const addShake = (mag) => { shake = Math.min(SHAKE_MAX, Math.max(shake, mag)); };
   const enemies = [];
   const projectiles = []; // all in-flight shots, hero + enemy, tagged by faction
   const blasts = [];      // transient AoE rings (nova/bomb detonations), visual only
@@ -240,7 +247,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   let paused = false, pEsc = false; // Esc toggles a full freeze during free descent
   let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
   // One place to end the run as a loss with its cause — every lethal path routes here.
-  const loseRun = (cause) => { outcome = "lose"; deathCause = cause; emitRunEnd(false); };
+  const loseRun = (cause) => { outcome = "lose"; deathCause = cause; sfx.play("scream"); sfx.play("lose"); emitRunEnd(false); };
   let nearShop = null;  // shop the hero is standing on this frame
   // Stepping onto a shop pauses the run and opens a pick-one-item modal. shopLatch
   // keeps it from instantly reopening while the hero still overlaps after leaving;
@@ -337,6 +344,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     const hpFrac = Math.min(1, t.derived.maxHp / K.hpAtMax);
     const frames = Math.max(1, Math.round(K.min + hpFrac * (K.max - K.min)));
     t.kb = { vx: (dx / m) * mag / frames, vy: (dy / m) * mag / frames, frames };
+    if (t === hero) addShake(7); // the head getting shoved jolts the view
     // Enemies are stunned after a shove (bigger bodies take longer to recover): a full
     // stop for pauseT frames, then a ramp back to speed over staggerT. The hero keeps
     // full control, so it gets neither.
@@ -365,6 +373,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   // stream. `looted` guards the one-shot — corpses linger, so we'd otherwise re-pay.
   function onEnemyDeath(e) {
     e.looted = true;
+    sfx.play("death");
     runState.kills++;
     runState.cash += cashForKill(e.def, LOOT);
     // On a drop, take the next id from the shared bag so drops stay unique run-wide
@@ -384,6 +393,8 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     knockback,
     projectileBlocked: (x, y) => !isWalkable(level, Math.floor(x / TS), Math.floor(y / TS)),
     cullDeployable: (d) => d.y < cam.y + MARGIN, // left behind once the crush line passes it
+    sfx: sfx.play,
+    shake: addShake,
     onDeath: (t, attacker) =>
       t === hero ? loseRun(attacker.def ? attacker.def.name : null)
                  : (t.def && !t.looted && onEnemyDeath(t)),
@@ -435,7 +446,8 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   function hurtMember(m, amount, srcName) {
     if (m.fadeT > 0) return; // intangible while materializing in
     const dealt = applyDamage(m, amount);
-    if (dealt > 0) { combat.spawnHitNumber(m, dealt); combat.creditCharge(m, dealt, true); }
+    if (dealt > 0) { combat.spawnHitNumber(m, dealt); combat.creditCharge(m, dealt, true); sfx.play("hurt"); }
+    if (m.dead && m !== hero) sfx.play("scream"); // a follower permadies (head death screams via loseRun)
     if (m === hero && hero.dead) loseRun(srcName);
   }
 
@@ -698,6 +710,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     // BPM Boost speeds the head. The head keeps real-time movement (rawDt below) so
     // bullet-time makes it nimble rather than sluggish.
     const rawDt = dt;
+    shake = Math.max(0, shake - SHAKE_DECAY * rawDt); // decays in real time, even under bullet-time
     let timeScale = 1, bpm = 1;
     for (const b of activeBuffs) { b.t -= rawDt; if (b.kind === "time") timeScale = Math.min(timeScale, b.mult); else if (b.kind === "speed") bpm *= b.mult; }
     for (let i = activeBuffs.length - 1; i >= 0; i--) {
@@ -895,7 +908,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     if (band > deepestBand) { deepestBand = band; track("band_reached", { run_id: runId, hero_id: head.id, band, t_s: Math.round((Date.now() - runStartedAt) / 1000) }); }
 
     const [tx, ty] = tileOf(hero);
-    if (homeSet.has(ty * level.w + tx)) { outcome = "win"; emitRunEnd(true); }
+    if (homeSet.has(ty * level.w + tx)) { outcome = "win"; sfx.play("win"); emitRunEnd(true); }
   }
 
   // The paused stall: a centered card list of the shop's stock. Reuses the
@@ -978,6 +991,12 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
 
   function render() {
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+    // Screen shake: bias the camera by a random jitter for the world draw, undone before the
+    // HUD (below) so only the world shakes. Everything world-space reads cam.x/cam.y, so one
+    // offset jolts tiles, void, entities, and damage numbers together.
+    const shx = shake > 0 ? (Math.random() * 2 - 1) * shake : 0;
+    const shy = shake > 0 ? (Math.random() * 2 - 1) * shake : 0;
+    cam.x += shx; cam.y += shy;
     const x0 = Math.max(0, Math.floor(cam.x / TS)), x1 = Math.min(level.w - 1, Math.ceil((cam.x + VIEW_W) / TS));
     const y0 = Math.max(0, Math.floor(cam.y / TS)), y1 = Math.min(level.h - 1, Math.ceil((cam.y + VIEW_H) / TS));
     if (tileAtlas) drawTiles(x0, x1, y0, y1);
@@ -1183,6 +1202,8 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     }
     ctx.globalAlpha = 1;
     ctx.textAlign = "left";
+
+    cam.x -= shx; cam.y -= shy; // end screen shake: HUD draws in untouched screen space
 
     ctx.font = THEME.hud.font;
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
