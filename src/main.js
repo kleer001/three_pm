@@ -2,8 +2,8 @@ import { startLoop } from "./core/loop.js";
 import { createInput } from "./input/input.js";
 import { createRunScene } from "./run/runScene.js";
 import { createPartySelectScene } from "./run/domPartyScene.js";
-import { createSummaryScene } from "./run/summaryScene.js";
-import { createGameOverScene } from "./run/gameOverScene.js";
+import { createSummaryScene } from "./run/domSummaryScene.js";
+import { createTitleScene, createGameOverScene } from "./run/domTitleScene.js";
 import { hideOverlay } from "./ui/overlay.js";
 import { load, save, resetCampaign } from "./meta/save.js";
 
@@ -19,12 +19,16 @@ const input = createInput(canvas);
 // (credits, unlocks, upgrades) carries over. The seed advances each day so the
 // neighborhood regenerates; on a new campaign it resets so the first day is a clean start.
 const FIRST_SEED = 7;
-let phase = "party";
-let scene = createPartySelectScene(ctx, input, FIRST_SEED, load());
+let phase = "title";
+let scene = createTitleScene(ctx, input, load());
 startLoop({
   update(dt) {
     scene.update(dt);
-    if (phase === "party" && scene.done) {
+    if (phase === "title" && scene.done) {
+      if (scene.choice === "new") save(resetCampaign(load())); // fresh crew + Day 1, meta kept
+      scene = createPartySelectScene(ctx, input, FIRST_SEED, load());
+      phase = "party";
+    } else if (phase === "party" && scene.done) {
       hideOverlay(); // reveal the canvas for the descent
       scene = createRunScene(ctx, input, scene.seed, scene.party, load(), scene.bgId);
       phase = "run";
@@ -33,7 +37,7 @@ startLoop({
       phase = "summary";
     } else if (phase === "summary" && scene.done) {
       if (scene.wipe) {
-        scene = createGameOverScene(ctx, input, load());
+        scene = createGameOverScene(ctx, input, load()); // DOM, replaces the summary overlay
         phase = "gameover";
       } else {
         scene = createPartySelectScene(ctx, input, scene.nextSeed, load());
@@ -41,8 +45,8 @@ startLoop({
       }
     } else if (phase === "gameover" && scene.done) {
       save(resetCampaign(load())); // fresh crew + Day 1, meta kept
-      scene = createPartySelectScene(ctx, input, FIRST_SEED, load());
-      phase = "party";
+      scene = createTitleScene(ctx, input, load());
+      phase = "title";
     }
   },
   render(alpha) {

@@ -30,8 +30,7 @@ const GLOW_COLOR = "rgba(165,205,255,1)"; // light-blue rim tint
 const GLOW_GAIN = 1.5;         // rim glow strength (drawn over itself this many ×, ≈50% stronger)
 
 // Append one closed rounded-rect subpath with per-corner radii (0 = square corner).
-// ctx.roundRect isn't safe across all targets the slice ships to (see metaScene), so
-// build it from arcTo instead.
+// ctx.roundRect isn't safe across all targets the slice ships to, so build it from arcTo.
 function addRoundTile(c, x, y, w, h, tl, tr, br, bl) {
   c.moveTo(x + tl, y);
   c.arcTo(x + w, y,     x + w, y + h, tr);
