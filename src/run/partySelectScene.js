@@ -24,9 +24,16 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
   let bgIndex = 0; // chosen void background (index into VOID_BACKGROUNDS)
 
-  // Pre-fill the party with everyone unlocked (up to the cap), in roster order — the
-  // player can hit Start immediately or toggle/reorder by re-picking.
-  let party = roster.filter(unlocked).slice(0, MAX).map((c) => c.id);
+  // The standing crew (campaign): everyone enlisted walks home every day, head first. The
+  // picker reorders the conga and enlists reserves; living crew can't be dropped — once a
+  // hero is on the walk they stay until they fall. The fallen (campaign.dead) show ✝ and
+  // can't be picked. Enlisting is a one-way commitment: it adds firepower but also another
+  // body the enemies hunt and another hero to lose.
+  const deadSet = new Set(blob.campaign.dead);
+  let party = blob.campaign.crew.slice();
+  const isDead = (id) => deadSet.has(id);
+  const isEnlisted = (id) => party.includes(id);
+  const canEnlist = (c) => unlocked(c) && !isDead(c.id) && !isEnlisted(c.id); // a reserve
 
   let i = 0, confirmed = false;
   let armed = false; // require confirm to be released once (held SPACE ended the prior run)
@@ -60,8 +67,8 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
   // Only unlocked cards (and the Start button) can be highlighted/selected — locked
   // heroes are skipped by nav and taps, so the preview only ever runs for reachable picks.
-  const selectable = (n) => n === START || n === BG || (n < GRID && unlocked(roster[n]));
-  const lastUnlocked = () => { for (let n = GRID - 1; n >= 0; n--) if (unlocked(roster[n])) return n; return 0; };
+  const selectable = (n) => n === START || n === BG || (n < GRID && (isEnlisted(roster[n].id) || canEnlist(roster[n])));
+  const lastUnlocked = () => { for (let n = GRID - 1; n >= 0; n--) if (selectable(n)) return n; return 0; };
 
   // Live action-preview in the right column; lazily built (needs the static rect from
   // layout()). Rebuilt whenever the highlighted index changes.
@@ -96,13 +103,21 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     return { cardW, cardH, portH, gridW, x0, y0, cards, dy, dh, start, preview };
   }
 
-  function toggle(c) {
-    if (!unlocked(c)) return;
-    sfx.play("uiSelect"); // add/drop a hero
+  // Select a card: an enlisted hero → promote to head (front of the conga); a reserve →
+  // enlist (joins the walk). No drop — living crew stay on the walk until they fall.
+  function select(c) {
+    if (isDead(c.id)) return;
     const at = party.indexOf(c.id);
-    if (at >= 0) { party.splice(at, 1); return; } // already in → drop it (the rest renumber)
-    if (party.length >= MAX) party.shift();        // full → evict the head (FIFO), the rest shift up
-    party.push(c.id);                              // new pick lands last; first in line still leads
+    if (at >= 0) { if (at > 0) { party.splice(at, 1); party.unshift(c.id); sfx.play("uiSelect"); } } // promote to head
+    else if (canEnlist(c)) { party.push(c.id); sfx.play("uiSelect"); } // enlist a reserve
+  }
+
+  // Lock the crew order in AND persist it as the standing crew, then start the day.
+  function startWalk() {
+    if (!party.length) return;
+    blob.campaign.crew = party.slice();
+    save(blob);
+    confirmed = true; sfx.play("uiSelect");
   }
 
   function update(dt) {
@@ -153,22 +168,18 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
     const confirm = input.down("Space") || input.down("Enter");
     if (armed && confirm && !pConfirm) {
-      if (i === START || i === BG) { if (party.length) { confirmed = true; sfx.play("uiSelect"); } } // BG: Space also starts
-      else toggle(roster[i]);
+      if (i === START || i === BG) startWalk(); // BG: Space also starts the walk
+      else select(roster[i]);
     }
     pConfirm = confirm;
 
-    const clear = input.down("KeyC");
-    if (clear && !pClear) { party = []; sfx.play("uiBack"); } // C wipes the whole selection
-    pClear = clear;
-
-    // Touch: tap a card to toggle it into/out of the party; tap Start to begin; tap a
-    // carousel name to pick that background. Fresh-press edges, so a held touch can't auto-confirm.
+    // Touch: tap a card to enlist/promote; tap Start to begin; tap a carousel name to pick
+    // that background. Fresh-press edges, so a held touch can't auto-confirm.
     const { cards, start } = layout();
     for (let tap; (tap = input.consumeTap()); ) {
       const card = cards.find((r) => hitRect(tap, r));
-      if (card) { if (unlocked(roster[card.index])) { i = card.index; toggle(roster[card.index]); } } // ignore taps on locked
-      else if (hitRect(tap, start)) { i = START; if (party.length) { confirmed = true; sfx.play("uiSelect"); } }
+      if (card) { if (selectable(card.index)) { i = card.index; select(roster[card.index]); } } // ignore taps on dead/locked
+      else if (hitRect(tap, start)) { i = START; startWalk(); }
       else if (Math.abs(tap.y - CAR_CY) < 24) { // tap a name in the carousel band → pick the nearest
         let best = null;
         for (const c of carouselCells()) if (!best || Math.abs(tap.x - c.cx) < Math.abs(tap.x - best.cx)) best = c;
@@ -240,7 +251,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     ctx.textAlign = "center";
     ctx.fillStyle = P.title;
     ctx.font = P.titleFont;
-    ctx.fillText("Pick your party for the walk home", VIEW_W / 2, 42);
+    ctx.fillText(`Day ${blob.campaign.day} — your crew for the walk home`, VIEW_W / 2, 42);
 
     const { cardW, cardH, portH, gridW, x0, cards, dy, dh, start } = layout();
 
@@ -272,8 +283,12 @@ export function createPartySelectScene(ctx, input, seed, blob) {
         ctx.fillText(String(slot + 1), bx, by + 4);
       }
 
-      // Locked: veil + gate label, non-selectable.
-      if (!free) {
+      // Fallen (✝, gone for good) or locked (gate label) — both non-selectable veils.
+      if (isDead(c.id)) {
+        ctx.fillStyle = P.lockTint; ctx.fillRect(cx, cy, cardW, cardH);
+        ctx.fillStyle = "#c0556a"; ctx.font = P.lockFont;
+        ctx.fillText("✝ fell", cx + cardW / 2, cy + cardH / 2 + 5);
+      } else if (!free) {
         ctx.fillStyle = P.lockTint;
         ctx.fillRect(cx, cy, cardW, cardH);
         ctx.fillStyle = P.lockText;
@@ -308,7 +323,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
     ctx.fillStyle = P.hint;
     ctx.font = P.hintFont;
-    ctx.fillText("←↑↓→/tap · SPACE pick/start · U upgrades · C clear · ↓ Background", VIEW_W / 2, VIEW_H - 14);
+    ctx.fillText("←↑↓→/tap · SPACE enlist/lead/start · U upgrades · ↓ Background", VIEW_W / 2, VIEW_H - 14);
     ctx.textAlign = "left";
 
     prev().render(); // live action-preview in the right column
@@ -386,9 +401,10 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
     const slot = party.indexOf(c.id), free = unlocked(c);
     let status, scol;
-    if (!free) { status = `locked · unlocks at run ${c.unlockAtRuns}`; scol = P.lockText; }
-    else if (slot >= 0) { status = slot === 0 ? "in party · slot 1 (head)" : `in party · slot ${slot + 1}`; scol = P.start; }
-    else { status = "available — SPACE to add"; scol = P.weapon; }
+    if (isDead(c.id)) { status = "✝ fell — gone for good"; scol = "#c0556a"; }
+    else if (!free) { status = `locked · unlocks at run ${c.unlockAtRuns}`; scol = P.lockText; }
+    else if (slot >= 0) { status = slot === 0 ? "on the walk · head" : `on the walk · slot ${slot + 1} — SPACE to lead`; scol = P.start; }
+    else { status = "reserve — SPACE to enlist"; scol = P.weapon; }
     ctx.textAlign = "right"; ctx.fillStyle = scol; ctx.font = P.weaponFont;
     ctx.fillText(status, x + w - 14, y + 20);
   }

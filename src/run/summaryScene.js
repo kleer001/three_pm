@@ -3,18 +3,25 @@
 // construction — save(recordRun(load(), result)) — and derives the displayed deltas
 // from the pre-commit blob so the numbers are exact. Then it shows the payout
 // breakdown and waits for a single confirm to advance to META.
-import { THEME } from "./balance.js";
-import { load, save, recordRun, computePayout, PAYOUT } from "../meta/save.js";
+import { BALANCE, THEME } from "./balance.js";
+import { load, save, recordRun, computePayout, PAYOUT, applyRunDeaths, isWipe, advanceDay } from "../meta/save.js";
 import { sfx } from "../audio/sfx.js";
+
+const nameOf = (id) => (BALANCE.roster.find((c) => c.id === id) || {}).name || id;
 
 const VIEW_W = 800, VIEW_H = 600;
 
 export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
-  // Commit-once on enter (spec 15): load → record (banks payout, bumps runCount,
-  // refreshes unlocks) → save. Deltas come off the pre-commit blob.
+  // Commit-once on enter (spec 15 + the campaign layer): load → record (banks payout,
+  // bumps runCount, refreshes unlocks) → cull this run's fallen from the crew → advance
+  // the day unless that emptied the crew (a wipe) → save. Deltas come off the pre-commit blob.
   const before = load();
   const payout = computePayout(result);
-  const after = save(recordRun(before, result));
+  let blob = applyRunDeaths(recordRun(before, result), result.died || []);
+  const wipe = isWipe(blob);
+  if (!wipe) blob = advanceDay(blob);
+  const after = save(blob);
+  const fell = (result.died || []).map(nameOf);
   const newUnlocks = after.unlockedHeroes.filter((id) => !before.unlockedHeroes.includes(id));
   const bestBeaten = result.distanceFraction > before.stats.bestDistance && !result.won;
 
@@ -64,6 +71,10 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
     if (!result.won) {
       ctx.fillText(`Got ${distPct}% of the way${result.cause ? " — " + result.cause : ""}.`, VIEW_W / 2, 158);
     }
+    if (fell.length) { // crew-wide permadeath: who didn't come back
+      ctx.font = S.subFont; ctx.fillStyle = S.lose;
+      ctx.fillText(`✝ Lost for good: ${fell.join(", ")}`, VIEW_W / 2, 184);
+    }
 
     // Left-aligned monospaced payout table, centered as a block (rows built once).
     ctx.font = S.rowFont;
@@ -107,5 +118,6 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
     ctx.textAlign = "left";
   }
 
-  return { update, render, get done() { return done; }, nextSeed, bgId }; // bgId passes through to the between-days screen
+  // `wipe` tells main to route to GAME OVER instead of the next day's picker.
+  return { update, render, get done() { return done; }, get wipe() { return wipe; }, nextSeed, bgId };
 }

@@ -12,7 +12,7 @@ import { recomputeDerived, STAT_KEYS } from "../run/combat.js";
 import { BALANCE } from "../run/balance.js";
 
 export const KEY = "threepm:save";
-const VERSION = 1;
+const VERSION = 2;
 
 // Payout coefficients (spec 08) — tuning, not contract.
 export const PAYOUT = { distance: 100, perKill: 2, win: 150 };
@@ -20,6 +20,52 @@ export const PAYOUT = { distance: 100, perKill: 2, win: 150 };
 // Hero unlock gates: runCount ≥ value (spec 05), read straight off the cast roster
 // (balance.js) so the data has one home. Adding/regating a character is a roster edit.
 export const HERO_UNLOCKS = Object.fromEntries(BALANCE.roster.map((c) => [c.id, c.unlockAtRuns]));
+
+// --- Campaign (the playthrough): a crew of heroes walked home day after day under
+// crew-wide permadeath. A hero who dies in a run leaves `crew` for good (logged in
+// `dead`); survivors carry to the next day. An empty crew is a wipe → GAME OVER, after
+// which a fresh campaign keeps the durable meta (credits/unlocks/upgrades) but resets
+// the crew + day. `runCount` stays the lifetime counter across campaigns; `campaign.day`
+// is the per-campaign day, reset on wipe/new-game.
+const STARTERS = BALANCE.roster.filter((c) => c.unlockAtRuns === 0).map((c) => c.id);
+
+export function startCampaign() {
+  return { day: 1, crew: STARTERS.slice(), dead: [] };
+}
+
+// Remove this run's fallen from the crew (they're gone for the campaign), log them dead.
+export function applyRunDeaths(blob, diedIds) {
+  blob = clone(blob);
+  const c = blob.campaign;
+  for (const id of diedIds) {
+    const at = c.crew.indexOf(id);
+    if (at >= 0) c.crew.splice(at, 1);
+    if (!c.dead.includes(id)) c.dead.push(id);
+  }
+  return blob;
+}
+
+export function advanceDay(blob) {
+  blob = clone(blob);
+  blob.campaign.day += 1;
+  return blob;
+}
+
+// A wipe: the whole crew is dead. The campaign is over.
+export const isWipe = (blob) => blob.campaign.crew.length === 0;
+
+// Fresh campaign (New Game, or after a wipe): reset crew/day, keep the meta tier.
+export function resetCampaign(blob) {
+  blob = clone(blob);
+  blob.campaign = startCampaign();
+  return blob;
+}
+
+// Heroes the crew can add at the picker: unlocked, still alive, not already enlisted.
+export function recruitable(blob) {
+  const c = blob.campaign;
+  return recomputeUnlocks(blob.runCount).filter((id) => !c.dead.includes(id) && !c.crew.includes(id));
+}
 
 // Per-hero permanent upgrade trees (spec 08 upgrades.json). `apply` mirrors the
 // spec-07 stat payload: deltas on the hero's base stats, scaled by purchased rank,
@@ -125,12 +171,16 @@ function defaultBlob() {
     version: VERSION, credits: 0, runCount: 0,
     unlockedHeroes: recomputeUnlocks(0), heroUpgrades: {},
     stats: { wins: 0, bestDistance: 0, totalKills: 0 },
+    campaign: startCampaign(),
   };
 }
 
-// Ordered v→v+1 migration steps. None yet (VERSION 1); a future field-add lands a
-// step here and bumps VERSION. A missing/unparsable blob yields a fresh default.
-const MIGRATIONS = {};
+// Ordered v→v+1 migration steps. A missing/unparsable blob yields a fresh default.
+const MIGRATIONS = {
+  // v1→v2: the playthrough layer. Old saves had no crew/day — seed a fresh campaign
+  // (meta progress is untouched; the player starts a new walk with the starter crew).
+  1: (blob) => ({ ...blob, version: 2, campaign: startCampaign() }),
+};
 function migrate(blob) {
   while (blob.version < VERSION) {
     const step = MIGRATIONS[blob.version];

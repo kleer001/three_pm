@@ -166,6 +166,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const hero = {
     x: level.start.x * TS + TS / 2, y: level.start.y * TS + TS / 2,
     w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
+    id: head.id,
     stats: { ...(head.stats || HERO.stats) }, faction: HERO.faction, color: head.color,
     iframes: 0, iframeDur: HERO.iframeDur, manaRegen: HERO.manaRegen, dead: false, cd: 0,
     sigCd: 0, signature: resolveSig(head.signatureId), charge: 0, damageTaken: 0, fadeT: BALANCE.spawnFade,
@@ -186,6 +187,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     const w = BALANCE.weapons[def.weaponId];
     const f = {
       x: hero.x, y: hero.y, w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
+      id: def.id,
       stats: { ...(def.stats || HERO.stats) }, faction: "player", color: def.color,
       iframes: 0, iframeDur: FOLLOWER.iframeDur, manaRegen: FOLLOWER.manaRegen, dead: false, cd: 0,
       weapon: { id: def.weaponId, ...w, damage: { ...w.damage } },
@@ -246,8 +248,11 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   let outcome = null;
   let paused = false, pEsc = false; // Esc toggles a full freeze during free descent
   let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
+  // Crew-wide permadeath bookkeeping: every hero id that personally died this run (head
+  // via loseRun, followers as they're reaped). The campaign removes these from the crew.
+  const deadThisRun = new Set();
   // One place to end the run as a loss with its cause — every lethal path routes here.
-  const loseRun = (cause) => { outcome = "lose"; deathCause = cause; sfx.play("scream"); sfx.play("lose"); emitRunEnd(false); };
+  const loseRun = (cause) => { outcome = "lose"; deathCause = cause; deadThisRun.add(head.id); sfx.play("scream"); sfx.play("lose"); emitRunEnd(false); };
   let nearShop = null;  // shop the hero is standing on this frame
   // Stepping onto a shop pauses the run and opens a pick-one-item modal. shopLatch
   // keeps it from instantly reopening while the hero still overlaps after leaving;
@@ -888,6 +893,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     // Reap dead followers (HP gone or crushed) — permadeath, also off the shot-target list.
     for (let i = followers.length - 1; i >= 0; i--) {
       if (!followers[i].dead) continue;
+      deadThisRun.add(followers[i].id); // logged for the campaign's crew cull
       const ti = heroTargets.indexOf(followers[i]);
       if (ti >= 0) heroTargets.splice(ti, 1);
       followers.splice(i, 1);
@@ -1270,6 +1276,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
         distanceFraction: outcome === "win" ? 1 : distanceFraction(hero, level, TS),
         kills: runState.kills, won: outcome === "win",
         cause: deathCause, heroId: head.id, seed, cashDiscarded: runState.cash,
+        // Crew-wide permadeath: ids that died this run vs. those who walked away. The
+        // campaign culls `died` from the crew; `survived` carries to the next day.
+        died: [...deadThisRun],
+        survived: party.filter((id) => !deadThisRun.has(id)),
       };
     },
   };
