@@ -55,6 +55,8 @@ const SAMPLES = {
   uiMove:   "assets/sfx/ui_move.wav",
   uiSelect: "assets/sfx/ui_select.wav",
   uiBack:   "assets/sfx/ui_back.wav",
+  win:      "assets/sfx/win.wav",
+  death:    "assets/sfx/death.wav",
 };
 const buffers = {}; // event → array of decoded AudioBuffers, present once ≥1 file loads OK
 

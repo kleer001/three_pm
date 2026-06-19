@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3pm — win / death foley</title>
+<style>
+  :root { --ink:#1a1a1a; --paper:#fafafa; --line:#e4e4e4; --accent:#c4322b;
+          --synth:#7a7a7a; --good:#2f8f4e; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:2rem 1.5rem 3rem; color:var(--ink); background:var(--paper);
+         font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header,main { max-width:980px; margin:0 auto; }
+  h1 { font-size:1.6rem; margin:0 0 .35rem; }
+  .sub { color:#555; margin:0 0 .4rem; }
+  .hint { color:#777; font-size:.85rem; margin:.5rem 0 0; }
+  .group { margin:2rem 0 .6rem; font-size:.85rem; letter-spacing:.08em; text-transform:uppercase;
+           color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:.3rem; font-weight:700; }
+  .group small { color:#999; font-weight:400; text-transform:none; letter-spacing:0; }
+  .cards { display:flex; flex-wrap:wrap; gap:.5rem; }
+  .card { position:relative; }
+  .card button { font:inherit; cursor:pointer; border-radius:7px; padding:.5rem 1.7rem .5rem .7rem;
+           border:1px solid var(--line); background:#fff; color:var(--ink); transition:all .07s;
+           display:flex; flex-direction:column; gap:.15rem; min-width:150px; text-align:left; width:100%; }
+  .card button:hover { border-color:var(--ink); }
+  .card button:active { transform:translateY(1px); }
+  .card button.playing { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .tag { font-size:.68rem; letter-spacing:.04em; text-transform:uppercase; opacity:.65; }
+  .lbl { font-family:ui-monospace,Menlo,monospace; font-size:.78rem; word-break:break-word; }
+  .dur { font-size:.66rem; opacity:.55; }
+  .card .pick { position:absolute; top:6px; right:6px; width:17px; height:17px; cursor:pointer;
+                accent-color:var(--good); margin:0; z-index:2; }
+  .card.chosen button { border-color:var(--good); box-shadow:0 0 0 1px var(--good) inset; }
+  .synthbtn { border-color:var(--synth) !important; }
+  .synthbtn .tag { color:var(--synth); opacity:1; }
+  .synthbtn.playing { background:var(--synth) !important; border-color:var(--synth) !important; }
+  .controls { position:sticky; top:0; z-index:10; background:var(--paper);
+              border-bottom:1px solid var(--line); box-shadow:0 2px 10px rgba(0,0,0,.05); }
+  .controls-inner { max-width:980px; margin:0 auto; padding:.7rem 1.5rem; }
+  .savebar { display:flex; gap:1rem; align-items:center; }
+  .savebar button { font:inherit; font-weight:600; cursor:pointer; padding:.55rem 1.1rem;
+             border-radius:7px; border:1px solid var(--ink); background:var(--ink); color:#fff; }
+  .savebar button.ghost { background:#fff; color:var(--ink); }
+  .savebar #status { color:#555; font-size:.9rem; margin-right:auto; }
+  .results { margin:.7rem 0 0; }
+  .results textarea { width:100%; height:120px; font-family:ui-monospace,Menlo,monospace; font-size:.8rem;
+             border:1px solid var(--line); border-radius:8px; padding:.7rem; resize:vertical; }
+</style>
+</head>
+<body>
+<header>
+  <h1>3pm — win / death foley</h1>
+  <p class="sub">Pick the foley layers you want per event, A/B against the current procedural synth
+     (grey card). Clips are pre-trimmed/normalized exactly as they'll ship.</p>
+  <p class="hint">Click to audition. Tick <strong>any number</strong> per event — pick all the
+     layers you want to mix for <strong>win</strong> and <strong>death</strong>. Then
+     <strong>Copy picks</strong> pastes the chosen source paths, grouped by event.
+     Press <kbd>M</kbd> to mute the synth.</p>
+</header>
+<div class="controls">
+  <div class="controls-inner">
+    <div class="savebar">
+      <span id="status">win: 0 picked · death: 0 picked</span>
+      <button id="copy">Copy picks</button>
+      <button id="clear" class="ghost">Clear</button>
+    </div>
+    <div class="results" id="results" hidden>
+      <textarea id="resultText" readonly></textarea>
+    </div>
+  </div>
+</div>
+<main id="board">loading…</main>
+
+<script type="module">
+import { sfx } from "../src/audio/sfx.js";
+
+const META = {
+  win:   { desc: "player reaches home — upbeat, triumphant, a relief", cap: 2.0 },
+  death: { desc: "an enemy dies — thuddy, low, punchy (≤1s)",          cap: 1.0 },
+};
+const board = document.getElementById("board");
+const manifest = await (await fetch("sfx-preview/win-death-manifest.json")).json();
+board.textContent = "";
+
+let audio = new Audio();
+let active = null;
+
+function flash(btn) { if (active) active.classList.remove("playing"); active = btn; btn.classList.add("playing"); }
+function stopFlash(btn) { if (active === btn) { btn.classList.remove("playing"); active = null; } }
+
+function makeCard(event, entry) {  // entry === null => synth baseline
+  const isSynth = entry === null;
+  const card = document.createElement("div");
+  card.className = "card";
+  const btn = document.createElement("button");
+  if (isSynth) btn.classList.add("synthbtn");
+  const tag = isSynth ? "▶ synth (current)" : "▶ foley";
+  const text = isSynth ? "procedural" : entry.slug.replace(/^(win|death)__/, "");
+  const dur = isSynth ? "" : `<span class="dur">${entry.dur.toFixed(2)}s</span>`;
+  btn.innerHTML = `<span class="tag">${tag}</span><span class="lbl">${text}</span>${dur}`;
+  btn.onclick = () => {
+    audio.pause();
+    if (isSynth) { flash(btn); sfx.play(event); setTimeout(() => stopFlash(btn), 600); }
+    else { audio = new Audio(entry.file); flash(btn);
+           audio.onended = () => stopFlash(btn); audio.play().catch(() => stopFlash(btn)); }
+  };
+  const cb = document.createElement("input");
+  cb.type = "checkbox"; cb.className = "pick"; cb.dataset.event = event;
+  if (!isSynth) cb.dataset.source = entry.source;   // synth card has no source (A/B only)
+  cb.onchange = () => { card.classList.toggle("chosen", cb.checked); updateStatus(); };
+  card.append(btn, cb);
+  return card;
+}
+
+for (const event of ["win", "death"]) {
+  const entries = manifest.filter((m) => m.event === event);
+  const g = document.createElement("div");
+  g.className = "group";
+  g.innerHTML = `${event} &nbsp;<small>${META[event].desc} — ${entries.length} candidates</small>`;
+  board.appendChild(g);
+  const cards = document.createElement("div");
+  cards.className = "cards";
+  cards.appendChild(makeCard(event, null));
+  entries.forEach((e) => cards.appendChild(makeCard(event, e)));
+  board.appendChild(cards);
+}
+
+const statusEl = document.getElementById("status");
+const picked = (event) => [...document.querySelectorAll(`.pick[data-event="${event}"]:checked`)];
+function updateStatus() {
+  statusEl.textContent = `win: ${picked("win").length} picked · death: ${picked("death").length} picked`;
+}
+
+document.getElementById("copy").onclick = async () => {
+  const blocks = [];
+  for (const event of ["win", "death"]) {
+    const sel = picked(event);
+    const srcs = sel.filter((c) => c.dataset.source).map((c) => c.dataset.source);
+    const synth = sel.some((c) => !c.dataset.source);
+    if (!srcs.length && !synth) continue;
+    let block = `# ${event} (${srcs.length} to mix${synth ? " + synth" : ""})`;
+    srcs.forEach((s) => { block += `\n${s}`; });
+    blocks.push(block);
+  }
+  const text = blocks.length ? blocks.join("\n\n") : "# nothing picked yet";
+  document.getElementById("results").hidden = false;
+  document.getElementById("resultText").value = text;
+  try { await navigator.clipboard.writeText(text); } catch {}
+};
+
+document.getElementById("clear").onclick = () => {
+  document.querySelectorAll(".pick:checked").forEach((c) => { c.checked = false;
+    c.closest(".card").classList.remove("chosen"); });
+  updateStatus();
+  document.getElementById("results").hidden = true;
+};
+updateStatus();
+</script>
+</body>
+</html>
