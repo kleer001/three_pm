@@ -1,0 +1,19 @@
+{
+  "shoot": ["sfx_medicgun1_2.wav"],
+  "swing": ["air_01_2.wav", "blade_03_2.wav"],
+  "nova": ["orchestrahit_01_2.wav", "rumblehit_01_2.wav", "airandbasshit_02_2.wav"],
+  "field": ["bassshortrumble_01_2.wav", "sfx_electroground_2.wav"],
+  "explode": ["sfx_explode_2.wav", "sfx_bang1_2.wav"],
+  "hit": ["slap_01_2.wav", "bitchslap_2.wav", "punchsand_2.wav"],
+  "freeze": ["ceramicclink_01_2.wav", "hitding_01_2.wav"],
+  "death": ["death__basshitandsquish_02_2.wav", "death__stick_dropp_03_2.wav"],
+  "enemyShoot": ["sfx_electroground_2.wav", "angrybuzz_01_2.wav"],
+  "hurt": ["sfx_scouthurt_2.wav", "sfx_heavyhurt_2.wav", "hitandgasp_01_2.wav"],
+  "scream": ["scream_01_2.wav", "scream_02_2.wav"],
+  "pickup": ["sfx_selected_2.wav", "dingwoosh_01_2.wav"],
+  "win": ["win__dingflip_2.wav", "win__chimes_rising_01_2.wav"],
+  "lose": ["sfx_heavydie_2.wav", "sfx_spydie_2.wav"],
+  "uiMove": ["sfx_select_2.wav"],
+  "uiSelect": ["sfx_selected_2.wav"],
+  "uiBack": ["sfx_select_2.wav"]
+}

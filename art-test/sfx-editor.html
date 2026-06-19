@@ -27,7 +27,8 @@
   .btn.accent { background:var(--accent); color:#fff; border-color:var(--accent); }
   .btn.sm { padding:.25rem .5rem; font-size:.8rem; }
   .stepper { display:flex; align-items:center; gap:.5rem; }
-  .slotlabel { font-weight:600; } .slotlabel .grp { color:var(--muted); font-weight:400; font-size:.82rem; }
+  .slotsel { font-weight:600; font-size:.86rem; padding:.3rem .5rem; border:1px solid var(--line);
+             border-radius:6px; background:#fff; color:var(--ink); max-width:280px; }
   .pill { background:var(--line2); border-radius:999px; padding:.15rem .55rem; font-size:.78rem; color:#555; }
   .toggle { display:inline-flex; align-items:center; gap:.3rem; cursor:pointer; user-select:none; }
   label.file { display:inline-block; } label.file input { display:none; }
@@ -82,10 +83,8 @@
   <label class="file btn sm">Load recipe…<input id="recipeInput" type="file" accept=".json"></label>
   <span class="grow"></span>
   <div class="stepper">
-    <button class="btn sm" id="prev">‹ Prev</button>
     <span class="pill" id="slotCount">– / –</span>
-    <span class="slotlabel" id="slotLabel">no slots</span>
-    <button class="btn sm" id="next">Next ›</button>
+    <select class="slotsel" id="slotSelect" title="jump to slot"><option>no slots</option></select>
   </div>
   <span class="grow"></span>
   <label class="toggle"><input type="checkbox" id="normalize" checked> normalize</label>
@@ -315,10 +314,13 @@ async function loadWaveAndDraw(){
 }
 function refreshSlotHeader(){
   $("slotCount").textContent = slots.length? `${slotIdx+1} / ${slots.length}` : "– / –";
+  const sel=$("slotSelect");
+  sel.innerHTML = slots.length
+    ? slots.map((s,i)=>`<option value="${i}">${s.event} · ${manifest[s.event]?manifest[s.event].group:""}</option>`).join("")
+    : "<option>no slots</option>";
+  sel.value = String(slotIdx);
   const R=recipe();
-  if(!R){ $("slotLabel").textContent="no slots"; $("saveHint").textContent=""; return; }
-  const meta=manifest[R.event];
-  $("slotLabel").innerHTML = `${R.event} <span class="grp">· ${meta?meta.group:""}</span>`;
+  if(!R){ $("saveHint").textContent=""; return; }
   $("saveHint").innerHTML = `saves <span class="mono">${R.event}.wav</span> + <span class="mono">${R.event}.recipe.json</span>`;
   $("normalize").checked = R.master.normalize;
   $("masterGain").value = Math.round(R.master.gain*100);
@@ -343,8 +345,7 @@ async function saveSlot(){ const R=recipe(); if(!R)return; await decodeAll(R);
   download(new Blob([JSON.stringify(R,null,2)],{type:"application/json"}), R.event+".recipe.json"); }
 $("saveSlot").addEventListener("click",saveSlot);
 $("saveNext").addEventListener("click",async()=>{ await saveSlot(); if(slotIdx<slots.length-1){ slotIdx++; selLayer=0; refresh(); } });
-$("prev").addEventListener("click",()=>{ if(slotIdx>0){ slotIdx--; selLayer=0; refresh(); } });
-$("next").addEventListener("click",()=>{ if(slotIdx<slots.length-1){ slotIdx++; selLayer=0; refresh(); } });
+$("slotSelect").addEventListener("change",e=>{ slotIdx=+e.target.value; selLayer=0; refresh(); });
 
 $("addLayer").addEventListener("click",()=>{
   const R=recipe(); if(!R)return; const meta=manifest[R.event];
@@ -363,13 +364,14 @@ $("recipeInput").addEventListener("change",async e=>{
   if(slots.length===0){ slots=[R]; slotIdx=0; } else slots[slotIdx]=R;   // replace current slot
   selLayer=0; refresh(); });
 
-// ---- boot: load manifest for labels, seed a demo from the pool so the page is usable immediately ----
+// ---- boot: load manifest for labels, then the working picks file (falling back to a demo) ----
 (async function boot(){
   manifest = Object.fromEntries((await fetch("sfx-preview/manifest.json").then(r=>r.json()))
                                 .map(ev=>[ev.name, ev]));
-  // demo: first sample of a few punchy events, so there's something to edit before loading picks
-  const demoEvents=["hit","shoot","explode","scream"].filter(e=>manifest[e]);
-  const picks={}; for(const e of demoEvents) picks[e]=[manifest[e].samples[0].file];
+  let picks = await fetch("sfx-picks.json").then(r=>r.ok?r.json():null).catch(()=>null);
+  if(!picks){ // no working file → demo from the first sample of a few punchy events
+    picks={}; for(const e of ["hit","shoot","explode","scream"].filter(e=>manifest[e])) picks[e]=[manifest[e].samples[0].file];
+  }
   slots=slotsFromPicks(picks); refresh();
 })();
 </script>
