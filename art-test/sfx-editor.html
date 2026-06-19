@@ -62,6 +62,9 @@
   .lanecard .dot { width:9px; height:9px; border-radius:2px; }
   .lanecard .title { font-weight:600; font-size:.82rem; }
   .lanecard .read { margin-left:auto; color:var(--muted); font-size:.74rem; }
+  .lanecard .preset { font-size:.7rem; padding:.08rem .2rem; border:1px solid var(--line); border-radius:5px; background:#fff; color:#555; }
+  .lanecard .reset { border:1px solid var(--line); background:#fff; border-radius:5px; font-size:.82rem; line-height:1; padding:.12rem .34rem; color:#666; }
+  .lanecard .reset:hover { border-color:var(--ink); color:var(--ink); }
 
   .knobs { display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; }
   .knob { font-size:.74rem; color:#555; } .knob input { width:100%; accent-color:var(--lane); }
@@ -151,10 +154,25 @@ const sr = () => sampleRate();
 const decodeAll = R => Promise.all(R.layers.map(l => decodeMono(l.sourceFile)));
 
 // ---- keyframe lane component ----
+// preset shapes in normalized lane space; "default" resets to the lane's no-effect value
+const SHAPES = {
+  up:      d => [{t01:0,v01:0},{t01:1,v01:1}],
+  down:    d => [{t01:0,v01:1},{t01:1,v01:0}],
+  hill:    d => [{t01:0,v01:0},{t01:0.5,v01:1},{t01:1,v01:0}],
+  valley:  d => [{t01:0,v01:1},{t01:0.5,v01:0},{t01:1,v01:1}],
+  default: d => [{t01:0,v01:d},{t01:1,v01:d}],
+};
 function makeLane(host, cfg, kf, onChange){
   const wrap=document.createElement("div"); wrap.className="lanecard";
   wrap.innerHTML=`<div class="head"><span class="dot" style="background:${cfg.color}"></span>
-    <span class="title">${cfg.label}</span><span class="read">${cfg.read}</span></div>`;
+    <span class="title">${cfg.label}</span>
+    <select class="preset" title="apply a shape">
+      <option value="">shape…</option><option value="up">ramp up ╱</option>
+      <option value="down">ramp down ╲</option><option value="hill">hill ⌒</option>
+      <option value="valley">valley ⌄</option><option value="default">default —</option>
+    </select>
+    <button class="reset" title="reset to default">↺</button>
+    <span class="read">${cfg.read}</span></div>`;
   const readEl=wrap.querySelector(".read");
   const cv=document.createElement("canvas"); cv.height=70; wrap.appendChild(cv); host.appendChild(wrap);
   function draw(){ const {c,w,h}=fit(cv,70); c.clearRect(0,0,w,h);
@@ -166,6 +184,13 @@ function makeLane(host, cfg, kf, onChange){
       c.beginPath(); c.arc(p.t01*w,(1-p.v01)*h,4,0,7); c.fill(); c.stroke(); });
   }
   const snapY = v => cfg.snap ? Math.round(v*cfg.snap)/cfg.snap : v;
+  function applyShape(name){
+    const pts=SHAPES[name](cfg.def);
+    kf.length=0; for(const p of pts) kf.push({t01:p.t01, v01:snapY(p.v01)}); // mutate in place: engine shares this array
+    draw(); onChange&&onChange();
+  }
+  wrap.querySelector(".preset").addEventListener("change",e=>{ if(e.target.value){ applyShape(e.target.value); e.target.value=""; } });
+  wrap.querySelector(".reset").addEventListener("click",()=>applyShape("default"));
   let drag=-1;
   cv.addEventListener("pointerdown",e=>{ const r=cv.getBoundingClientRect();
     const x=clamp01((e.clientX-r.left)/r.width), y=clamp01(1-(e.clientY-r.top)/r.height);
