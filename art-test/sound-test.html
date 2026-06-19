@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3pm — Sound Test</title>
+<style>
+  :root { --ink: #1a1a1a; --paper: #fafafa; --line: #e2e2e2; --accent: #c4322b; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.5rem 4rem;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink); background: var(--paper);
+  }
+  header { max-width: 880px; margin: 0 auto 1.5rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .35rem; }
+  .sub { color: #555; margin: 0; }
+  .hint { color: #777; font-size: .85rem; margin: .6rem 0 0; }
+  main { max-width: 880px; margin: 0 auto; }
+  .group { margin: 1.8rem 0 .6rem; font-size: .8rem; letter-spacing: .08em;
+           text-transform: uppercase; color: #999; border-bottom: 1px solid var(--line);
+           padding-bottom: .3rem; }
+  .row {
+    display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: center;
+    padding: .55rem .25rem; border-bottom: 1px solid var(--line);
+  }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    padding: .55rem .4rem; border: 1px solid var(--ink); border-radius: 6px;
+    background: #fff; color: var(--ink); transition: all .08s;
+  }
+  button:hover { background: var(--ink); color: #fff; }
+  button:active { transform: translateY(1px); }
+  button.flash { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .name { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .8rem;
+          color: var(--accent); display: block; margin-top: .3rem; }
+  .desc { color: #333; }
+  .desc small { color: #888; }
+</style>
+</head>
+<body>
+<header>
+  <h1>3pm — Sound Test</h1>
+  <p class="sub">Every procedural SFX event the game fires, played through the real <code>src/audio/sfx.js</code> engine. No samples — pure Web Audio synthesis.</p>
+  <p class="hint">Click any button to hear it. Some events <em>debounce</em> (ignore rapid re-clicks) — wait a beat and click again. Press <kbd>M</kbd> to mute.</p>
+</header>
+<main id="board"></main>
+
+<script type="module">
+import { sfx } from "../src/audio/sfx.js";
+
+// Event → when it plays. Mirrors the SFX recipe comments in sfx.js, grouped by game moment.
+const GROUPS = [
+  ["Combat — outgoing", [
+    ["shoot",      "You / an ally fires a projectile. Bright square \"pew\" with a downward sweep."],
+    ["swing",      "Melee arc connects. Airy band-passed whoosh."],
+    ["nova",       "Charge / nova release. Short bright noise pop with a body tone."],
+    ["field",      "A lingering field is deployed (ticks, doesn't blast). Soft low pulse."],
+    ["explode",    "Bomb / big detonation — the bassiest, longest hit. Noise body + deep sine drop."],
+  ]],
+  ["Combat — impacts", [
+    ["hit",        "An enemy takes damage. Crisp high-passed tick — highest-density sound in the game."],
+    ["freeze",     "An enemy freezes (the freeze-slingshot kill stand-in). Glassy descending chime."],
+    ["death",      "An enemy dies. Noise crunch over a sine sub-bass thump."],
+    ["enemyShoot", "An enemy fires at you. Lower, duller triangle so incoming reads distinct from outgoing."],
+    ["hurt",       "You / an ally takes damage. Harsher, lower, alerting — clearly not an enemy hit."],
+    ["scream",     "A hero dies. Wailing vibrato'd downward cry (synth stand-in for a real scream sample)."],
+  ]],
+  ["Rewards & run end", [
+    ["pickup",     "Powerup collected. Bright ascending two-note arpeggio."],
+    ["win",        "Run won — you reached home. Ascending major-triad stinger."],
+    ["lose",       "Run lost. Slow descending tone."],
+  ]],
+  ["UI / menu", [
+    ["uiMove",     "Cursor navigation tick (weapon/hero select)."],
+    ["uiSelect",   "Confirm / pick."],
+    ["uiBack",     "Cancel / close."],
+  ]],
+];
+
+const board = document.getElementById("board");
+for (const [title, rows] of GROUPS) {
+  const h = document.createElement("div");
+  h.className = "group"; h.textContent = title;
+  board.appendChild(h);
+  for (const [name, desc] of rows) {
+    const row = document.createElement("div");
+    row.className = "row";
+    const btn = document.createElement("button");
+    btn.textContent = "▶ play";
+    btn.onclick = () => {
+      sfx.play(name);
+      btn.classList.add("flash");
+      setTimeout(() => btn.classList.remove("flash"), 140);
+    };
+    const d = document.createElement("div");
+    d.className = "desc";
+    d.innerHTML = `${desc}<span class="name">${name}</span>`;
+    row.append(btn, d);
+    board.appendChild(row);
+  }
+}
+</script>
+</body>
+</html>

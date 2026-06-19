@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3pm — SFX Editor</title>
+<style>
+  :root { --ink:#1a1a1a; --paper:#fafafa; --panel:#fff; --line:#e4e4e4; --line2:#efefef;
+          --accent:#c4322b; --muted:#888; --good:#2f8f4e; --lane:#2563c4; }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--ink); background:var(--paper);
+         font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .mono { font-family:ui-monospace,Menlo,monospace; }
+  button, select, input { font:inherit; }
+  button { cursor:pointer; }
+
+  .topbar { position:sticky; top:0; z-index:20; background:var(--panel);
+            border-bottom:1px solid var(--line); padding:.55rem 1rem; display:flex;
+            align-items:center; gap:.7rem; flex-wrap:wrap; }
+  .topbar h1 { font-size:1rem; margin:0; white-space:nowrap; }
+  .topbar h1 span { color:var(--accent); }
+  .grow { flex:1; }
+  .btn { border:1px solid var(--line); background:#fff; border-radius:6px; padding:.4rem .7rem; }
+  .btn:hover { border-color:var(--ink); }
+  .btn:disabled { opacity:.4; cursor:default; }
+  .btn.dark { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .btn.accent { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .btn.sm { padding:.25rem .5rem; font-size:.8rem; }
+  .stepper { display:flex; align-items:center; gap:.5rem; }
+  .slotlabel { font-weight:600; } .slotlabel .grp { color:var(--muted); font-weight:400; font-size:.82rem; }
+  .pill { background:var(--line2); border-radius:999px; padding:.15rem .55rem; font-size:.78rem; color:#555; }
+  .toggle { display:inline-flex; align-items:center; gap:.3rem; cursor:pointer; user-select:none; }
+  label.file { display:inline-block; } label.file input { display:none; }
+
+  .wrap { display:grid; grid-template-columns:250px 1fr; gap:0; align-items:start; }
+  @media (max-width:880px){ .wrap{ grid-template-columns:1fr; } }
+  .rail { border-right:1px solid var(--line); padding:.8rem; min-height:80vh; }
+  .rail h2 { font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:.2rem 0 .6rem; }
+  .layer { border:1px solid var(--line); border-radius:8px; padding:.55rem .6rem; margin-bottom:.55rem; background:#fff; cursor:pointer; }
+  .layer.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+  .layer .lname { font-size:.82rem; display:flex; align-items:center; gap:.35rem; justify-content:space-between; }
+  .layer .lname .x { color:var(--muted); border:none; background:none; font-size:1rem; line-height:1; padding:0 .1rem; }
+  .layer .lname .x:hover { color:var(--accent); }
+  .ctl { display:flex; align-items:center; gap:.4rem; margin-top:.45rem; font-size:.76rem; color:#555; }
+  .ctl input[type=range]{ flex:1; accent-color:var(--lane); }
+  .addlayer { width:100%; border:1px dashed var(--line); background:#fafafa; border-radius:8px; padding:.5rem; color:#666; }
+  .addlayer:hover { border-color:var(--muted); color:var(--ink); }
+
+  .editor { padding:.9rem 1.1rem 6rem; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:.7rem .8rem; margin-bottom:.9rem; }
+  .card > .head { display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem; }
+  .card > .head .title { font-weight:600; font-size:.86rem; }
+  .card > .head .read { margin-left:auto; color:var(--muted); font-size:.78rem; }
+  canvas { display:block; width:100%; border-radius:6px; background:#fff; touch-action:none; }
+  .hint { color:var(--muted); font-size:.72rem; margin-top:.35rem; }
+  .secthead { font-size:.8rem; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin:.2rem .1rem .6rem; font-weight:700; }
+
+  .rack { display:grid; grid-template-columns:1fr 1fr; gap:.9rem; }
+  @media (max-width:680px){ .rack{ grid-template-columns:1fr; } }
+  .lanecard { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:.55rem .6rem; }
+  .lanecard .head { display:flex; align-items:center; gap:.45rem; margin-bottom:.4rem; }
+  .lanecard .dot { width:9px; height:9px; border-radius:2px; }
+  .lanecard .title { font-weight:600; font-size:.82rem; }
+  .lanecard .read { margin-left:auto; color:var(--muted); font-size:.74rem; }
+
+  .knobs { display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; }
+  .knob { font-size:.74rem; color:#555; } .knob input { width:100%; accent-color:var(--lane); }
+
+  .actionbar { position:fixed; left:0; right:0; bottom:0; z-index:20; background:#fff;
+               border-top:1px solid var(--line); box-shadow:0 -2px 10px rgba(0,0,0,.05);
+               display:flex; align-items:center; gap:.7rem; padding:.6rem 1rem; }
+  .empty { padding:3rem 1rem; text-align:center; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>3pm · <span>SFX Editor</span></h1>
+  <label class="file btn sm">Load picks…<input id="picksInput" type="file" accept=".json"></label>
+  <label class="file btn sm">Load recipe…<input id="recipeInput" type="file" accept=".json"></label>
+  <span class="grow"></span>
+  <div class="stepper">
+    <button class="btn sm" id="prev">‹ Prev</button>
+    <span class="pill" id="slotCount">– / –</span>
+    <span class="slotlabel" id="slotLabel">no slots</span>
+    <button class="btn sm" id="next">Next ›</button>
+  </div>
+  <span class="grow"></span>
+  <label class="toggle"><input type="checkbox" id="normalize" checked> normalize</label>
+</div>
+
+<div class="wrap">
+  <aside class="rail">
+    <h2>Layers (stacked, summed)</h2>
+    <div id="layerList"></div>
+    <button class="addlayer" id="addLayer">+ add layer</button>
+    <h2 style="margin-top:1.2rem">Master</h2>
+    <div class="ctl"><span>gain</span><input id="masterGain" type="range" min="0" max="150" value="100"><span class="mono" id="masterGainVal">1.00</span></div>
+  </aside>
+
+  <section class="editor" id="editor">
+    <div class="card">
+      <div class="head"><span class="title">Waveform — <span class="mono" id="waveName">—</span></span>
+        <span class="read" id="waveRead">drag ■ crop handles · ◆ echo tail-cap</span></div>
+      <canvas id="wave" height="150"></canvas>
+      <div class="hint">Red ■ handles set crop in/out. When echo is on, the shaded zone after crop-out
+        is the echo tail; drag the ◆ cap to trim &amp; fade where it finishes. Fades = the Gain lane.</div>
+    </div>
+
+    <div class="secthead">FX rack — animatable over the crop window</div>
+    <div class="rack" id="rack"></div>
+
+    <div class="card" style="margin-top:.9rem">
+      <div class="head"><span class="title">Echo / delay</span><span class="read">per-layer · tail-cap is the ◆ on the waveform</span></div>
+      <div class="knobs">
+        <label class="knob">time <input id="echoTime" type="range" min="10" max="600" value="90"><div class="mono" id="echoTimeVal">90 ms</div></label>
+        <label class="knob">feedback <input id="echoFb" type="range" min="0" max="95" value="0"><div class="mono" id="echoFbVal">0.00</div></label>
+        <label class="knob">wet mix <input id="echoMix" type="range" min="0" max="100" value="0"><div class="mono" id="echoMixVal">0.00</div></label>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="actionbar">
+  <button class="btn dark" id="playSlot">▶ Preview slot</button>
+  <button class="btn" id="playLayer">▶ this layer</button>
+  <span class="grow"></span>
+  <span class="hint" id="saveHint" style="margin:0"></span>
+  <button class="btn" id="saveSlot">Save slot</button>
+  <button class="btn accent" id="saveNext">Save &amp; next ›</button>
+</div>
+
+<script type="module">
+import { LANES, sampleEnv, renderSlot, encodeWav, playFloat, decodeMono, sampleRate,
+         slotsFromPicks, makeRecipe, makeLayer } from "./sfx-editor.js";
+
+const $ = id => document.getElementById(id);
+const DPR = Math.min(devicePixelRatio || 1, 2);
+function fit(cv, h){ const w=cv.clientWidth; cv.width=w*DPR; cv.height=h*DPR;
+  const c=cv.getContext("2d"); c.setTransform(DPR,0,0,DPR,0,0); return {c,w,h}; }
+const clamp01 = v => Math.max(0, Math.min(1, v));
+
+// ---- state ----
+let manifest = {};          // event -> {group, desc, samples:[{file,label}]}
+let slots = [];             // recipes
+let slotIdx = 0, selLayer = 0;
+
+const recipe = () => slots[slotIdx];
+const layer  = () => recipe()?.layers[selLayer];
+const sr = () => sampleRate();
+// decode every layer of a recipe into the engine's shared cache before rendering it
+const decodeAll = R => Promise.all(R.layers.map(l => decodeMono(l.sourceFile)));
+
+// ---- keyframe lane component ----
+function makeLane(host, cfg, kf, onChange){
+  const wrap=document.createElement("div"); wrap.className="lanecard";
+  wrap.innerHTML=`<div class="head"><span class="dot" style="background:${cfg.color}"></span>
+    <span class="title">${cfg.label}</span><span class="read">${cfg.read}</span></div>`;
+  const readEl=wrap.querySelector(".read");
+  const cv=document.createElement("canvas"); cv.height=70; wrap.appendChild(cv); host.appendChild(wrap);
+  function draw(){ const {c,w,h}=fit(cv,70); c.clearRect(0,0,w,h);
+    c.strokeStyle="#f0f0f0"; for(let i=1;i<4;i++){c.beginPath();c.moveTo(0,h*i/4);c.lineTo(w,h*i/4);c.stroke();}
+    c.strokeStyle=cfg.color; c.lineWidth=1.6; c.beginPath();
+    kf.forEach((p,i)=>{ const x=p.t01*w, y=(1-p.v01)*h; i?c.lineTo(x,y):c.moveTo(x,y); }); c.stroke(); c.lineWidth=1;
+    c.globalAlpha=.08; c.fillStyle=cfg.color; c.lineTo(w,h); c.lineTo(0,h); c.fill(); c.globalAlpha=1;
+    kf.forEach(p=>{ c.fillStyle="#fff"; c.strokeStyle=cfg.color;
+      c.beginPath(); c.arc(p.t01*w,(1-p.v01)*h,4,0,7); c.fill(); c.stroke(); });
+  }
+  const snapY = v => cfg.snap ? Math.round(v*cfg.snap)/cfg.snap : v;
+  let drag=-1;
+  cv.addEventListener("pointerdown",e=>{ const r=cv.getBoundingClientRect();
+    const x=clamp01((e.clientX-r.left)/r.width), y=clamp01(1-(e.clientY-r.top)/r.height);
+    drag=kf.findIndex(p=>Math.hypot(p.t01-x,p.v01-y)<0.07);
+    if(drag<0){ const np={t01:x,v01:snapY(y)}; kf.push(np); kf.sort((a,b)=>a.t01-b.t01); drag=kf.indexOf(np); }
+    cv.setPointerCapture(e.pointerId); move(e); });
+  function move(e){ if(drag<0)return; const r=cv.getBoundingClientRect();
+    const x=clamp01((e.clientX-r.left)/r.width), y=clamp01(1-(e.clientY-r.top)/r.height);
+    const p=kf[drag]; p.v01=snapY(y);
+    if(drag>0 && drag<kf.length-1) p.t01=Math.max(kf[drag-1].t01+1e-3,Math.min(kf[drag+1].t01-1e-3,x));
+    readEl.textContent=cfg.fmt(p.v01); draw(); onChange&&onChange(); }
+  cv.addEventListener("pointermove",move);
+  cv.addEventListener("pointerup",()=>{ if(drag>=0){drag=-1; readEl.textContent=cfg.read;} });
+  cv.addEventListener("contextmenu",e=>{ e.preventDefault(); const r=cv.getBoundingClientRect();
+    const x=clamp01((e.clientX-r.left)/r.width), y=clamp01(1-(e.clientY-r.top)/r.height);
+    const i=kf.findIndex(p=>Math.hypot(p.t01-x,p.v01-y)<0.07);
+    if(i>0 && i<kf.length-1){ kf.splice(i,1); draw(); onChange&&onChange(); } });
+  draw(); return draw;
+}
+
+// ---- waveform with crop handles + echo tail-cap ----
+let waveData=null, laneDraws=[];
+function echoTailSec(e){ if(e.mix<=0||e.feedback<=0) return 0;
+  return (Math.log(1e-3)/Math.log(e.feedback))*e.time*e.tailCap01; }
+function drawWave(){
+  const cv=$("wave"); const {c,w,h}=fit(cv,150), mid=h/2;
+  c.clearRect(0,0,w,h);
+  const L=layer(); if(!L||!waveData){ c.fillStyle="#bbb"; c.fillText("— no layer —",10,mid); return; }
+  const srcDur=waveData.length/sr();
+  const cropInT=L.crop.start01*srcDur, cropOutT=L.crop.end01*srcDur;
+  const tail=echoTailSec(L.echo);
+  const total=Math.max(srcDur, cropOutT+tail);
+  const tx=t=>t/total*w;
+  // dim outside crop
+  c.fillStyle="#f4f4f4"; c.fillRect(0,0,tx(cropInT),h); c.fillRect(tx(cropOutT),0,w-tx(cropOutT),h);
+  // source peaks
+  const N=waveData.length, srcW=tx(srcDur);
+  for(let x=0;x<srcW;x++){ const i0=Math.floor(x/srcW*N), i1=Math.floor((x+1)/srcW*N);
+    let mn=1,mx=-1; for(let i=i0;i<i1;i++){const v=waveData[i]; if(v<mn)mn=v; if(v>mx)mx=v;}
+    const tt=x/w*total; const inside= tt>=cropInT && tt<=cropOutT;
+    c.strokeStyle=inside?"#3a3a3a":"#cdcdcd"; c.beginPath();
+    c.moveTo(x+.5,mid-mx*mid*0.92); c.lineTo(x+.5,mid-mn*mid*0.92); c.stroke(); }
+  c.strokeStyle="#ddd"; c.beginPath(); c.moveTo(0,mid); c.lineTo(w,mid); c.stroke();
+  // echo tail zone (decaying triangle + repeat ticks)
+  if(tail>0){ const x0=tx(cropOutT), x1=tx(cropOutT+tail);
+    c.fillStyle="rgba(37,99,196,.10)"; c.fillRect(x0,0,x1-x0,h);
+    c.strokeStyle="rgba(37,99,196,.55)"; c.beginPath();
+    for(let x=x0;x<=x1;x+=2){ const f=(x-x0)/(x1-x0||1); const a=Math.exp(-3*f)*mid*0.8;
+      c.moveTo(x,mid-a); c.lineTo(x,mid+a);} c.stroke();
+    // cap handle (diamond)
+    c.fillStyle="#2563c4"; c.save(); c.translate(x1,mid); c.rotate(Math.PI/4);
+    c.fillRect(-5,-5,10,10); c.restore();
+  }
+  // crop handles
+  for(const t of [cropInT,cropOutT]){ const x=tx(t); c.fillStyle="#c4322b";
+    c.fillRect(x-1.5,0,3,h); c.fillRect(x-5,mid-12,10,24); }
+}
+// waveform interaction
+(function(){ const cv=$("wave"); let drag=null;
+  const geom=()=>{ const L=layer(), srcDur=waveData.length/sr();
+    const tail=echoTailSec(L.echo); const total=Math.max(srcDur,L.crop.end01*srcDur+tail);
+    return {L,srcDur,total,tail}; };
+  cv.addEventListener("pointerdown",e=>{ if(!layer()||!waveData)return;
+    const r=cv.getBoundingClientRect(); const {L,srcDur,total,tail}=geom();
+    const t=(e.clientX-r.left)/r.width*total;
+    const cIn=L.crop.start01*srcDur, cOut=L.crop.end01*srcDur, cap=cOut+tail;
+    const d=[["in",cIn],["out",cOut]]; if(tail>0)d.push(["cap",cap]);
+    drag=d.sort((a,b)=>Math.abs(a[1]-t)-Math.abs(b[1]-t))[0][0];
+    cv.setPointerCapture(e.pointerId); mv(e); });
+  function mv(e){ if(!drag)return; const r=cv.getBoundingClientRect(); const {L,srcDur,total,tail}=geom();
+    let t=Math.max(0,(e.clientX-r.left)/r.width*total);
+    if(drag==="in")  L.crop.start01=clamp01(Math.min(t/srcDur, L.crop.end01-0.01));
+    else if(drag==="out") L.crop.end01=clamp01(Math.max(t/srcDur, L.crop.start01+0.01));
+    else { const cOut=L.crop.end01*srcDur; const full=(Math.log(1e-3)/Math.log(L.echo.feedback))*L.echo.time;
+           L.echo.tailCap01=clamp01((t-cOut)/(full||1)); }
+    drawWave(); }
+  cv.addEventListener("pointermove",mv);
+  cv.addEventListener("pointerup",()=>drag=null);
+})();
+
+// ---- build per-slot UI ----
+function buildRack(){
+  const host=$("rack"); host.innerHTML=""; laneDraws=[];
+  const L=layer(); if(!L)return;
+  for(const cfg of LANES) laneDraws.push(makeLane(host,cfg,L.envelopes[cfg.key]));
+}
+function buildLayerList(){
+  const host=$("layerList"); host.innerHTML="";
+  const R=recipe(); if(!R){ host.innerHTML='<div class="hint">Load picks to begin.</div>'; return; }
+  R.layers.forEach((l,i)=>{
+    const el=document.createElement("div"); el.className="layer"+(i===selLayer?" sel":"");
+    const nm=l.sourceFile.replace("pool/","");
+    el.innerHTML=`<div class="lname"><span class="mono">${nm}</span><button class="x" title="remove">×</button></div>
+      <div class="ctl"><span>offset</span><input type="range" min="0" max="100" value="${Math.round(l.offset01*100)}">
+        <span class="mono">${Math.round(l.offset01*100)}%</span></div>
+      <div class="ctl"><label class="toggle"><input type="checkbox" ${l.reverse?"checked":""}> reverse</label></div>`;
+    el.addEventListener("click",e=>{ if(e.target.closest("input,button"))return; selLayer=i; refresh(); });
+    el.querySelector(".x").addEventListener("click",()=>{ if(R.layers.length>1){ R.layers.splice(i,1); selLayer=0; refresh(); }});
+    const rng=el.querySelector('input[type=range]');
+    rng.addEventListener("input",()=>{ l.offset01=rng.value/100; rng.nextElementSibling.textContent=rng.value+"%"; drawWave(); });
+    el.querySelector('input[type=checkbox]').addEventListener("change",e=>{ l.reverse=e.target.checked; loadWaveAndDraw(); });
+    host.appendChild(el);
+  });
+}
+function bindEcho(){
+  const L=layer(); if(!L)return;
+  $("echoTime").value=Math.round(L.echo.time*1000);
+  $("echoFb").value=Math.round(L.echo.feedback*100);
+  $("echoMix").value=Math.round(L.echo.mix*100);
+  $("echoTimeVal").textContent=Math.round(L.echo.time*1000)+" ms";
+  $("echoFbVal").textContent=L.echo.feedback.toFixed(2);
+  $("echoMixVal").textContent=L.echo.mix.toFixed(2);
+}
+$("echoTime").addEventListener("input",e=>{ layer().echo.time=e.target.value/1000; $("echoTimeVal").textContent=e.target.value+" ms"; drawWave(); });
+$("echoFb").addEventListener("input",e=>{ layer().echo.feedback=e.target.value/100; $("echoFbVal").textContent=(e.target.value/100).toFixed(2); drawWave(); });
+$("echoMix").addEventListener("input",e=>{ layer().echo.mix=e.target.value/100; $("echoMixVal").textContent=(e.target.value/100).toFixed(2); drawWave(); });
+
+async function loadWaveAndDraw(){
+  const L=layer(); if(!L){ waveData=null; drawWave(); return; }
+  $("waveName").textContent=L.sourceFile.replace("pool/","");
+  waveData=await decodeMono(L.sourceFile); drawWave();
+}
+function refreshSlotHeader(){
+  $("slotCount").textContent = slots.length? `${slotIdx+1} / ${slots.length}` : "– / –";
+  const R=recipe();
+  if(!R){ $("slotLabel").textContent="no slots"; $("saveHint").textContent=""; return; }
+  const meta=manifest[R.event];
+  $("slotLabel").innerHTML = `${R.event} <span class="grp">· ${meta?meta.group:""}</span>`;
+  $("saveHint").innerHTML = `saves <span class="mono">${R.event}.wav</span> + <span class="mono">${R.event}.recipe.json</span>`;
+  $("normalize").checked = R.master.normalize;
+  $("masterGain").value = Math.round(R.master.gain*100);
+  $("masterGainVal").textContent = R.master.gain.toFixed(2);
+}
+function refresh(){
+  refreshSlotHeader(); buildLayerList(); buildRack(); bindEcho(); loadWaveAndDraw();
+  const has=!!recipe();
+  ["playSlot","playLayer","saveSlot","saveNext"].forEach(id=>$(id).disabled=!has);
+}
+
+// ---- preview / save ----
+$("playSlot").addEventListener("click",async()=>{ const R=recipe(); if(R){ await decodeAll(R); playFloat(renderSlot(R)); } });
+$("playLayer").addEventListener("click",async()=>{ const R=recipe(); if(R){ await decodeAll(R); playFloat(renderSlot(R,selLayer)); } });
+$("normalize").addEventListener("change",e=>{ if(recipe()) recipe().master.normalize=e.target.checked; });
+$("masterGain").addEventListener("input",e=>{ if(recipe()){ recipe().master.gain=e.target.value/100; $("masterGainVal").textContent=(e.target.value/100).toFixed(2);} });
+
+function download(blob,name){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=name; a.click(); URL.revokeObjectURL(a.href); }
+async function saveSlot(){ const R=recipe(); if(!R)return; await decodeAll(R);
+  download(encodeWav(renderSlot(R), sr()), R.event+".wav");
+  download(new Blob([JSON.stringify(R,null,2)],{type:"application/json"}), R.event+".recipe.json"); }
+$("saveSlot").addEventListener("click",saveSlot);
+$("saveNext").addEventListener("click",async()=>{ await saveSlot(); if(slotIdx<slots.length-1){ slotIdx++; selLayer=0; refresh(); } });
+$("prev").addEventListener("click",()=>{ if(slotIdx>0){ slotIdx--; selLayer=0; refresh(); } });
+$("next").addEventListener("click",()=>{ if(slotIdx<slots.length-1){ slotIdx++; selLayer=0; refresh(); } });
+
+$("addLayer").addEventListener("click",()=>{
+  const R=recipe(); if(!R)return; const meta=manifest[R.event];
+  const used=new Set(R.layers.map(l=>l.sourceFile));
+  const pool=(meta?meta.samples:[]).map(s=>s.file).filter(f=>!used.has(f));
+  const pick=pool[0]||(meta&&meta.samples[0]&&meta.samples[0].file);
+  if(pick){ R.layers.push(makeLayer(pick)); selLayer=R.layers.length-1; refresh(); }
+});
+
+// ---- load picks / recipe ----
+$("picksInput").addEventListener("change",async e=>{
+  const f=e.target.files[0]; if(!f)return; const picks=JSON.parse(await f.text());
+  slots=slotsFromPicks(picks); slotIdx=0; selLayer=0; refresh(); });
+$("recipeInput").addEventListener("change",async e=>{
+  const f=e.target.files[0]; if(!f)return; const R=JSON.parse(await f.text());
+  if(slots.length===0){ slots=[R]; slotIdx=0; } else slots[slotIdx]=R;   // replace current slot
+  selLayer=0; refresh(); });
+
+// ---- boot: load manifest for labels, seed a demo from the pool so the page is usable immediately ----
+(async function boot(){
+  manifest = Object.fromEntries((await fetch("sfx-preview/manifest.json").then(r=>r.json()))
+                                .map(ev=>[ev.name, ev]));
+  // demo: first sample of a few punchy events, so there's something to edit before loading picks
+  const demoEvents=["hit","shoot","explode","scream"].filter(e=>manifest[e]);
+  const picks={}; for(const e of demoEvents) picks[e]=[manifest[e].samples[0].file];
+  slots=slotsFromPicks(picks); refresh();
+})();
+</script>
+</body>
+</html>

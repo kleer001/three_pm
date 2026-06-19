@@ -1,0 +1,529 @@
+[
+  {
+    "name": "shoot",
+    "group": "Combat \u2014 outgoing",
+    "desc": "You / an ally fires a projectile.",
+    "samples": [
+      {
+        "file": "pool/loadgun_01_2.wav",
+        "label": "loadGun_01-2.wav"
+      },
+      {
+        "file": "pool/loadgun_03_2.wav",
+        "label": "loadGun_03-2.wav"
+      },
+      {
+        "file": "pool/wooshcrispy_01_2.wav",
+        "label": "wooshCrispy_01-2.wav"
+      },
+      {
+        "file": "pool/sfx_demomangun1_2.wav",
+        "label": "SFX_DemomanGun1-2.wav"
+      },
+      {
+        "file": "pool/sfx_medicgun1_2.wav",
+        "label": "SFX_MedicGun1-2.wav"
+      },
+      {
+        "file": "pool/sfx_snipergun1_2.wav",
+        "label": "SFX_SniperGun1-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "swing",
+    "group": "Combat \u2014 outgoing",
+    "desc": "Melee arc connects.",
+    "samples": [
+      {
+        "file": "pool/woosh_01_2.wav",
+        "label": "woosh_01-2.wav"
+      },
+      {
+        "file": "pool/wooshcrispy_01_2.wav",
+        "label": "wooshCrispy_01-2.wav"
+      },
+      {
+        "file": "pool/monkwoosh_01_2.wav",
+        "label": "monkWoosh_01-2.wav"
+      },
+      {
+        "file": "pool/air_01_2.wav",
+        "label": "air_01-2.wav"
+      },
+      {
+        "file": "pool/blade_03_2.wav",
+        "label": "blade_03-2.wav"
+      },
+      {
+        "file": "pool/sfx_scoutmelee_2.wav",
+        "label": "SFX_ScoutMelee-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "nova",
+    "group": "Combat \u2014 outgoing",
+    "desc": "Charge / nova release.",
+    "samples": [
+      {
+        "file": "pool/orchestrahit_01_2.wav",
+        "label": "orchestraHit_01-2.wav"
+      },
+      {
+        "file": "pool/bladeorchhit_01_2.wav",
+        "label": "bladeOrchHit_01-2.wav"
+      },
+      {
+        "file": "pool/rumblehit_01_2.wav",
+        "label": "rumbleHit_01-2.wav"
+      },
+      {
+        "file": "pool/slam_01_2.wav",
+        "label": "slam_01-2.wav"
+      },
+      {
+        "file": "pool/airandbasshit_02_2.wav",
+        "label": "airAndBassHit_02-2.wav"
+      },
+      {
+        "file": "pool/rocketaccelerate_01_2.wav",
+        "label": "rocketAccelerate_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "field",
+    "group": "Combat \u2014 outgoing",
+    "desc": "A lingering field is deployed (ticks, doesn't blast).",
+    "samples": [
+      {
+        "file": "pool/electriclab_01_2.wav",
+        "label": "electricLab_01-2.wav"
+      },
+      {
+        "file": "pool/windingmachine_01_2.wav",
+        "label": "windingMachine_01-2.wav"
+      },
+      {
+        "file": "pool/electric_01_2.wav",
+        "label": "electric_01-2.wav"
+      },
+      {
+        "file": "pool/bassshortrumble_01_2.wav",
+        "label": "bassShortRumble_01-2.wav"
+      },
+      {
+        "file": "pool/sfx_electroground_2.wav",
+        "label": "SFX_ElectroGround-2.wav"
+      },
+      {
+        "file": "pool/unbreakelectric_2.wav",
+        "label": "unBreakElectric-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "explode",
+    "group": "Combat \u2014 outgoing",
+    "desc": "Bomb / big detonation \u2014 the bassiest, longest hit.",
+    "samples": [
+      {
+        "file": "pool/sfx_explode_2.wav",
+        "label": "SFX_Explode-2.wav"
+      },
+      {
+        "file": "pool/sfx_bang1_2.wav",
+        "label": "SFX_Bang1-2.wav"
+      },
+      {
+        "file": "pool/sfx_boulder_2.wav",
+        "label": "SFX_Boulder-2.wav"
+      },
+      {
+        "file": "pool/breakbigwall_2.wav",
+        "label": "breakBigWall-2.wav"
+      },
+      {
+        "file": "pool/smashanddust_01_2.wav",
+        "label": "smashAndDust_01-2.wav"
+      },
+      {
+        "file": "pool/slam_02_2.wav",
+        "label": "slam_02-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "hit",
+    "group": "Combat \u2014 impacts",
+    "desc": "An enemy takes damage. Highest-density sound in the game.",
+    "samples": [
+      {
+        "file": "pool/slap_01_2.wav",
+        "label": "slap_01-2.wav"
+      },
+      {
+        "file": "pool/bitchslap_2.wav",
+        "label": "bitchSlap-2.wav"
+      },
+      {
+        "file": "pool/metalhit_01_2.wav",
+        "label": "metalHit_01-2.wav"
+      },
+      {
+        "file": "pool/hitding_01_2.wav",
+        "label": "hitDing_01-2.wav"
+      },
+      {
+        "file": "pool/punchsand_2.wav",
+        "label": "punchSand-2.wav"
+      },
+      {
+        "file": "pool/ceramicclink_01_2.wav",
+        "label": "ceramicClink_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "freeze",
+    "group": "Combat \u2014 impacts",
+    "desc": "An enemy freezes (the freeze-slingshot kill stand-in).",
+    "samples": [
+      {
+        "file": "pool/ceramicclink_01_2.wav",
+        "label": "ceramicClink_01-2.wav"
+      },
+      {
+        "file": "pool/breakglassandaugh_01_2.wav",
+        "label": "breakGlassAndAugh_01-2.wav"
+      },
+      {
+        "file": "pool/hitding_01_2.wav",
+        "label": "hitDing_01-2.wav"
+      },
+      {
+        "file": "pool/dingwoosh_01_2.wav",
+        "label": "dingWoosh_01-2.wav"
+      },
+      {
+        "file": "pool/sfx_ding_2.wav",
+        "label": "SFX_Ding-2.wav"
+      },
+      {
+        "file": "pool/clickbeep_01_2.wav",
+        "label": "clickBeep_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "death",
+    "group": "Combat \u2014 impacts",
+    "desc": "An enemy dies. Crunch / squish.",
+    "samples": [
+      {
+        "file": "pool/basshitandsquish_01_2.wav",
+        "label": "bassHitAndSquish_01-2.wav"
+      },
+      {
+        "file": "pool/smash_01_2.wav",
+        "label": "smash_01-2.wav"
+      },
+      {
+        "file": "pool/smashandcrumble_01_2.wav",
+        "label": "smashAndCrumble_01-2.wav"
+      },
+      {
+        "file": "pool/wetrip_01_2.wav",
+        "label": "wetRip_01-2.wav"
+      },
+      {
+        "file": "pool/gloppy_1_2.wav",
+        "label": "gloppy_1-2.wav"
+      },
+      {
+        "file": "pool/dieandstuff_01_2.wav",
+        "label": "DIEandStuff_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "enemyShoot",
+    "group": "Combat \u2014 impacts",
+    "desc": "An enemy fires at you. Should read distinct from your shots.",
+    "samples": [
+      {
+        "file": "pool/sfx_laser2_2.wav",
+        "label": "SFX_Laser2-2.wav"
+      },
+      {
+        "file": "pool/sfx_electroground_2.wav",
+        "label": "SFX_ElectroGround-2.wav"
+      },
+      {
+        "file": "pool/sfx_drillbit_2.wav",
+        "label": "SFX_DrillBit-2.wav"
+      },
+      {
+        "file": "pool/electric_02_2.wav",
+        "label": "electric_02-2.wav"
+      },
+      {
+        "file": "pool/angrybuzz_01_2.wav",
+        "label": "angryBuzz_01-2.wav"
+      },
+      {
+        "file": "pool/crazybeep_01_2.wav",
+        "label": "crazyBeep_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "hurt",
+    "group": "Combat \u2014 impacts",
+    "desc": "You / an ally takes damage.",
+    "samples": [
+      {
+        "file": "pool/sfx_scouthurt_2.wav",
+        "label": "SFX_ScoutHurt-2.wav"
+      },
+      {
+        "file": "pool/sfx_heavyhurt_2.wav",
+        "label": "SFX_HeavyHurt-2.wav"
+      },
+      {
+        "file": "pool/sfx_medichurt_2.wav",
+        "label": "SFX_MedicHurt-2.wav"
+      },
+      {
+        "file": "pool/gasp_01_2.wav",
+        "label": "gasp_01-2.wav"
+      },
+      {
+        "file": "pool/huaugh_01_2.wav",
+        "label": "huaugh_01-2.wav"
+      },
+      {
+        "file": "pool/hitandgasp_01_2.wav",
+        "label": "hitAndGasp_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "scream",
+    "group": "Combat \u2014 impacts",
+    "desc": "A hero dies. (Current synth is an explicit placeholder.)",
+    "samples": [
+      {
+        "file": "pool/scream_01_2.wav",
+        "label": "scream_01-2.wav"
+      },
+      {
+        "file": "pool/scream_02_2.wav",
+        "label": "scream_02-2.wav"
+      },
+      {
+        "file": "pool/scream_03_2.wav",
+        "label": "scream_03-2.wav"
+      },
+      {
+        "file": "pool/scream_04_2.wav",
+        "label": "scream_04-2.wav"
+      },
+      {
+        "file": "pool/groupscream_01_2.wav",
+        "label": "groupScream_01-2.wav"
+      },
+      {
+        "file": "pool/yellingstruggle_01_2.wav",
+        "label": "yellingStruggle_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "pickup",
+    "group": "Rewards & run end",
+    "desc": "Powerup collected.",
+    "samples": [
+      {
+        "file": "pool/sfx_ding_2.wav",
+        "label": "SFX_Ding-2.wav"
+      },
+      {
+        "file": "pool/sfx_capture_2.wav",
+        "label": "SFX_Capture-2.wav"
+      },
+      {
+        "file": "pool/sfx_success_2.wav",
+        "label": "SFX_Success-2.wav"
+      },
+      {
+        "file": "pool/sfx_selected_2.wav",
+        "label": "SFX_Selected-2.wav"
+      },
+      {
+        "file": "pool/hitding_01_2.wav",
+        "label": "hitDing_01-2.wav"
+      },
+      {
+        "file": "pool/dingwoosh_01_2.wav",
+        "label": "dingWoosh_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "win",
+    "group": "Rewards & run end",
+    "desc": "Run won \u2014 you reached home.",
+    "samples": [
+      {
+        "file": "pool/sfx_heavywin_2.wav",
+        "label": "SFX_HeavyWin-2.wav"
+      },
+      {
+        "file": "pool/sfx_soldierwin_2.wav",
+        "label": "SFX_SoldierWin-2.wav"
+      },
+      {
+        "file": "pool/sfx_spywin_2.wav",
+        "label": "SFX_SpyWin-2.wav"
+      },
+      {
+        "file": "pool/sfx_demomanwin_2.wav",
+        "label": "SFX_DemomanWin-2.wav"
+      },
+      {
+        "file": "pool/sfx_success_2.wav",
+        "label": "SFX_Success-2.wav"
+      },
+      {
+        "file": "pool/yeehaww_01_2.wav",
+        "label": "yeeHaww_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "lose",
+    "group": "Rewards & run end",
+    "desc": "Run lost.",
+    "samples": [
+      {
+        "file": "pool/sfx_heavydie_2.wav",
+        "label": "SFX_HeavyDie-2.wav"
+      },
+      {
+        "file": "pool/sfx_spydie_2.wav",
+        "label": "SFX_SpyDie-2.wav"
+      },
+      {
+        "file": "pool/evillaugh_01_2.wav",
+        "label": "evilLaugh_01-2.wav"
+      },
+      {
+        "file": "pool/readytodie_2.wav",
+        "label": "readyToDie-2.wav"
+      },
+      {
+        "file": "pool/deathrolling_2.wav",
+        "label": "deathRolling-2.wav"
+      },
+      {
+        "file": "pool/sliceshudder_2.wav",
+        "label": "sliceShudder-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "uiMove",
+    "group": "UI / menu",
+    "desc": "Cursor navigation tick.",
+    "samples": [
+      {
+        "file": "pool/clickbeep_01_2.wav",
+        "label": "clickBeep_01-2.wav"
+      },
+      {
+        "file": "pool/clickbeep_02_2.wav",
+        "label": "clickBeep_02-2.wav"
+      },
+      {
+        "file": "pool/clicksqueek_01_2.wav",
+        "label": "clickSqueek_01-2.wav"
+      },
+      {
+        "file": "pool/squeek_01_2.wav",
+        "label": "squeek_01-2.wav"
+      },
+      {
+        "file": "pool/sfx_select_2.wav",
+        "label": "SFX_Select-2.wav"
+      },
+      {
+        "file": "pool/beepalarm_01_2.wav",
+        "label": "beepAlarm_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "uiSelect",
+    "group": "UI / menu",
+    "desc": "Confirm / pick.",
+    "samples": [
+      {
+        "file": "pool/sfx_selected_2.wav",
+        "label": "SFX_Selected-2.wav"
+      },
+      {
+        "file": "pool/sfx_ding_2.wav",
+        "label": "SFX_Ding-2.wav"
+      },
+      {
+        "file": "pool/sfx_continue_2.wav",
+        "label": "SFX_Continue-2.wav"
+      },
+      {
+        "file": "pool/hitding_01_2.wav",
+        "label": "hitDing_01-2.wav"
+      },
+      {
+        "file": "pool/clickbeep_02_2.wav",
+        "label": "clickBeep_02-2.wav"
+      },
+      {
+        "file": "pool/dingwoosh_01_2.wav",
+        "label": "dingWoosh_01-2.wav"
+      }
+    ]
+  },
+  {
+    "name": "uiBack",
+    "group": "UI / menu",
+    "desc": "Cancel / close.",
+    "samples": [
+      {
+        "file": "pool/clicksqueek_02_2.wav",
+        "label": "clickSqueek_02-2.wav"
+      },
+      {
+        "file": "pool/squeek_01_2.wav",
+        "label": "squeek_01-2.wav"
+      },
+      {
+        "file": "pool/sfx_select_2.wav",
+        "label": "SFX_Select-2.wav"
+      },
+      {
+        "file": "pool/clickbeep_01_2.wav",
+        "label": "clickBeep_01-2.wav"
+      },
+      {
+        "file": "pool/doorclose_01_2.wav",
+        "label": "doorClose_01-2.wav"
+      },
+      {
+        "file": "pool/zipstrange_01_2.wav",
+        "label": "zipStrange_01-2.wav"
+      }
+    ]
+  }
+]

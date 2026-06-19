@@ -8,3 +8,9 @@ dist/
 
 # local screen recordings
 docs/recordings/
+
+# foley sample pool — third-party commercial clips, regenerable via art-test/build_sfx_preview.py
+art-test/sfx-preview/pool/
+
+# playwright-mcp scratch output (screenshots, console logs)
+.playwright-mcp/
