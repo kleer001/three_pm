@@ -27,10 +27,12 @@ export const HERO_UNLOCKS = Object.fromEntries(BALANCE.roster.map((c) => [c.id, 
 // which a fresh campaign keeps the durable meta (credits/unlocks/upgrades) but resets
 // the crew + day. `runCount` stays the lifetime counter across campaigns; `campaign.day`
 // is the per-campaign day, reset on wipe/new-game.
+// A new campaign opens with just the lead hero on the walk; the other run-0 heroes are
+// available as reserves to enlist (recruitable from day 1), the rest unlock by run count.
 const STARTERS = BALANCE.roster.filter((c) => c.unlockAtRuns === 0).map((c) => c.id);
 
 export function startCampaign() {
-  return { day: 1, crew: STARTERS.slice(), dead: [] };
+  return { day: 1, crew: STARTERS.slice(0, 1), dead: [] };
 }
 
 // Remove this run's fallen from the crew (they're gone for the campaign), log them dead.
