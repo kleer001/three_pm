@@ -15,8 +15,7 @@ import { mountOverlay } from "../ui/overlay.js";
 import { sfx } from "../audio/sfx.js";
 
 const STATS = [["SPD", "speed"], ["CON", "constitution"], ["STR", "strength"], ["MAG", "magic"]];
-const bust = (id) => `assets/portraits/busts/${id}.png`;
-const body = (id) => `assets/portraits/${id}.png`;
+const body = (id) => `assets/portraits/${id}.png`; // full-body cutout (card avatar crops the head)
 
 const CSS = `
 #ui-overlay .uvp{--uv:#ccff00;--mag:#ff2d95;--cyan:#00e5ff;--ink:#f2f4f0;--dim:#6f7566;--card:#0b0c09;--card2:#070806;--line:#1c1f18;--num:#3c4232;
@@ -31,8 +30,10 @@ const CSS = `
 #ui-overlay .uvp .body{position:absolute;top:72px;left:18px;right:18px;bottom:92px;display:grid;grid-template-columns:1fr 232px;gap:12px}
 #ui-overlay .uvp .grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px}
 #ui-overlay .uvp .card{position:relative;border:1px solid var(--line);background:linear-gradient(180deg,var(--card),var(--card2));padding:8px 10px 8px 54px;overflow:hidden;cursor:pointer}
-#ui-overlay .uvp .card .av{position:absolute;left:8px;top:20px;width:40px;height:46px;border-radius:3px;overflow:hidden;border:1px solid var(--line)}
-#ui-overlay .uvp .card .av img{position:absolute;left:50%;top:-2px;transform:translateX(-50%);width:auto;height:132px}
+#ui-overlay .uvp .card .av{position:absolute;left:8px;top:20px;width:40px;height:40px;border-radius:3px;overflow:hidden;border:1px solid var(--line)}
+#ui-overlay .uvp .card .av img{position:absolute;left:50%;top:0;transform:translateX(-50%);width:auto;height:150px}
+#ui-overlay .uvp .card .av .ph{width:100%;height:100%}
+#ui-overlay .uvp .card .av .ph circle,#ui-overlay .uvp .card .av .ph path{fill:#3c4232}
 #ui-overlay .uvp .card .no{position:absolute;right:7px;top:5px;font-family:"Anton";font-size:22px;color:var(--num);line-height:1}
 #ui-overlay .uvp .card .slot{position:absolute;right:30px;top:6px;font-family:"Anton";font-size:14px;color:#8a9468;line-height:1;display:none}
 #ui-overlay .uvp .card.inparty .slot{display:block}
@@ -44,8 +45,7 @@ const CSS = `
 #ui-overlay .uvp .card .eq i span{position:absolute;left:0;right:0;bottom:0;display:block}
 #ui-overlay .uvp .card.sel{border-color:var(--uv);box-shadow:0 0 0 1px var(--uv),inset 0 0 30px rgba(204,255,0,.08)}
 #ui-overlay .uvp .card.sel .no{color:rgba(204,255,0,.16)}
-#ui-overlay .uvp .card.lock,#ui-overlay .uvp .card.dead{opacity:.42;cursor:default}
-#ui-overlay .uvp .card.lock .av img,#ui-overlay .uvp .card.dead .av img{filter:grayscale(1) brightness(.7)}
+#ui-overlay .uvp .card.lock,#ui-overlay .uvp .card.dead{opacity:.5;cursor:default}
 #ui-overlay .uvp .card .lk{position:absolute;left:54px;right:6px;bottom:7px;font-family:"Space Mono";font-size:9px;letter-spacing:.16em;color:var(--cyan)}
 #ui-overlay .uvp .card.dead .lk{color:var(--mag)}
 #ui-overlay .uvp .rail{display:flex;flex-direction:column;gap:10px;min-height:0}
@@ -134,8 +134,11 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     const cls = ["card", i === gridSel && zone === "grid" ? "sel" : "", slot >= 0 ? "inparty" : "", lk ? "lock" : "", dd ? "dead" : ""].join(" ");
     const eq = STATS.map(([, k]) => `<i><span style="height:${h.stats[k] / 10 * 100}%;background:${a}"></span></i>`).join("");
     const veil = dd ? `<div class="lk">✝ FELL</div>` : lk ? `<div class="lk">⟳ RUN ${h.unlockAtRuns}</div>` : "";
+    const av = (lk || dd)
+      ? `<svg class="ph" viewBox="0 0 40 40"><circle cx="20" cy="14" r="8"></circle><path d="M4 40 Q20 22 36 40 Z"></path></svg>`
+      : `<img src="${body(h.id)}" alt="" onerror="this.remove()">`;
     return `<div class="${cls}" data-i="${i}">
-      <div class="av" style="background:${h.color}"><img src="${bust(h.id)}" alt="" onerror="this.remove()"></div>
+      <div class="av" style="background:${lk || dd ? "#0e1009" : h.color}">${av}</div>
       <div class="slot">${slot >= 0 ? slot + 1 : ""}</div><div class="no">${String(i + 1).padStart(2, "0")}</div>
       <div class="nm">${h.name}</div><div class="gn" style="color:${h.color}">${h.genre}</div>
       <div class="sig" style="color:${a}">✦ ${sName(h)}</div>
