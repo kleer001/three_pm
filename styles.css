@@ -29,3 +29,11 @@ html, body {
   max-width: 800px;
   touch-action: none;          /* suppress browser scroll/zoom on touch drags */
 }
+
+/* DOM-overlay for the menu scenes (src/ui/overlay.js): a fixed 800x600 stage scaled by
+   JS to sit exactly over the canvas's live rect. Letterbox area stays click-through. */
+#ui-overlay { position: fixed; z-index: 10; display: none; pointer-events: none; }
+#ui-overlay .ui-stage {
+  width: 800px; height: 600px; transform-origin: top left;
+  position: relative; overflow: hidden; pointer-events: auto; user-select: none;
+}
