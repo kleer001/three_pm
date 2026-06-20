@@ -65,6 +65,7 @@ const CSS = `
 #ui-overlay .uvp .doss .ds .t b{flex:1;background:#22261a}
 #ui-overlay .uvp .doss .ds .nn{font-family:"Anton";font-size:12px;text-align:right}
 #ui-overlay .uvp .doss .bodyshot{position:absolute;right:2px;bottom:0;height:184px;width:auto;filter:drop-shadow(0 3px 6px rgba(0,0,0,.6))}
+#ui-overlay .uvp .doss .bodyshot.ph circle,#ui-overlay .uvp .doss .bodyshot.ph path{fill:#22261a}
 #ui-overlay .uvp .arena{height:120px;position:relative;border:1px solid var(--line);background:radial-gradient(120% 90% at 50% 0%,#0c0f0a,#040503);overflow:hidden;flex:0 0 auto}
 #ui-overlay .uvp .arena .alab{position:absolute;left:9px;top:8px;font-family:"Space Mono";font-size:8px;letter-spacing:.18em;color:var(--uv);text-shadow:0 0 10px rgba(204,255,0,.5)}
 #ui-overlay .uvp .arena .alab .dl{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--mag);box-shadow:0 0 8px var(--mag);margin-right:5px;vertical-align:middle}
@@ -140,13 +141,23 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     return `<div class="${cls}" data-i="${i}">
       <div class="av" style="background:${lk || dd ? "#0e1009" : h.color}">${av}</div>
       <div class="slot">${slot >= 0 ? slot + 1 : ""}</div><div class="no">${String(i + 1).padStart(2, "0")}</div>
-      <div class="nm">${h.name}</div><div class="gn" style="color:${h.color}">${h.genre}</div>
-      <div class="sig" style="color:${a}">✦ ${sName(h)}</div>
+      <div class="nm"${lk ? ` style="color:#5a6147"` : ""}>${lk ? "?????" : h.name}</div>
+      ${lk ? "" : `<div class="gn" style="color:${h.color}">${h.genre}</div><div class="sig" style="color:${a}">✦ ${sName(h)}</div>`}
       ${veil || `<div class="eq">${eq}</div>`}</div>`;
   }
 
   function dossHTML() {
     const h = roster[gridSel], slot = party.indexOf(h.id);
+    if (!unlocked(h)) { // unknown hero: censor everything (name, genre, sig, stats, figure)
+      const blanks = STATS.map(([lab]) => `<div class="ds"><i>${lab}</i><div class="t">${"<b></b>".repeat(10)}</div><div class="nn" style="color:#3c4232">?</div></div>`).join("");
+      return `<div class="tag">LOCKED · UNIT ${String(gridSel + 1).padStart(2, "0")}</div>
+        <h2 style="color:#5a6147">?????</h2>
+        <div class="gn" style="color:var(--dim)">UNLOCKS AT RUN ${h.unlockAtRuns}</div>
+        <div class="sigbox"><small>SIGNATURE</small><b style="color:#5a6147">??????</b></div>
+        <div class="status" style="color:var(--cyan)">locked — keep getting home to unlock</div>
+        <div class="dstats">${blanks}</div>
+        <svg class="bodyshot ph" viewBox="0 0 80 188"><circle cx="40" cy="44" r="26"></circle><path d="M0 188 Q40 96 80 188 Z"></path></svg>`;
+    }
     const bars = STATS.map(([lab, k]) =>
       `<div class="ds"><i>${lab}</i><div class="t">${Array.from({ length: 10 }, (_, j) =>
         `<b style="${j < h.stats[k] ? `background:${h.color};box-shadow:0 0 6px ${h.color}` : ""}"></b>`).join("")}</div><div class="nn">${h.stats[k]}</div></div>`).join("");
@@ -166,12 +177,12 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   }
 
   function arenaHTML() {
-    const h = roster[gridSel];
-    return `<div class="alab"><span class="dl"></span>LIVE ▸ SIG: ${sName(h).toUpperCase()}</div>
+    const h = roster[gridSel], lk = !unlocked(h), col = lk ? "#3c4232" : h.color;
+    return `<div class="alab"><span class="dl"></span>LIVE ▸ SIG: ${lk ? "??????" : sName(h).toUpperCase()}</div>
       <div class="nova" style="left:52%;top:46%;width:64px;height:64px"></div>
       <div class="ent dummy" style="left:30%;top:64%;width:14px;height:14px"></div><div class="dmg" style="left:30%;top:44%">19</div>
       <div class="ent dummy" style="left:72%;top:56%;width:14px;height:14px"></div><div class="dmg" style="left:72%;top:36%">19</div>
-      <div class="ent hero" style="left:52%;top:46%;width:18px;height:18px;color:${h.color};background:${h.color}"></div>`;
+      <div class="ent hero" style="left:52%;top:46%;width:18px;height:18px;color:${col};background:${col}"></div>`;
   }
 
   function congaHTML() {
