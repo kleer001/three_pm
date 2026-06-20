@@ -123,9 +123,10 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
 
   // --- chat log lines (the crew group chat: totals land, the fallen go offline, newly-met
   // survivors sign in, then the surviving crew check in). No placeholder partner. ---
-  const lines = [];
-  const sys = (html, cls = "") => lines.push(`<p class="line"><span class="sys ${cls}">${html}</span></p>`);
-  const says = (id, msg) => { const c = roster.find((x) => x.id === id) || {}; lines.push(`<p class="line"><span class="nk" style="color:${c.color || "#c0392b"}">${handle(id)}</span> says: ${msg}</p>`); };
+  // Events: 'sys' status lines pop in whole; 'msg' buddy lines show the handle, then type out.
+  const events = [];
+  const sys = (html, cls = "") => events.push({ kind: "sys", html: `<p class="line"><span class="sys ${cls}">${html}</span></p>` });
+  const says = (id, msg) => { const c = roster.find((x) => x.id === id) || {}; events.push({ kind: "msg", prefix: `<span class="nk" style="color:${c.color || "#c0392b"}">${handle(id)}</span> says: `, body: msg }); };
   sys(`———  <b>3:00 PM. the bell rang.</b>  ———`);
   sys(fill(result.won ? C.system.distanceWon : C.system.distance, { dist: dist.toLocaleString() }));
   sys(fill(C.system.haul, { cash: result.cashDiscarded || 0, kills: result.kills }));
@@ -191,26 +192,46 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
   let armed = false, done = false;
   mountOverlay(root);
 
-  // Progressive reveal: the run totals land, then the surviving crew check in one after
-  // another, like a real IM conversation typing through. Driven by the loop via update().
+  // Progressive reveal driven by the loop: status lines pop, buddy messages type out fast.
+  // The crew comes in one after another like a real IM thread. One input skips it all.
   const logEl = root.querySelector(".log");
   const hintEl = root.querySelector(".hint");
-  let shown = 0, revealT = 0.5;
-  const REVEAL = 0.7;
+  const CPS = 62, MSG_GAP = 0.3, SYS_GAP = 0.38; // chars/sec, post-message + post-status pauses
   const finishHint = `▸ click / SPACE — ${wipe ? "…" : result.won ? "head to tomorrow" : "try another day"}`;
-  function pushLine() { logEl.insertAdjacentHTML("beforeend", lines[shown++]); logEl.scrollTop = logEl.scrollHeight; sfx.play("uiMove"); }
+  let ei = 0, typing = null, pause = 0.4;
+  const fullyShown = () => ei >= events.length && !typing;
+  const bottom = () => (logEl.scrollTop = logEl.scrollHeight);
   function step(dt) {
-    if (shown >= lines.length) return;
-    revealT -= dt;
-    while (revealT <= 0 && shown < lines.length) { pushLine(); revealT += REVEAL; }
-    if (shown >= lines.length) hintEl.textContent = finishHint;
+    if (fullyShown()) return;
+    if (typing) {                                  // mid-message: advance the cursor
+      typing.pos += CPS * dt;
+      const n = Math.min(typing.text.length, Math.floor(typing.pos));
+      typing.span.textContent = typing.text.slice(0, n); bottom();
+      if (n >= typing.text.length) { typing = null; pause = MSG_GAP; if (fullyShown()) hintEl.textContent = finishHint; }
+      return;
+    }
+    if (pause > 0) { pause -= dt; return; }
+    const ev = events[ei++];
+    if (ev.kind === "sys") { logEl.insertAdjacentHTML("beforeend", ev.html); pause = SYS_GAP; bottom(); if (fullyShown()) hintEl.textContent = finishHint; }
+    else { // buddy line: handle shows, body types
+      logEl.insertAdjacentHTML("beforeend", `<p class="line">${ev.prefix}<span class="typed"></span></p>`);
+      typing = { span: logEl.lastElementChild.querySelector(".typed"), text: ev.body, pos: 0 };
+      sfx.play("uiMove"); bottom();
+    }
   }
-  function revealAll() { while (shown < lines.length) logEl.insertAdjacentHTML("beforeend", lines[shown++]); logEl.scrollTop = logEl.scrollHeight; hintEl.textContent = finishHint; }
+  function revealAll() {
+    logEl.innerHTML = "";
+    for (const ev of events) {
+      if (ev.kind === "sys") logEl.insertAdjacentHTML("beforeend", ev.html);
+      else { const p = document.createElement("p"); p.className = "line"; p.innerHTML = `${ev.prefix}<span class="typed"></span>`; p.querySelector(".typed").textContent = ev.body; logEl.appendChild(p); }
+    }
+    ei = events.length; typing = null; bottom(); hintEl.textContent = finishHint;
+  }
 
-  // First input skips the animation to the full log; a second advances.
+  // First input skips to the full thread; a second advances.
   const finish = () => {
     if (done) return;
-    if (shown < lines.length) { revealAll(); sfx.play("uiSelect"); return; }
+    if (!fullyShown()) { revealAll(); sfx.play("uiSelect"); return; }
     done = true; sfx.play("uiSelect"); teardown();
   };
   root.addEventListener("click", finish);
