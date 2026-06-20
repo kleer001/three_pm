@@ -11,6 +11,7 @@
 import { BALANCE } from "./balance.js";
 import { isHeroUnlocked, save, purchaseUpgrade, UPGRADES, upgradeRank, nextCost } from "../meta/save.js";
 import { VOID_BACKGROUNDS } from "./voidBackgrounds.js";
+import { createPartyPreview } from "./partyPreview.js";
 import { mountOverlay } from "../ui/overlay.js";
 import { sfx } from "../audio/sfx.js";
 
@@ -73,7 +74,8 @@ const CSS = `
 #ui-overlay .uvp .arena .hero{box-shadow:0 0 16px currentColor,inset 0 0 0 2px rgba(255,255,255,.25)}
 #ui-overlay .uvp .arena .dummy{background:#e8743b;box-shadow:0 0 8px rgba(232,116,59,.6)}
 #ui-overlay .uvp .arena .nova{position:absolute;border-radius:50%;border:2px solid var(--mag);box-shadow:0 0 24px rgba(255,45,149,.6),inset 0 0 24px rgba(255,45,149,.3);transform:translate(-50%,-50%)}
-#ui-overlay .uvp .arena .dmg{position:absolute;font-family:"Anton";font-size:13px;color:#fff;transform:translate(-50%,-50%);text-shadow:0 0 8px rgba(255,45,149,.8)}
+#ui-overlay .uvp .arena .arena-cv{position:absolute;left:0;top:0;z-index:0}
+#ui-overlay .uvp .arena .alab{z-index:2}
 #ui-overlay .uvp .foot{position:absolute;left:0;right:0;bottom:0;height:80px;border-top:2px solid var(--uv);background:#060604;display:grid;grid-template-rows:1fr 1fr}
 #ui-overlay .uvp .conga{display:flex;align-items:center;padding:0 20px;border-bottom:1px solid #16180f;overflow:hidden}
 #ui-overlay .uvp .clab{font-family:"Space Mono";font-size:9px;letter-spacing:.2em;color:var(--dim);white-space:nowrap;margin-right:14px}
@@ -115,6 +117,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   const isDead = (id) => dead.has(id);
   const isIn = (id) => party.includes(id);
   const canEnlist = (c) => unlocked(c) && !isDead(c.id) && !isIn(c.id);
+  const navigable = (i) => isIn(roster[i].id) || canEnlist(roster[i]); // focusable cards: crew + reserves (locked/fallen are skipped)
   const wName = (h) => BALANCE.weapons[h.weaponId].name;
   const sName = (h) => (BALANCE.signatures[h.signatureId] || {}).name || "—";
   const accent = (h, sel) => (sel ? "#ccff00" : h.color);
@@ -129,6 +132,16 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   root.className = "uvp";
   const resolveBg = () => (bgIndex < 0 ? VOID_BACKGROUNDS[(Math.random() * VOID_BACKGROUNDS.length) | 0] : VOID_BACKGROUNDS[bgIndex]).id;
   let chosenBg = null; // locked in at start (so Automatic resolves once)
+
+  // Live battle preview (shared combat sim): drawn into a canvas that persists across the
+  // picker's DOM re-renders — re-attached into the .arena each render, driven by the loop
+  // through this scene's update/render. The focused hero acts in its role (head=weapon,
+  // reserve=signature), matching runScene.
+  const previewCanvas = document.createElement("canvas");
+  previewCanvas.width = 230; previewCanvas.height = 118; previewCanvas.className = "arena-cv";
+  const preview = createPartyPreview(previewCanvas.getContext("2d"), { x: 0, y: 0, w: 230, h: 118 });
+  const roleOf = (id) => (party[0] === id ? "head" : "follower");
+  let lastPreviewSel = -1;
 
   function cardHTML(h, i) {
     const slot = party.indexOf(h.id), lk = !unlocked(h), dd = isDead(h.id), a = accent(h, i === gridSel && zone === "grid");
@@ -177,12 +190,9 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   }
 
   function arenaHTML() {
-    const h = roster[gridSel], lk = !unlocked(h), col = lk ? "#3c4232" : h.color;
-    return `<div class="alab"><span class="dl"></span>LIVE ▸ SIG: ${lk ? "??????" : sName(h).toUpperCase()}</div>
-      <div class="nova" style="left:52%;top:46%;width:64px;height:64px"></div>
-      <div class="ent dummy" style="left:30%;top:64%;width:14px;height:14px"></div><div class="dmg" style="left:30%;top:44%">19</div>
-      <div class="ent dummy" style="left:72%;top:56%;width:14px;height:14px"></div><div class="dmg" style="left:72%;top:36%">19</div>
-      <div class="ent hero" style="left:52%;top:46%;width:18px;height:18px;color:${col};background:${col}"></div>`;
+    const h = roster[gridSel], lk = !unlocked(h);
+    const what = lk ? "??????" : party[0] === h.id ? "WEAPON: " + wName(h).toUpperCase() : "SIG: " + sName(h).toUpperCase();
+    return `<div class="alab"><span class="dl"></span>LIVE ▸ ${what}</div>`; // the canvas is re-attached here each render
   }
 
   function congaHTML() {
@@ -224,6 +234,11 @@ export function createPartySelectScene(ctx, input, seed, blob) {
       <div class="foot"><div class="conga">${congaHTML()}</div>
         <div class="bgrow${zone === "bg" ? " focus" : ""}"><span class="clab">VOID FEED</span><div class="bgs">${bgHTML()}</div></div></div>
       ${modalHTML()}`;
+    const arenaEl = root.querySelector(".arena"); // re-home the persistent preview canvas + refocus the sim
+    if (arenaEl) {
+      arenaEl.insertBefore(previewCanvas, arenaEl.firstChild);
+      if (gridSel !== lastPreviewSel) { preview.setHero(roster[gridSel], roleOf(roster[gridSel].id)); lastPreviewSel = gridSel; }
+    }
   }
 
   function act(i) {
@@ -245,7 +260,8 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   // pointer (delegated)
   root.addEventListener("mouseover", (e) => {
     const card = e.target.closest("[data-i]"); if (!card) return;
-    const i = +card.dataset.i; if (i !== gridSel || zone !== "grid") { gridSel = i; zone = "grid"; sfx.play("uiMove"); render(); }
+    const i = +card.dataset.i; if (!navigable(i)) return; // locked/fallen aren't selectable
+    if (i !== gridSel || zone !== "grid") { gridSel = i; zone = "grid"; sfx.play("uiMove"); render(); }
   });
   root.addEventListener("click", (e) => {
     if (e.target.closest("[data-start]")) return startWalk();
@@ -266,17 +282,25 @@ export function createPartySelectScene(ctx, input, seed, blob) {
       return; }
     if (e.code === "Enter") return startWalk();
     if (e.code === "KeyA") { bgIndex = -1; zone = "bg"; return render(); }
+    // Selectable cards (crew + reserves) form a linear list; arrows step over locked/fallen
+    // cards and fall through to Start, then the void feed.
+    const list = roster.map((_, i) => i).filter(navigable);
+    const fwd = e.code === "ArrowRight" || e.code === "ArrowDown";
+    const back = e.code === "ArrowLeft" || e.code === "ArrowUp";
     if (zone === "grid") {
-      const col = gridSel % 3, row = (gridSel / 3) | 0;
-      if (e.code === "ArrowRight") { gridSel = row * 3 + (col + 1) % 3; render(); }
-      else if (e.code === "ArrowLeft") { gridSel = row * 3 + (col + 2) % 3; render(); }
-      else if (e.code === "ArrowUp") { if (row > 0) { gridSel -= 3; render(); } }
-      else if (e.code === "ArrowDown") { if (row < 2) { gridSel += 3; render(); } else { zone = "start"; render(); } }
-      else if (e.code === "Space") act(gridSel);
+      const cur = list.indexOf(gridSel);
+      if (fwd) {
+        if (cur < 0) { gridSel = list[0]; render(); }                    // from a hovered locked card
+        else if (cur < list.length - 1) { gridSel = list[cur + 1]; render(); }
+        else { zone = "start"; render(); }                               // past the last hero → Start
+      } else if (back) {
+        if (cur > 0) { gridSel = list[cur - 1]; render(); }
+        else if (cur < 0) { gridSel = list[list.length - 1]; render(); }  // at the first hero → stay
+      } else if (e.code === "Space") act(gridSel);
       else if (e.code === "KeyU" && unlocked(roster[gridSel]) && UPGRADES[roster[gridSel].id]) { modal = roster[gridSel].id; render(); }
     } else if (zone === "start") {
-      if (e.code === "ArrowUp") { zone = "grid"; render(); }
-      else if (e.code === "ArrowDown") { zone = "bg"; render(); }
+      if (back) { zone = "grid"; gridSel = list[list.length - 1]; render(); }
+      else if (fwd) { zone = "bg"; render(); }
       else if (e.code === "Space") startWalk();
     } else if (zone === "bg") {
       if (e.code === "ArrowUp") { zone = "start"; render(); }
@@ -293,7 +317,8 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   render();
   mountOverlay(root);
   return {
-    update() {}, render() {},
+    update(dt) { preview.update(dt); },   // drive the live battle preview each frame
+    render() { preview.render(); },
     get done() { return confirmed; },
     get party() { return party.slice(); },
     get bgId() { return chosenBg || resolveBg(); },
