@@ -134,6 +134,9 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
   sys(fill(result.won ? C.system.distanceWon : C.system.distance, { dist: dist.toLocaleString() }));
   sys(fill(C.system.haul, { cash: result.cashDiscarded || 0, kills: result.kills }));
   for (const id of justFell) sys(fill(pick(C.heroFell), { handle: handle(id) }), "fell");
+  // the surviving crew check in, one after another (their handle, in conga order)
+  const crewSays = (id, msg) => { const c = roster.find((x) => x.id === id) || {}; lines.push(`<p class="line"><span class="nk" style="color:${c.color || "#c0392b"}">${handle(id)}</span> says: ${msg}</p>`); };
+  for (const id of (result.survived || [])) crewSays(id, pick(C.crewCheckIn));
   sys(fill(result.won ? C.system.dayWon : C.system.dayAgain, { day }));
 
   const reflection = result.won ? pick(C.won) : pick(C.lost[family]);
@@ -168,7 +171,7 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
         <div class="toline">To: <b>${handle(partnerId)}</b> &lt;${partnerId}_lives4thedrop@hotmail.com&gt;</div>
         <div class="infobar"><span>ⓘ</span><span>${handle(partnerId)} might not reply right away — she's still walking home.</span></div>
         <div class="safety"><span>🔑</span><span>Never tell anyone the way home, even if they say they're your friend.</span></div>
-        <div class="log">${lines.join("")}</div>
+        <div class="log"></div>${/* filled in progressively by step() */ ""}
       </div><div class="cvdps"><div class="d">🎧</div><div class="d you">🙂</div></div></div>
       <div class="cvfmt"><span class="em">A</span><span class="em">😊</span><span class="vc">🎤 Voice Clip</span><span class="em">🎁</span><span class="em">〰️</span></div>
       <div class="cventry"><div class="box">${reflection}${milestone}</div><div class="sendbig">Send</div></div>
@@ -191,7 +194,30 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
     <div class="hint">▸ click / SPACE — ${wipe ? "…" : result.won ? "head to tomorrow" : "try another day"}</div>`;
 
   let armed = false, done = false;
-  const finish = () => { if (done) return; done = true; sfx.play("uiSelect"); teardown(); };
+  mountOverlay(root);
+
+  // Progressive reveal: the run totals land, then the surviving crew check in one after
+  // another, like a real IM conversation typing through. Driven by the loop via update().
+  const logEl = root.querySelector(".log");
+  const hintEl = root.querySelector(".hint");
+  let shown = 0, revealT = 0.5;
+  const REVEAL = 0.7;
+  const finishHint = `▸ click / SPACE — ${wipe ? "…" : result.won ? "head to tomorrow" : "try another day"}`;
+  function pushLine() { logEl.insertAdjacentHTML("beforeend", lines[shown++]); logEl.scrollTop = logEl.scrollHeight; sfx.play("uiMove"); }
+  function step(dt) {
+    if (shown >= lines.length) return;
+    revealT -= dt;
+    while (revealT <= 0 && shown < lines.length) { pushLine(); revealT += REVEAL; }
+    if (shown >= lines.length) hintEl.textContent = finishHint;
+  }
+  function revealAll() { while (shown < lines.length) logEl.insertAdjacentHTML("beforeend", lines[shown++]); logEl.scrollTop = logEl.scrollHeight; hintEl.textContent = finishHint; }
+
+  // First input skips the animation to the full log; a second advances.
+  const finish = () => {
+    if (done) return;
+    if (shown < lines.length) { revealAll(); sfx.play("uiSelect"); return; }
+    done = true; sfx.play("uiSelect"); teardown();
+  };
   root.addEventListener("click", finish);
   const onKey = (e) => { if (armed && (e.code === "Space" || e.code === "Enter")) finish(); };
   const onUp = (e) => { if (e.code === "Space" || e.code === "Enter") armed = true; };
@@ -200,6 +226,6 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
   setTimeout(() => (armed = true), 200); // ignore a confirm key held from the run's death-fire
   function teardown() { removeEventListener("keydown", onKey); removeEventListener("keyup", onUp); }
 
-  mountOverlay(root);
-  return { update() {}, render() {}, get done() { return done; }, get wipe() { return wipe; }, nextSeed, bgId };
+  hintEl.textContent = "▸ click / SPACE — skip";
+  return { update(dt) { step(dt); }, render() {}, get done() { return done; }, get wipe() { return wipe; }, nextSeed, bgId };
 }

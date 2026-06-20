@@ -20,6 +20,20 @@ export const summaryCopy = {
     valentine: "x0_valentine_0x",
   },
 
+  // Surviving crew checking in, one after another, after the run totals land. Generic enough
+  // for any hero (attributed to their handle), lowercase teen IM.
+  crewCheckIn: [
+    "made it. that was way too close.",
+    "still here. dont ask how.",
+    "present. exhausted. present.",
+    "ok we are NOT doing that again. (we are.)",
+    "im fine. im totally fine. my legs are not fine.",
+    "that street is so wrong. but we're back.",
+    "home. everyone count off. i'll start.",
+    "checking in. barely. but in.",
+    "we keep doing this. tomorrow then.",
+  ],
+
   won: [
     "porch light. front door. mom didnt even notice i was gone.",
     "made it. dropping my bag right here. not moving til tomorrow.",
