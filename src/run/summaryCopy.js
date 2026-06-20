@@ -20,6 +20,16 @@ export const summaryCopy = {
     valentine: "x0_valentine_0x",
   },
 
+  // A newly-met survivor signing in for the first time (the run-count unlock — they "come in"
+  // to the chat). Generic per hero, lowercase teen IM; the old comp's Jess intro vibe.
+  joined: [
+    "ok i saw your away message. so the street really is... yeah. yeah it is.",
+    "added you. flagpole after the bell — we go together from now on.",
+    "hey, heard you made it back. ...is it always that bad out there?",
+    "found your screenname carved in the bus stop. im in. lets get home.",
+    "signing in. dunno how much help i'll be but. i'm here now.",
+  ],
+
   // Surviving crew checking in, one after another, after the run totals land. Generic enough
   // for any hero (attributed to their handle), lowercase teen IM.
   crewCheckIn: [

@@ -110,7 +110,7 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
 
   const roster = BALANCE.roster;
   const headId = result.heroId;
-  const partnerId = headId === "jess" ? "marvin" : "jess"; // the friend you walk with
+  const newUnlocks = after.unlockedHeroes.filter((id) => !before.unlockedHeroes.includes(id)); // heroes who "sign in" this run
   const dist = Math.round(result.distanceFraction * 1200);
   const day = before.campaign.day;
   const justFell = new Set(result.died || []);
@@ -121,22 +121,17 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
     const s = document.createElement("style"); s.id = "msn-css"; s.textContent = CSS; document.head.appendChild(s);
   }
 
-  // --- chat log lines ---
+  // --- chat log lines (the crew group chat: totals land, the fallen go offline, newly-met
+  // survivors sign in, then the surviving crew check in). No placeholder partner. ---
   const lines = [];
   const sys = (html, cls = "") => lines.push(`<p class="line"><span class="sys ${cls}">${html}</span></p>`);
-  const them = (html) => lines.push(`<p class="line"><span class="nk them">${handle(partnerId)}</span> says: ${html}</p>`);
-  sys(`♪ <b>${handle(partnerId)}</b> has been added to the conversation.`);
-  them("MARVIN. omg. it's me — chem class, 4th period??");
-  them("i see it too. the street. the <i>things</i>. you're NOT crazy 🙂");
-  them("we walk home together now. don't be weird about it");
-  lines.push(`<p class="line"><span class="wink">${handle(partnerId)} just sent you a Nudge! 〰️</span></p>`);
+  const says = (id, msg) => { const c = roster.find((x) => x.id === id) || {}; lines.push(`<p class="line"><span class="nk" style="color:${c.color || "#c0392b"}">${handle(id)}</span> says: ${msg}</p>`); };
   sys(`———  <b>3:00 PM. the bell rang.</b>  ———`);
   sys(fill(result.won ? C.system.distanceWon : C.system.distance, { dist: dist.toLocaleString() }));
   sys(fill(C.system.haul, { cash: result.cashDiscarded || 0, kills: result.kills }));
   for (const id of justFell) sys(fill(pick(C.heroFell), { handle: handle(id) }), "fell");
-  // the surviving crew check in, one after another (their handle, in conga order)
-  const crewSays = (id, msg) => { const c = roster.find((x) => x.id === id) || {}; lines.push(`<p class="line"><span class="nk" style="color:${c.color || "#c0392b"}">${handle(id)}</span> says: ${msg}</p>`); };
-  for (const id of (result.survived || [])) crewSays(id, pick(C.crewCheckIn));
+  for (const id of newUnlocks) { sys(fill(C.system.addedToConvo, { handle: handle(id) })); says(id, pick(C.joined)); } // a new survivor comes in
+  for (const id of (result.survived || [])) says(id, pick(C.crewCheckIn)); // the crew check in, in conga order
   sys(fill(result.won ? C.system.dayWon : C.system.dayAgain, { day }));
 
   const reflection = result.won ? pick(C.won) : pick(C.lost[family]);
@@ -162,14 +157,14 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
   root.innerHTML = `
     <div class="iconfield">${ICONS.map(([g, l]) => `<div class="ic"><span class="g">${g}</span><span class="l">${l}</span></div>`).join("")}</div>
     <div class="win" style="left:32px;top:25px;width:487px;height:500px">
-      <div class="tb"><span class="ti" style="background:#fff">👋</span><span class="t">${nameOf(partnerId)} - Instant Message</span>
+      <div class="tb"><span class="ti" style="background:#fff">👋</span><span class="t">the walk home — Group</span>
         <span class="ctrls"><span class="cb">_</span><span class="cb">□</span><span class="cb x">×</span></span></div>
       <div class="cvbar"><div class="ab"><span class="g">✉️</span>Invite</div><div class="ab"><span class="g">📁</span>Send Files</div>
         <div class="ab"><span class="g">🎙️</span>Voice</div><div class="ab"><span class="g">🎲</span>Activities</div><div class="ab"><span class="g">🎮</span>Games</div>
         <span class="sp"></span><span class="logo"><b>BUDDY</b>👋</span></div>
       <div class="cvbody"><div class="cvmain">
-        <div class="toline">To: <b>${handle(partnerId)}</b> &lt;${partnerId}_lives4thedrop@hotmail.com&gt;</div>
-        <div class="infobar"><span>ⓘ</span><span>${handle(partnerId)} might not reply right away — she's still walking home.</span></div>
+        <div class="toline">To: <b>the walk home</b> &lt;merriton_high_survivors@hotmail.com&gt;</div>
+        <div class="infobar"><span>ⓘ</span><span>some of the crew might not reply right away — they're still walking home.</span></div>
         <div class="safety"><span>🔑</span><span>Never tell anyone the way home, even if they say they're your friend.</span></div>
         <div class="log"></div>${/* filled in progressively by step() */ ""}
       </div><div class="cvdps"><div class="d">🎧</div><div class="d you">🙂</div></div></div>
@@ -189,7 +184,7 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
       <div class="clmark"><b>BUDDY</b>👋 <small>a Mesa product</small></div>
     </div>
     <div class="taskbar"><div class="start"><span class="o">⊞</span> start</div>
-      <div class="tasks"><div class="tk">👋 BUDDY</div><div class="tk active">👋 ${nameOf(partnerId)} - Instant Message</div></div>
+      <div class="tasks"><div class="tk">👋 BUDDY</div><div class="tk active">👋 the walk home — Group</div></div>
       <div class="tray"><span>🔊</span><span>👋</span><span class="clock">3:00 PM</span></div></div>
     <div class="hint">▸ click / SPACE — ${wipe ? "…" : result.won ? "head to tomorrow" : "try another day"}</div>`;
 
