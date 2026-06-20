@@ -28,6 +28,8 @@ const HERO_Y = 0.18;      // hero's vertical position as a fraction of arena hei
 const DOWN = 58;          // projectile target: this far straight below the hero (in melee range)
 const SIDE_DX = 62, SIDE_DY = 30; // knockback target: offset to the side, slightly farther out
 const DUMMY_HP = 80;      // punching-bag HP — survives a few hits so knockback is visible before it drops
+const ENT_SCALE = 0.5;    // hero + dummy radius are oversized for the small arena — halve them
+const Y_NUDGE = 12;       // push the whole cluster down so it clears the arena title
 
 export function createPartyPreview(ctx, rect) {
   // Effect/entity state — all in arena-LOCAL coords (origin at the rect's top-left).
@@ -55,7 +57,7 @@ export function createPartyPreview(ctx, rect) {
   function buildHero(def, role) {
     const wdef = BALANCE.weapons[def.weaponId];
     const h = {
-      x: rect.w / 2, y: rect.h * HERO_Y, r: BALANCE.hero.r, role,
+      x: rect.w / 2, y: rect.h * HERO_Y + Y_NUDGE, r: BALANCE.hero.r * ENT_SCALE, role,
       faction: "player", color: def.color, stats: { ...(def.stats || BALANCE.hero.stats) },
       iframes: 0, iframeDur: BALANCE.hero.iframeDur, manaRegen: BALANCE.hero.manaRegen, dead: false,
       cd: 0, sigCd: 0, charge: 0, damageTaken: 0,
@@ -72,7 +74,7 @@ export function createPartyPreview(ctx, rect) {
   function makeDummy(ax, ay) {
     const def = BALANCE.enemies.shambler; // baseline marcher — visible chip, honest TTK
     const e = {
-      def, faction: "enemy", stats: def.stats, r: def.r, color: def.color,
+      def, faction: "enemy", stats: def.stats, r: def.r * ENT_SCALE, color: def.color,
       x: ax, y: ay, ax, ay, respawnT: 0, down: false,
       iframes: 0, dead: false, frozenT: 0, freezeCount: 0, confuseT: 0,
     };
