@@ -39,9 +39,9 @@
       <select id="tpl"></select>
     </label>
     <label>Scale
-      <input id="scale" type="range" min="0.5" max="2" step="0.02" value="0.72">
+      <input id="scale" type="range" min="0.5" max="2" step="0.02" value="1">
     </label>
-    <span class="read">left <b id="rL">—</b> · top <b id="rT">—</b> · scale <b id="rS">0.72</b></span>
+    <span class="read">left <b id="rL">—</b> · top <b id="rT">—</b> · scale <b id="rS">1.00</b></span>
     <button id="copy" class="accent">⧉ Copy left/top/scale</button>
   </div>
   <div class="stage-wrap"><canvas id="game" width="800" height="600"></canvas></div>
@@ -63,7 +63,7 @@ const $ = (id) => document.getElementById(id);
 const tplSel = $("tpl"), scaleEl = $("scale");
 POPUPS.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = `${i + 1}. ${p.cls} — ${p.title}`; tplSel.appendChild(o); });
 
-let L = 187, T = 8, S = 0.72, tpl = 0, pop = null, msn = null;
+let L = 187, T = 8, S = 1, tpl = 0, pop = null, msn = null;
 
 function applyBox() {
   if (!pop) return;

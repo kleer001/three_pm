@@ -124,29 +124,29 @@ export const CSS = `
 #ui-overlay .msn .tray .clock{font-weight:bold}
 #ui-overlay .msn .hint{position:absolute;left:50%;bottom:36px;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#cfe0ff;padding:4px 12px;border-radius:11px;font-size:11px;letter-spacing:.04em;white-space:nowrap;z-index:9}
 /* the sketchy run-totals popup — a garish early-2000s ad window. Two numbers matter (money
-   gained + enemies destroyed); everything else is fluff. --ad-s = resting scale (baked from the
-   layout proxy); the pop-in animates around it so there's no scale snap. */
-#ui-overlay .msn .adpop{position:absolute;width:320px;z-index:12;--ad-s:1;border:2px solid var(--ad-edge);border-radius:3px;background:var(--ad-bg);
+   gained + enemies destroyed); everything else is fluff. It renders at native scale so its title
+   bar matches the chat windows' chrome (.tb/.cb); compactness comes from the tight body, not a
+   transform. The pop-in only animates the entrance. */
+#ui-overlay .msn .adpop{position:absolute;width:238px;z-index:12;border:2px solid var(--ad-edge);border-radius:3px;background:var(--ad-bg);
   box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 0 1px #fff inset;font-family:"Tahoma","Segoe UI",sans-serif;
-  transform-origin:0 0;transform:scale(var(--ad-s));animation:adPop .34s cubic-bezier(.2,1.5,.4,1)}
+  transform-origin:0 0;animation:adPop .34s cubic-bezier(.2,1.5,.4,1)}
 #ui-overlay .msn .adpop.out{animation:adOut .22s ease forwards}
-#ui-overlay .msn .adpop .ad-tb{display:flex;align-items:center;gap:5px;padding:3px 4px;background:var(--ad-tb);color:#fff;font:bold 11px Tahoma;text-shadow:0 1px 1px rgba(0,0,0,.5)}
+#ui-overlay .msn .adpop .ad-tb{display:flex;align-items:center;gap:6px;padding:4px 5px 5px;background:var(--ad-tb);color:#fff;font:bold 11px Tahoma;text-shadow:0 1px 1px rgba(0,0,0,.5)}
 #ui-overlay .msn .adpop .ad-ti{font-size:12px;line-height:1}
 #ui-overlay .msn .adpop .ad-t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#ui-overlay .msn .adpop .ad-x{width:18px;height:16px;border:1px solid #fff;border-radius:2px;display:grid;place-items:center;background:rgba(255,255,255,.25);cursor:pointer;animation:adJit 1.8s ease-in-out infinite}
+#ui-overlay .msn .adpop .ad-x{width:21px;height:18px;border:1px solid #fff;border-radius:3px;display:grid;place-items:center;background:rgba(255,255,255,.25);cursor:pointer}
 #ui-overlay .msn .adpop .ad-x:hover{background:rgba(255,255,255,.5)}
-#ui-overlay .msn .adpop .ad-body{padding:8px 12px 5px;text-align:center;color:var(--ad-ink)}
-#ui-overlay .msn .adpop .ad-h{font:bold 13px Tahoma;line-height:1.15;color:var(--ad-hl)}
+#ui-overlay .msn .adpop .ad-body{padding:6px 9px 4px;text-align:center;color:var(--ad-ink)}
+#ui-overlay .msn .adpop .ad-h{font:bold 11px Tahoma;line-height:1.15;color:var(--ad-hl)}
 #ui-overlay .msn .adpop .ad-h b{color:var(--ad-pop)}
-#ui-overlay .msn .adpop .ad-stats{display:flex;gap:8px;justify-content:center;margin-top:6px}
-#ui-overlay .msn .adpop .ad-stat{flex:1;background:rgba(255,255,255,.5);border:1px solid var(--ad-edge);border-radius:4px;padding:4px 2px 3px}
-#ui-overlay .msn .adpop .ad-num{font:italic bold 25px Georgia,serif;color:var(--ad-pop);line-height:1;text-shadow:1px 1px 0 #fff}
-#ui-overlay .msn .adpop .ad-cap{font-size:9px;text-transform:uppercase;letter-spacing:.03em;opacity:.85;margin-top:3px}
-#ui-overlay .msn .adpop .ad-foot{padding:4px 12px 7px;font-size:9px;opacity:.6;text-align:center;line-height:1.25}
+#ui-overlay .msn .adpop .ad-stats{display:flex;gap:6px;justify-content:center;margin-top:5px}
+#ui-overlay .msn .adpop .ad-stat{flex:1;background:rgba(255,255,255,.5);border:1px solid var(--ad-edge);border-radius:4px;padding:3px 2px}
+#ui-overlay .msn .adpop .ad-num{font:italic bold 19px Georgia,serif;color:var(--ad-pop);line-height:1;text-shadow:1px 1px 0 #fff}
+#ui-overlay .msn .adpop .ad-cap{font-size:8px;text-transform:uppercase;letter-spacing:.03em;opacity:.85;margin-top:3px}
+#ui-overlay .msn .adpop .ad-foot{padding:3px 9px 6px;font-size:8px;opacity:.6;text-align:center;line-height:1.25}
 #ui-overlay .msn .adpop .ad-blink{animation:adBlink .8s steps(1) infinite}
-@keyframes adPop{0%{transform:scale(calc(var(--ad-s)*.55));opacity:0}70%{transform:scale(calc(var(--ad-s)*1.06))}100%{transform:scale(var(--ad-s));opacity:1}}
-@keyframes adOut{to{transform:scale(calc(var(--ad-s)*.6));opacity:0}}
-@keyframes adJit{0%,90%,100%{transform:translate(0,0)}93%{transform:translate(-1px,1px)}96%{transform:translate(1px,-1px)}98%{transform:translate(-1px,0)}}
+@keyframes adPop{0%{transform:scale(.55);opacity:0}70%{transform:scale(1.06)}100%{transform:scale(1);opacity:1}}
+@keyframes adOut{to{transform:scale(.6);opacity:0}}
 @keyframes adBlink{50%{opacity:.15}}
 `;
 
@@ -256,13 +256,12 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
   // The run-totals ad: pops over the desktop a beat after the chat opens. Any click on it (the
   // tiny ×, the CTA, the body) dismisses it — same skippable contract as the rest of the scene.
   const stats = { dist: dist.toLocaleString(), kills: result.kills, cash: result.cashDiscarded || 0, day, won: result.won };
-  const ad = pick(POPUPS); // template colors/copy vary per run; geometry jitters a touch around the
-  const rand = (a, b) => a + Math.random() * (b - a); // proxy-tuned anchor (187/8, scale .72) for funsies
-  const adL = Math.round(187 + rand(-16, 16)), adT = Math.round(8 + rand(-5, 11));
-  const adS = (0.72 * rand(0.94, 1.08)).toFixed(3), adRad = Math.round(rand(1, 7));
+  const ad = pick(POPUPS); // template colors/copy vary per run; position + corner radius jitter a
+  const rand = (a, b) => a + Math.random() * (b - a); // touch around the proxy-tuned anchor for funsies
+  const adL = Math.round(187 + rand(-16, 16)), adT = Math.round(8 + rand(-5, 11)), adRad = Math.round(rand(1, 7));
   const popEl = document.createElement("div");
   popEl.className = `adpop ${ad.cls}`;
-  popEl.setAttribute("style", `${ad.vars};left:${adL}px;top:${adT}px;--ad-s:${adS};border-radius:${adRad}px`);
+  popEl.setAttribute("style", `${ad.vars};left:${adL}px;top:${adT}px;border-radius:${adRad}px`);
   popEl.innerHTML = `
     <div class="ad-tb"><span class="ad-ti">${ad.icon}</span><span class="ad-t">${ad.title}</span><span class="ad-x">×</span></div>
     <div class="ad-body">${ad.body(stats)}</div>
