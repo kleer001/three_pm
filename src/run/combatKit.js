@@ -104,7 +104,7 @@ export function createCombat(env) {
       faction: attacker.faction, attacker, damage: o.damage,
       freeze: o.freeze, knockback: o.knockback, shotR: o.shotR, color: o.color,
       shape: o.shape || "projectile", radius: o.radius, pierce: o.pierce, hits: o.pierce ? new Set() : null,
-      fuse: o.fuse != null ? o.fuse : null, impact: o.impact, planted: false,
+      fuse: o.fuse != null ? o.fuse : null, impact: o.impact, planted: false, persist: o.persist,
     });
   }
 
@@ -137,7 +137,7 @@ export function createCombat(env) {
         fireShot(attacker, Math.cos(a) * w.speed, Math.sin(a) * w.speed, {
           damage: w.damage, life: w.life, shotR: w.shotR,
           color: THEME.weaponShot[w.id], freeze: w.freeze, knockback: w.knockback,
-          shape: w.shape, radius: w.radius, pierce: w.pierce, fuse: w.fuse, impact: w.impact,
+          shape: w.shape, radius: w.radius, pierce: w.pierce, fuse: w.fuse, impact: w.impact, persist: w.persist,
         });
       }
       fired = true;
@@ -216,6 +216,10 @@ export function createCombat(env) {
   // Projectiles (hero + enemy): resolve each against the opposite faction. Bombs detonate
   // an area on contact/expiry; beams pierce and hit each target once; fuses plant then blast;
   // the rest hit the first target and die.
+  // A `persist` shot leaves a spent pellet where it dies (hit or expiry), pushed into the
+  // optional `env.debris` sink — purely decorative, omitted in the preview (no sink).
+  function dropDebris(p) { if (p.persist && env.debris) env.debris.push({ x: p.x, y: p.y, r: p.shotR }); }
+
   function stepProjectiles(dt) {
     for (const p of projectiles) {
       if (p.dead) continue;
@@ -224,7 +228,7 @@ export function createCombat(env) {
       if (p.life <= 0 || env.projectileBlocked(p.x, p.y)) {
         if (p.fuse != null) { p.planted = true; p.vx = 0; p.vy = 0; continue; } // plant, then fuse
         if (p.shape === "bomb") detonate(p); // a lob that fizzles still bursts where it lands
-        p.dead = true; continue;
+        dropDebris(p); p.dead = true; continue;
       }
       const pad = p.faction === "enemy" ? BALANCE.enemyShotHitPad : 0;
       for (const t of (p.faction === "player" ? enemies : env.heroTargets)) {
@@ -234,7 +238,7 @@ export function createCombat(env) {
           if (p.shape === "bomb") { detonate(p); p.dead = true; break; }
           if (p.pierce) { if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze); p.hits.add(t); } continue; }
           applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze);
-          p.dead = true; break;
+          dropDebris(p); p.dead = true; break;
         }
       }
     }

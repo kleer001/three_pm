@@ -92,7 +92,10 @@ export const BALANCE = {
   // magic, plus percent-HP terms) resolved against the hero's stats; `manaCost`
   // spends the hero pool; `freeze`/`knockback` are on-hit effects.
   weapons: {
-    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  knockback: 0, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 1 / 3, pctCur: 0 },   desc: "⅓ max HP + str · freezes" },
+    // A small knockback gives the freeze a satisfying shove on contact; a halved shotR
+    // makes the pellet read as a pebble; `persist` leaves a spent pellet on the ground
+    // where it lands (decorative — see THEME.pellet / the debris sink in combatKit).
+    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 3, life: 2, freeze: true,  manaCost: 0,  knockback: 1, persist: true, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 1 / 3, pctCur: 0 },   desc: "⅓ max HP + str · freezes" },
     // 40% of current HP front-loads the chunk; the magic-scaled flat lets it finish
     // (a pure %-current weapon asymptotes and never kills).
     hex:       { name: "Hex",       shape: "projectile", cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, knockback: 0, damage: { scaling: "magic",    base: 2, ratio: 0.4, pctMax: 0, pctCur: 0.4 },  desc: "40% current HP + magic · costs mana" },
@@ -220,6 +223,7 @@ export const THEME = {
   obstacleDarken: "rgba(0,0,0,0.4)", // darken obstacles so collision is legible
   homeBand: "rgba(255,215,0,0.35)",
   corpse: "#2b2622",
+  pellet: "rgba(120,112,96,0.7)", // spent slingshot pellet left on the ground (persist)
   enemyShot: { r: 5, color: "#145a32" },
   weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6", beam: "#1abc9c", bomb: "#e67e22", nova: "#f5d76e", field: "#8e44ad",
     bat: "#bdc3c7", cleave: "#e74c3c", spear: "#95a5a6", whirl: "#f39c12",

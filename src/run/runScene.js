@@ -243,6 +243,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const fields = [];      // lingering damage zones (field weapon)
   const deployables = []; // placed turrets (Eugene's Drum Machine) — hold world position
   const floaters = [];    // rising damage numbers, one per landed hit, visual only
+  const debris = [];      // spent slingshot pellets resting where they landed (persist), visual only
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   let outcome = null;
   let paused = false, pEsc = false; // Esc toggles a full freeze during free descent
@@ -393,7 +394,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   // wall-collided knockback; the wall/expiry test; the crush-line deployable cull; and the
   // loot/loss-on-death hook (a hero death ends the run, an enemy death rolls loot once).
   const combat = createCombat({
-    enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters,
+    enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters, debris,
     knockback,
     projectileBlocked: (x, y) => !isWalkable(level, Math.floor(x / TS), Math.floor(y / TS)),
     cullDeployable: (d) => d.y < cam.y + MARGIN, // left behind once the crush line passes it
@@ -889,6 +890,9 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     for (let i = blasts.length - 1; i >= 0; i--) if (blasts[i].t >= THEME.blast.dur) blasts.splice(i, 1);
     for (let i = swings.length - 1; i >= 0; i--) if (swings[i].t >= THEME.melee.dur) swings.splice(i, 1);
     for (let i = floaters.length - 1; i >= 0; i--) if (floaters[i].t >= THEME.hitNumber.dur) floaters.splice(i, 1);
+    // Pellets persist where they land, but the descent only moves down — once one is above
+    // the viewport it can never return, so cull it to bound the array over a run.
+    for (let i = debris.length - 1; i >= 0; i--) if (debris[i].y < cam.y) debris.splice(i, 1);
     // Reap dead followers (HP gone or crushed) — permadeath, also off the shot-target list.
     for (let i = followers.length - 1; i >= 0; i--) {
       if (!followers[i].dead) continue;
@@ -1102,6 +1106,9 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       disc(ctx, d.x - cam.x, d.y - cam.y, d.r, THEME.deploy.fill);
       ring(ctx, d.x - cam.x, d.y - cam.y, d.r + 2, THEME.deploy.ring);
     }
+
+    // Spent slingshot pellets resting on the ground (drawn under corpses and everything live).
+    for (const d of debris) disc(ctx, d.x - cam.x, d.y - cam.y, d.r, THEME.pellet);
 
     // Corpses (drawn under everything live)
     for (const e of enemies)
