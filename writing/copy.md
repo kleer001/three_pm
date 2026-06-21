@@ -14,7 +14,7 @@ don't promise a feature we won't ship). Marvin (`marv™`) is the account/hub.
 *Slingshot · Good Vibes (heal aura)*
 > this is fine. this is a completely normal Tuesday. good vibes only — i mean that medically.
 
-## 1. Chad — `TANK²⁰⁰²`
+## 1. Chad — `CHAD_THE_TANK`
 *Cleave · Mosh Pit (knockback nova)*
 **[G]** MARV. BRO. the cul de sac is FULL of things. i cleaved one straight into TWO others. YOU GOOD???
 **[T]** where the hell is dash. tell him i'll be home before him. WATCH ME
@@ -28,7 +28,7 @@ don't promise a feature we won't ship). Marvin (`marv™`) is the account/hub.
 *Spear · Redline (rapid fire)*
 **[G]** cant talk / moving / speared everything between me and the gym. twice.
 **[T]** tell tank i already lapped his 'shortcut'. twice.
-**→ TANK²⁰⁰²:** BRO ITS NOT A RACE. ...ok its a little bit a race. GET HOME ILL BE THERE FIRST
+**→ CHAD_THE_TANK:** BRO ITS NOT A RACE. ...ok its a little bit a race. GET HOME ILL BE THERE FIRST
 
 ## 4. Eugene — `sparkplug`  *(Wendolyn reacts)*
 *Bomb · Drum Machine (deploys 2 turrets)*

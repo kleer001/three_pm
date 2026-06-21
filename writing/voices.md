@@ -65,7 +65,7 @@ exemplars. Grounded in the roster (specs 05, 10–13) and the barks in spec 14.
   - `ok so the sky is doing the thing again. anyway did you do the bio worksheet`
   - `im sure its fine. its probably fine. lol`
 
-### Chad "Tank" Brawnson — `TANK²⁰⁰²`
+### Chad "Tank" Brawnson — `CHAD_THE_TANK`
 *Industrial / Mosh Pit. STR 9 / CON 8 / SPD 3 / MAG 2. The Varsity.*
 
 - **Register:** ALL CAPS hype, gym-brain, short bursts. Solves the apocalypse by
