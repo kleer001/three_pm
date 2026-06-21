@@ -187,7 +187,13 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
   // The chat keeps only the human content: the bell, the fallen, sign-ins, crew check-ins.
   sys(`———  <b>3:00 PM. the bell rang.</b>  ———`);
   for (const id of justFell) sys(fill(pick(C.heroFell), { handle: handle(id) }), "fell");
-  for (const id of newUnlocks) { sys(fill(C.system.addedToConvo, { handle: handle(id) })); says(id, pick(C.joined)); } // a new survivor comes in
+  // A newly-met survivor asks in: buddy request → their plea → you accept → they settle in.
+  for (const id of newUnlocks) {
+    sys(fill(C.system.buddyRequest, { handle: handle(id) }));
+    says(id, pick(C.friendAsk));
+    sys(fill(C.system.addedToConvo, { handle: handle(id) }));
+    says(id, pick(C.joined));
+  }
   for (const id of (result.survived || [])) says(id, pick(C.crewCheckIn)); // the crew check in, in conga order
 
   const reflection = result.won ? pick(C.won) : pick(C.lost[family]);

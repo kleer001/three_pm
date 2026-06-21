@@ -10,7 +10,7 @@
 export const summaryCopy = {
   handles: {
     marvin:    "marv™",
-    chad:      "TANK²⁰⁰²",
+    chad:      "CHAD_THE_TANK",
     dash:      "»Dash«",
     wendolyn:  "x_raven_x",
     eugene:    "sparkplug",
@@ -20,8 +20,17 @@ export const summaryCopy = {
     valentine: "x0_valentine_0x",
   },
 
-  // A newly-met survivor signing in for the first time (the run-count unlock — they "come in"
-  // to the chat). Generic per hero, lowercase teen IM; the old comp's Jess intro vibe.
+  // The unlock beat plays out in two messages. First the plea that rides the buddy request — a
+  // new survivor asking to join the walk home (generic per hero, lowercase teen IM).
+  friendAsk: [
+    "hey... can i walk with you guys? i really dont wanna do this part alone.",
+    "add me? please? i'll keep up, i swear. i just cant do the walk by myself anymore.",
+    "everyone knows your crew made it home. take me with you? ...im asking for real.",
+    "can i be in your group? i'll carry stuff, i'll watch the back. just dont leave me out here.",
+    "room for one more on the walk home? i'll do anything. i just wanna make it too.",
+  ],
+
+  // Then, once you accept and they're added, the warmer settle-in line. Generic per hero.
   joined: [
     "ok i saw your away message. so the street really is... yeah. yeah it is.",
     "added you. flagpole after the bell — we go together from now on.",
@@ -121,7 +130,8 @@ export const summaryCopy = {
   // kills / cash / day) are NOT here — they pop as a sketchy ad window (see domSummaryScene POPUPS).
   system: {
     bell:        "———  3:00 PM. the bell rang.  ———",
-    addedToConvo:"♪ {handle} has been added to the conversation.",
+    buddyRequest:"♪ {handle} wants to add you to their Buddy List.",
+    addedToConvo:"♪ you accepted — {handle} has been added to the conversation.",
     walkingHome: "{handle} might not reply right away — they're still walking home.",
   },
 
