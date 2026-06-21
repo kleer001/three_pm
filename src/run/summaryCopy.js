@@ -117,14 +117,10 @@ export const summaryCopy = {
     "{handle} dropped off the walk home today. we leave the screen name up. we always leave it up.",
   ],
 
-  // Gray-italic system lines (the "3:00 PM. the bell rang." chrome). Stat params substituted.
+  // Gray-italic system lines (the "3:00 PM. the bell rang." chrome). The run totals (distance /
+  // kills / cash / day) are NOT here — they pop as a sketchy ad window (see domSummaryScene POPUPS).
   system: {
     bell:        "———  3:00 PM. the bell rang.  ———",
-    distance:    "❖ you made it {dist}m before the dark caught up",
-    distanceWon: "❖ you made it the whole way — {dist}m, front door to front door",
-    haul:        "❖ ${cash} in lunch money recovered · 💀 {kills} flattened",
-    dayAgain:    "❖ Day {day}. see you tomorrow (again).",
-    dayWon:      "❖ Day {day}. ...and we did it. write it down.",
     addedToConvo:"♪ {handle} has been added to the conversation.",
     walkingHome: "{handle} might not reply right away — they're still walking home.",
   },

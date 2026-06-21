@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3pm — popup layout proxy</title>
+<style>
+  :root { --ink:#1a1a1a; --paper:#fafafa; --line:#e2e2e2; --accent:#c4322b; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:1rem 1.25rem 2rem; background:var(--paper); color:var(--ink);
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  h1 { font-size:1.1rem; margin:0 0 .2rem; } h1 span { color:var(--accent); }
+  .sub { color:#666; font-size:.85rem; margin:0 0 .9rem; }
+  .bar { display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; margin-bottom:1rem; }
+  label { font-weight:600; font-size:.85rem; display:flex; align-items:center; gap:.4rem; }
+  select, input[type=range] { font:inherit; }
+  select { padding:.4rem .5rem; border:1px solid var(--line); border-radius:7px; background:#fff; }
+  button { font:inherit; font-weight:600; cursor:pointer; border:1px solid var(--ink);
+           background:#fff; color:var(--ink); border-radius:7px; padding:.45rem .8rem; }
+  button:hover { background:var(--ink); color:#fff; }
+  button.accent { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .read { font-family:ui-monospace,Menlo,monospace; font-size:.85rem; color:#444;
+          background:#fff; border:1px solid var(--line); border-radius:7px; padding:.45rem .7rem; }
+  .read b { color:var(--accent); }
+  .stage-wrap { width:800px; max-width:100%; }
+  #game { display:block; width:800px; max-width:100%; height:auto; aspect-ratio:4/3;
+          background:#101216; border:1px solid #ccc; border-radius:4px; }
+  .hint { color:#888; font-size:.8rem; margin-top:.6rem; }
+  /* The proxy popup is draggable: show the grab cursor and kill text-selection while moving. */
+  #ui-overlay .msn .adpop.proxy { cursor:grab; animation:none; }
+  #ui-overlay .msn .adpop.proxy.grabbing { cursor:grabbing; }
+</style>
+</head>
+<body>
+  <h1>3pm · <span>popup layout</span> proxy</h1>
+  <p class="sub">The real summary desktop + the real ad templates (src/run/domSummaryScene.js). Drag the box to move it; use the slider to scale. The readout is what to bake back into the code.</p>
+  <div class="bar">
+    <label>Template
+      <select id="tpl"></select>
+    </label>
+    <label>Scale
+      <input id="scale" type="range" min="0.5" max="2" step="0.02" value="0.72">
+    </label>
+    <span class="read">left <b id="rL">—</b> · top <b id="rT">—</b> · scale <b id="rS">0.72</b></span>
+    <button id="copy" class="accent">⧉ Copy left/top/scale</button>
+  </div>
+  <div class="stage-wrap"><canvas id="game" width="800" height="600"></canvas></div>
+  <p class="hint">Drag anywhere on the popup to move it (the × / button don't close here). The chat types out behind it for context.</p>
+
+<script type="module">
+import { save, recomputeUnlocks } from "../src/meta/save.js";
+import { createSummaryScene, POPUPS, CSS } from "../src/run/domSummaryScene.js";
+
+// Sample stats so every template shows real-looking numbers while positioning.
+const STATS = { dist: "1,200", kills: 18, cash: 240, day: 7, won: true };
+
+// Deterministic save + result so the desktop backdrop (buddy list, chat) renders fully.
+const BLOB = { version:2, credits:300, runCount:4, unlockedHeroes:recomputeUnlocks(4), heroUpgrades:{},
+  stats:{wins:2,bestDistance:0.9,totalKills:140}, campaign:{ day:7, crew:["marvin","chad","dash"], dead:["eugene"] } };
+const RESULT = { won:true, heroId:"marvin", distanceFraction:1, kills:18, cashDiscarded:240, cause:null, died:[], survived:["marvin","chad","dash"] };
+
+const $ = (id) => document.getElementById(id);
+const tplSel = $("tpl"), scaleEl = $("scale");
+POPUPS.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = `${i + 1}. ${p.cls} — ${p.title}`; tplSel.appendChild(o); });
+
+let L = 187, T = 8, S = 0.72, tpl = 0, pop = null, msn = null;
+
+function applyBox() {
+  if (!pop) return;
+  pop.style.left = L + "px"; pop.style.top = T + "px";
+  pop.style.transformOrigin = "0 0"; pop.style.transform = `scale(${S})`;
+  $("rL").textContent = Math.round(L) + "px"; $("rT").textContent = Math.round(T) + "px"; $("rS").textContent = S.toFixed(2);
+}
+function buildPop() {
+  const ad = POPUPS[tpl];
+  if (pop) pop.remove();
+  pop = document.createElement("div");
+  pop.className = `adpop proxy ${ad.cls}`;
+  pop.setAttribute("style", ad.vars);
+  pop.innerHTML = `
+    <div class="ad-tb"><span class="ad-ti">${ad.icon}</span><span class="ad-t">${ad.title}</span><span class="ad-x">×</span></div>
+    <div class="ad-body">${ad.body(STATS)}</div>
+    <div class="ad-foot">${ad.foot(STATS)}</div>`;
+  msn.appendChild(pop);
+  wireDrag();
+  applyBox();
+}
+
+// Drag in logical stage coords: divide client deltas by the overlay's live scale factor.
+function stageScale() { return $("game").getBoundingClientRect().width / 800; }
+function wireDrag() {
+  let sx, sy, l0, t0;
+  pop.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    sx = e.clientX; sy = e.clientY; l0 = L; t0 = T;
+    pop.classList.add("grabbing"); pop.setPointerCapture(e.pointerId);
+  });
+  pop.addEventListener("pointermove", (e) => {
+    if (!pop.hasPointerCapture(e.pointerId)) return;
+    const k = stageScale() || 1;
+    L = l0 + (e.clientX - sx) / k; T = t0 + (e.clientY - sy) / k; applyBox();
+  });
+  const end = (e) => { pop.classList.remove("grabbing"); if (pop.hasPointerCapture(e.pointerId)) pop.releasePointerCapture(e.pointerId); };
+  pop.addEventListener("pointerup", end);
+  pop.addEventListener("pointercancel", end);
+  pop.addEventListener("click", (e) => e.stopPropagation()); // don't advance the scene
+}
+
+tplSel.onchange = () => { tpl = +tplSel.value; buildPop(); };
+scaleEl.oninput = () => { S = +scaleEl.value; applyBox(); };
+$("copy").onclick = () => {
+  const css = `left:${Math.round(L)}px;top:${Math.round(T)}px;transform-origin:0 0;transform:scale(${S.toFixed(2)})`;
+  navigator.clipboard?.writeText(css);
+  const b = $("copy"); const t = b.textContent; b.textContent = "✓ copied"; setTimeout(() => (b.textContent = t), 1100);
+};
+
+// Mount the real summary scene (its desktop is our backdrop), then strip its random popup so
+// only our draggable one remains. Run the loop so the chat types out for context.
+save(JSON.parse(JSON.stringify(BLOB)));
+const scene = createSummaryScene({}, { down: () => false }, RESULT, 9, "stars");
+let last = performance.now();
+function frame(t) { const dt = Math.min(0.05, (t - last) / 1000); last = t; if (scene && !scene.done) scene.update(dt); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+
+// The scene's own ad pops in on a timer — wait past it, remove it, then mount ours.
+setTimeout(() => {
+  msn = document.querySelector("#ui-overlay .msn");
+  msn.querySelectorAll(".adpop").forEach((el) => el.remove());
+  buildPop();
+}, 700);
+</script>
+</body>
+</html>

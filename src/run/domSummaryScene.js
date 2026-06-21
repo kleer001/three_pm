@@ -17,7 +17,38 @@ const fill = (s, p) => s.replace(/\{(\w+)\}/g, (_, k) => p[k] ?? "");
 const handle = (id) => C.handles[id] || id;
 const nameOf = (id) => (BALANCE.roster.find((c) => c.id === id) || {}).name || id;
 
-const CSS = `
+// The run totals no longer live in the chat — they pop as a garish early-2000s ad window over the
+// desktop. One template is picked at random per run so colors / copy vary. The two numbers that
+// matter are money gained + enemies destroyed (the big `ad-stat` blocks); distance/day are fluff
+// in the headline/footer. No call-to-action button. Each `body`/`foot` takes {dist,kills,cash,day,won}.
+// Exported so the layout-proxy tool (art-test/popup-layout.html) renders the real templates.
+const adStat = (num, cap) => `<div class="ad-stat"><div class="ad-num">${num}</div><div class="ad-cap">${cap}</div></div>`;
+const adStats = (...cells) => `<div class="ad-stats">${cells.join("")}</div>`;
+export const POPUPS = [
+  { cls: "prize", icon: "★", title: "★ CONGRATULATIONS!!! ★",
+    vars: "--ad-bg:#fffdf0;--ad-edge:#d4a017;--ad-tb:linear-gradient(#f7b500,#c8860a);--ad-ink:#6a4a00;--ad-hl:#b8000f;--ad-pop:#cf8a00",
+    body: (s) => `<div class="ad-h"><span class="ad-blink">YOU WON</span> day ${s.day}'s grand prize!</div>`
+      + adStats(adStat(`$${s.cash}`, "lunch money"), adStat(s.kills, "enemies KO'd")),
+    foot: (s) => `*${s.dist}m walked. Merriton residents only. No purchase necessary.` },
+  { cls: "virus", icon: "⚠", title: "SystemSecurity 2003 — Alert",
+    vars: "--ad-bg:#fff8e1;--ad-edge:#c01010;--ad-tb:linear-gradient(#d83232,#9c0c0c);--ad-ink:#5a1010;--ad-hl:#c01010;--ad-pop:#0a7d2c",
+    body: (s) => `<div class="ad-h">⚠ <span class="ad-blink">WALK-HOME SCAN COMPLETE</span> ⚠</div>`
+      + adStats(adStat(s.kills, "threats removed"), adStat(`$${s.cash}`, "$ recovered")),
+    foot: (s) => `Day ${s.day} · exposed for ${s.dist}m. Not a real antivirus.` },
+  { cls: "offer", icon: "🌐", title: "Special Offer — before you go!",
+    vars: "--ad-bg:#f0f8ff;--ad-edge:#1f6ff0;--ad-tb:linear-gradient(#2f86f5,#0a52d6);--ad-ink:#1a3a6a;--ad-hl:#0a3aa0;--ad-pop:#ff8a00",
+    body: (s) => `<div class="ad-h">Did you know you cleared <b>THIS</b> much today?</div>`
+      + adStats(adStat(s.kills, "obstacles cleared"), adStat(`$${s.cash}`, "cash earned")),
+    foot: (s) => `Day ${s.day} · ${s.dist}m traveled. Ask about a faster route!` },
+  { cls: "cash", icon: "💲", title: "Rates are at HISTORIC lows!",
+    vars: "--ad-bg:#f3fbf3;--ad-edge:#1f9a2f;--ad-tb:linear-gradient(#3bbf4a,#138a22);--ad-ink:#13491e;--ad-hl:#0a7d2c;--ad-pop:#138a22",
+    body: (s) => `<div class="ad-h">Your walk home <b>PAID OFF</b>!</div>`
+      + adStats(adStat(`$${s.cash}`, "cash back"), adStat(s.kills, "flattened")),
+    foot: (s) => `Day ${s.day}. Offer void where the dark catches you.` },
+];
+
+// Exported so the layout-proxy tool (art-test/popup-layout.html) can render the real desktop + ad.
+export const CSS = `
 #ui-overlay .msn{width:800px;height:600px;position:relative;overflow:hidden;font:11px "Tahoma","Segoe UI",sans-serif;color:#000;cursor:pointer;
   background:radial-gradient(120% 70% at 50% 118%,#6aa12e 0%,#5c9a2b 18%,transparent 40%),radial-gradient(80% 38% at 30% 92%,#8cc63f 0%,transparent 55%),linear-gradient(#2f7bd6 0%,#4f9ae6 26%,#8fcdf2 46%,#bfe3c0 56%,#7cb342 64%,#5a9e2f 100%)}
 #ui-overlay .msn *{box-sizing:border-box;margin:0;padding:0}
@@ -92,6 +123,31 @@ const CSS = `
 #ui-overlay .msn .tray{display:flex;align-items:center;gap:7px;height:22px;padding:0 8px;margin-left:auto;background:linear-gradient(#1f63cf,#3a8bf0 40%,#2f86f5);color:#fff;font-size:11px}
 #ui-overlay .msn .tray .clock{font-weight:bold}
 #ui-overlay .msn .hint{position:absolute;left:50%;bottom:36px;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#cfe0ff;padding:4px 12px;border-radius:11px;font-size:11px;letter-spacing:.04em;white-space:nowrap;z-index:9}
+/* the sketchy run-totals popup — a garish early-2000s ad window. Two numbers matter (money
+   gained + enemies destroyed); everything else is fluff. --ad-s = resting scale (baked from the
+   layout proxy); the pop-in animates around it so there's no scale snap. */
+#ui-overlay .msn .adpop{position:absolute;width:320px;z-index:12;--ad-s:1;border:2px solid var(--ad-edge);border-radius:3px;background:var(--ad-bg);
+  box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 0 1px #fff inset;font-family:"Tahoma","Segoe UI",sans-serif;
+  transform-origin:0 0;transform:scale(var(--ad-s));animation:adPop .34s cubic-bezier(.2,1.5,.4,1)}
+#ui-overlay .msn .adpop.out{animation:adOut .22s ease forwards}
+#ui-overlay .msn .adpop .ad-tb{display:flex;align-items:center;gap:5px;padding:3px 4px;background:var(--ad-tb);color:#fff;font:bold 11px Tahoma;text-shadow:0 1px 1px rgba(0,0,0,.5)}
+#ui-overlay .msn .adpop .ad-ti{font-size:12px;line-height:1}
+#ui-overlay .msn .adpop .ad-t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ui-overlay .msn .adpop .ad-x{width:18px;height:16px;border:1px solid #fff;border-radius:2px;display:grid;place-items:center;background:rgba(255,255,255,.25);cursor:pointer;animation:adJit 1.8s ease-in-out infinite}
+#ui-overlay .msn .adpop .ad-x:hover{background:rgba(255,255,255,.5)}
+#ui-overlay .msn .adpop .ad-body{padding:8px 12px 5px;text-align:center;color:var(--ad-ink)}
+#ui-overlay .msn .adpop .ad-h{font:bold 13px Tahoma;line-height:1.15;color:var(--ad-hl)}
+#ui-overlay .msn .adpop .ad-h b{color:var(--ad-pop)}
+#ui-overlay .msn .adpop .ad-stats{display:flex;gap:8px;justify-content:center;margin-top:6px}
+#ui-overlay .msn .adpop .ad-stat{flex:1;background:rgba(255,255,255,.5);border:1px solid var(--ad-edge);border-radius:4px;padding:4px 2px 3px}
+#ui-overlay .msn .adpop .ad-num{font:italic bold 25px Georgia,serif;color:var(--ad-pop);line-height:1;text-shadow:1px 1px 0 #fff}
+#ui-overlay .msn .adpop .ad-cap{font-size:9px;text-transform:uppercase;letter-spacing:.03em;opacity:.85;margin-top:3px}
+#ui-overlay .msn .adpop .ad-foot{padding:4px 12px 7px;font-size:9px;opacity:.6;text-align:center;line-height:1.25}
+#ui-overlay .msn .adpop .ad-blink{animation:adBlink .8s steps(1) infinite}
+@keyframes adPop{0%{transform:scale(calc(var(--ad-s)*.55));opacity:0}70%{transform:scale(calc(var(--ad-s)*1.06))}100%{transform:scale(var(--ad-s));opacity:1}}
+@keyframes adOut{to{transform:scale(calc(var(--ad-s)*.6));opacity:0}}
+@keyframes adJit{0%,90%,100%{transform:translate(0,0)}93%{transform:translate(-1px,1px)}96%{transform:translate(1px,-1px)}98%{transform:translate(-1px,0)}}
+@keyframes adBlink{50%{opacity:.15}}
 `;
 
 const ICONS = [["🖥️","My Computer"],["🗑️","Recycle Bin"],["📂","My Documents"],["🪟","Internet Explorer"],
@@ -127,13 +183,12 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
   const events = [];
   const sys = (html, cls = "") => events.push({ kind: "sys", html: `<p class="line"><span class="sys ${cls}">${html}</span></p>` });
   const says = (id, msg) => { const c = roster.find((x) => x.id === id) || {}; events.push({ kind: "msg", prefix: `<span class="nk" style="color:${c.color || "#c0392b"}">${handle(id)}</span> says: `, body: msg }); };
+  // Totals (distance/kills/cash/day) are no longer chat lines — they pop as the ad below.
+  // The chat keeps only the human content: the bell, the fallen, sign-ins, crew check-ins.
   sys(`———  <b>3:00 PM. the bell rang.</b>  ———`);
-  sys(fill(result.won ? C.system.distanceWon : C.system.distance, { dist: dist.toLocaleString() }));
-  sys(fill(C.system.haul, { cash: result.cashDiscarded || 0, kills: result.kills }));
   for (const id of justFell) sys(fill(pick(C.heroFell), { handle: handle(id) }), "fell");
   for (const id of newUnlocks) { sys(fill(C.system.addedToConvo, { handle: handle(id) })); says(id, pick(C.joined)); } // a new survivor comes in
   for (const id of (result.survived || [])) says(id, pick(C.crewCheckIn)); // the crew check in, in conga order
-  sys(fill(result.won ? C.system.dayWon : C.system.dayAgain, { day }));
 
   const reflection = result.won ? pick(C.won) : pick(C.lost[family]);
   const milestone = result.won ? "" : "  " + C.distanceMilestone[band];
@@ -191,6 +246,30 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
 
   let armed = false, done = false;
   mountOverlay(root);
+
+  // The run-totals ad: pops over the desktop a beat after the chat opens. Any click on it (the
+  // tiny ×, the CTA, the body) dismisses it — same skippable contract as the rest of the scene.
+  const stats = { dist: dist.toLocaleString(), kills: result.kills, cash: result.cashDiscarded || 0, day, won: result.won };
+  const ad = pick(POPUPS); // template colors/copy vary per run; geometry jitters a touch around the
+  const rand = (a, b) => a + Math.random() * (b - a); // proxy-tuned anchor (187/8, scale .72) for funsies
+  const adL = Math.round(187 + rand(-16, 16)), adT = Math.round(8 + rand(-5, 11));
+  const adS = (0.72 * rand(0.94, 1.08)).toFixed(3), adRad = Math.round(rand(1, 7));
+  const popEl = document.createElement("div");
+  popEl.className = `adpop ${ad.cls}`;
+  popEl.setAttribute("style", `${ad.vars};left:${adL}px;top:${adT}px;--ad-s:${adS};border-radius:${adRad}px`);
+  popEl.innerHTML = `
+    <div class="ad-tb"><span class="ad-ti">${ad.icon}</span><span class="ad-t">${ad.title}</span><span class="ad-x">×</span></div>
+    <div class="ad-body">${ad.body(stats)}</div>
+    <div class="ad-foot">${ad.foot(stats)}</div>`;
+  let popTimer = setTimeout(() => { root.appendChild(popEl); sfx.play("uiMove"); popTimer = null; }, 550);
+  const closePopup = (e) => {
+    if (e) e.stopPropagation();
+    if (popTimer) { clearTimeout(popTimer); popTimer = null; return; }
+    if (!popEl.isConnected || popEl.classList.contains("out")) return;
+    popEl.classList.add("out"); sfx.play("uiSelect");
+    setTimeout(() => popEl.remove(), 220);
+  };
+  popEl.addEventListener("click", closePopup);
 
   // Progressive reveal driven by the loop: status lines pop, buddy messages type out fast.
   // The crew comes in one after another like a real IM thread. One input skips it all.
