@@ -188,7 +188,7 @@ export function createCombat(env) {
   // on its meter; the rest reuse fireWeapon on their own `sigCd`, or deploy/confuse.
   function fireSignature(attacker, near) {
     const sig = attacker.signature;
-    if (!sig || sig.shape === "heal") return;
+    if (!sig || sig.shape === "heal" || sig.shape === "wake") return; // passives, emitted by their tick
     if (sig.shape === "charge") { releaseCharge(attacker, sig); return; }
     if (attacker.sigCd > 0 || !canCast(attacker, sig.manaCost || 0)) return;
     let fired = false;
@@ -210,6 +210,22 @@ export function createCombat(env) {
   function tickCharge(e, dt) {
     if (e.signature && e.signature.shape === "charge" && e.signature.trickle && !e.dead)
       e.charge += e.signature.trickle * dt;
+  }
+
+  // A `wake` signature (Dash's Dust Devil) emits puffs along the bearer's path as it moves:
+  // accumulate distance travelled, drop a puff every `emitDist` px into the optional
+  // `env.dustPuffs` sink. Stationary ⇒ no dust. (Omitted in the preview, which has no sink.)
+  function tickWake(e, dt) {
+    const sig = e.signature;
+    if (!sig || sig.shape !== "wake" || e.dead || !env.dustPuffs) return;
+    if (e.wakeLastX == null) { e.wakeLastX = e.x; e.wakeLastY = e.y; e.wakeAcc = 0; return; }
+    e.wakeAcc += dist(e.x, e.y, e.wakeLastX, e.wakeLastY);
+    e.wakeLastX = e.x; e.wakeLastY = e.y;
+    while (e.wakeAcc >= sig.emitDist) {
+      e.wakeAcc -= sig.emitDist;
+      env.dustPuffs.push({ x: e.x, y: e.y, t: 0, tick: sig.tickInterval || 0, tickEvery: sig.tickInterval || 0,
+        r: sig.puffR, slow: sig.slow, slowDur: sig.slowDur, life: sig.life, attacker: e, damage: sig.damage });
+    }
   }
 
   // --- per-frame steppers -----------------------------------------------------------
@@ -269,9 +285,33 @@ export function createCombat(env) {
     }
   }
 
+  // Dust puffs (Dash's wake): age, refresh the slow on enemies inside each puff every frame
+  // (so they stay slowed while standing in the dust), and chip magic-scaled damage on the
+  // puff's own tick cadence — negligible until Grit (magic) is invested. A quiet path: it
+  // reuses weaponDamage/applyDamage but only floats a number on a real (≥1) hit, so the dust's
+  // near-zero base chip doesn't spam "0"s. runScene culls expired/scrolled-off puffs.
+  function stepDustPuffs(dt) {
+    if (!env.dustPuffs) return;
+    for (const p of env.dustPuffs) {
+      p.t += dt;
+      if (p.t >= p.life) continue;
+      if (p.damage) p.tick -= dt;
+      const doDmg = p.damage && p.tick <= 0;
+      for (const e of enemies) {
+        if (e.dead || dist(e.x, e.y, p.x, p.y) > p.r + e.r) continue;
+        e.slowT = p.slowDur; e.slowMult = p.slow;
+        if (doDmg) {
+          const dealt = applyDamage(e, weaponDamage(p.damage, p.attacker, e.derived.maxHp, e.hp));
+          if (dealt >= 1) { spawnHitNumber(e, dealt); if (e.dead) env.onDeath(e, p.attacker); }
+        }
+      }
+      if (doDmg) p.tick = p.tickEvery;
+    }
+  }
+
   return {
     applyHit, blast, detonate, nearestEnemyTo, meleeSwing, fireShot, fireWeapon,
-    creditCharge, spawnHitNumber, deployTurret, confuseBurst, releaseCharge, fireSignature, tickHeal, tickCharge,
-    stepProjectiles, stepFields, stepDeployables,
+    creditCharge, spawnHitNumber, deployTurret, confuseBurst, releaseCharge, fireSignature, tickHeal, tickCharge, tickWake,
+    stepProjectiles, stepFields, stepDeployables, stepDustPuffs,
   };
 }

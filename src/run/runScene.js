@@ -195,7 +195,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       // it materializes at its trail point (no stacked-at-the-cramped-spawn pile-up).
       pending: true,
     };
-    recomputeDerived(f, BALANCE.derive);
+    // A hero carries their permanent upgrades whether they lead or trail — fold them here too,
+    // not just on the head (otherwise a trailing hero's tree, e.g. Dash's Grit feeding his dust,
+    // would silently do nothing). applyHeroUpgrades folds owned ranks into stats, then derives.
+    applyHeroUpgrades(f, def.id, saveBlob, BALANCE.derive);
     f.hp = f.derived.maxHp;
     f.mana = f.derived.maxMana;
     return f;
@@ -244,6 +247,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const deployables = []; // placed turrets (Eugene's Drum Machine) — hold world position
   const floaters = [];    // rising damage numbers, one per landed hit, visual only
   const debris = [];      // spent slingshot pellets resting where they landed (persist), visual only
+  const dustPuffs = [];   // Dash's dust-trail puffs (slow + chip), emitted along his path while trailing
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   let outcome = null;
   let paused = false, pEsc = false; // Esc toggles a full freeze during free descent
@@ -394,7 +398,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   // wall-collided knockback; the wall/expiry test; the crush-line deployable cull; and the
   // loot/loss-on-death hook (a hero death ends the run, an enemy death rolls loot once).
   const combat = createCombat({
-    enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters, debris,
+    enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters, debris, dustPuffs,
     knockback,
     projectileBlocked: (x, y) => !isWalkable(level, Math.floor(x / TS), Math.floor(y / TS)),
     cullDeployable: (d) => d.y < cam.y + MARGIN, // left behind once the crush line passes it
@@ -808,6 +812,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       regenMana(f, dt);
       combat.tickHeal(f, dt);
       combat.tickCharge(f, dt); // The Drop's baseline trickle, so a back-line follower still fires
+      combat.tickWake(f, dt); // Dash's dust trail, emitted as he retraces the conga path
       const p = trailPointBack((i + 1) * gap);
       // Re-home to the trail point at a capped speed (its own moveSpeed × the knob),
       // not a fixed fraction: a shoved follower closes the gap at a steady rate, so
@@ -835,6 +840,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     combat.stepProjectiles(dt);
     combat.stepFields(dt);
     combat.stepDeployables(dt);
+    combat.stepDustPuffs(dt);
     for (const b of blasts) b.t += dt; // visual rings expand then expire
     for (const s of swings) s.t += dt; // melee wedges flash then expire
     for (const f of floaters) f.t += dt; // damage numbers rise and fade
@@ -893,6 +899,8 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     // Pellets persist where they land, but the descent only moves down — once one is above
     // the viewport it can never return, so cull it to bound the array over a run.
     for (let i = debris.length - 1; i >= 0; i--) if (debris[i].y < cam.y) debris.splice(i, 1);
+    // Dust puffs are short-lived; reap them once faded out or scrolled above the crush line.
+    for (let i = dustPuffs.length - 1; i >= 0; i--) if (dustPuffs[i].t >= dustPuffs[i].life || dustPuffs[i].y < cam.y) dustPuffs.splice(i, 1);
     // Reap dead followers (HP gone or crushed) — permadeath, also off the shot-target list.
     for (let i = followers.length - 1; i >= 0; i--) {
       if (!followers[i].dead) continue;
@@ -1109,6 +1117,14 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
 
     // Spent slingshot pellets resting on the ground (drawn under corpses and everything live).
     for (const d of debris) disc(ctx, d.x - cam.x, d.y - cam.y, d.r, THEME.pellet);
+
+    // Dash's dust puffs: expand and fade over their life (drawn on the ground, under live bodies).
+    for (const p of dustPuffs) {
+      const k = p.t / p.life;
+      ctx.globalAlpha = 1 - k;
+      disc(ctx, p.x - cam.x, p.y - cam.y, p.r * (0.5 + k), THEME.dust);
+      ctx.globalAlpha = 1;
+    }
 
     // Corpses (drawn under everything live)
     for (const e of enemies)

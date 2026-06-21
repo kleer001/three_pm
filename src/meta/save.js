@@ -101,13 +101,15 @@ export const UPGRADES = {
     warmup_laps:   { name: "Warm-Up Laps",  blurb: "+1 speed / rank",         maxRank: 2, costCurve: [55, 120],      apply: { speed: 1 } },
   },
 
-  // Psytrance · Spear (fast str melee) · Redline (rapid str shots). The track star
-  // glass cannon: cheap speed + strength to lean into the build, and a costly
-  // constitution track to patch his paper-thin survivability.
+  // Psytrance · Redline (rapid str shots) · Dust Devil (magic-scaled slow trail). The track
+  // star: cheap speed + strength to lean into his spray, a costly constitution track to patch
+  // his paper-thin survivability, and Grit (magic) that grows his dust trail from pure control
+  // into real chip damage — so all four of his stats finally pay off.
   dash: {
     sprinters_high: { name: "Sprinter's High", blurb: "+1 speed / rank",       maxRank: 3, costCurve: [40, 80, 140],   apply: { speed: 1 } },
     adrenaline:     { name: "Adrenaline",      blurb: "+1 strength / rank",    maxRank: 3, costCurve: [45, 90, 160],   apply: { strength: 1 } },
     second_wind:    { name: "Second Wind",     blurb: "+1 constitution / rank",maxRank: 3, costCurve: [60, 130, 230],  apply: { constitution: 1 } },
+    grit:           { name: "Grit",            blurb: "+1 magic / rank — dust bites", maxRank: 3, costCurve: [45, 90, 160], apply: { magic: 1 } },
   },
 
   // Dubtechno · Hex (magic %-HP, costs mana) · Deep Freeze (magic freeze nova).
@@ -137,13 +139,14 @@ export const UPGRADES = {
     afterglow: { name: "Afterglow", blurb: "+1 constitution / rank", maxRank: 3, costCurve: [50, 110, 190], apply: { constitution: 1 } },
   },
 
-  // Acid · Beam (STRENGTH-scaled pierce, costs mana) · Bad Trip (confuse, costs
-  // mana). The oddball: his pierce scales on strength while both casts burn mana,
-  // so strength AND magic both pay off — plus quick feet for repositioning.
+  // Acid · Beam (magic pierce, costs mana) · Bad Trip (confuse, costs mana). The caster:
+  // cheap magic (his pierce damage + the mana both casts burn), a constitution track to
+  // patch his fragility (he had none before — the one fragile hero who couldn't buy
+  // survivability), plus quick feet to kite. No strength: nothing in his kit scales on it.
   zigzag: {
-    squelch_303: { name: "303 Squelch", blurb: "+1 strength / rank", maxRank: 3, costCurve: [45, 90, 160], apply: { strength: 1 } },
-    acid_bath:   { name: "Acid Bath",   blurb: "+1 magic / rank",    maxRank: 3, costCurve: [40, 80, 140], apply: { magic: 1 } },
-    quick_feet:  { name: "Quick Feet",  blurb: "+1 speed / rank",    maxRank: 2, costCurve: [50, 110],     apply: { speed: 1 } },
+    acid_bath:   { name: "Acid Bath",   blurb: "+1 magic / rank",        maxRank: 3, costCurve: [40, 80, 140],  apply: { magic: 1 } },
+    comedown:    { name: "Comedown",    blurb: "+1 constitution / rank", maxRank: 3, costCurve: [55, 120, 210], apply: { constitution: 1 } },
+    quick_feet:  { name: "Quick Feet",  blurb: "+1 speed / rank",        maxRank: 2, costCurve: [50, 110],      apply: { speed: 1 } },
   },
 
   // Ambient · Hex Field (magic zone) · Chill Zone (magic slow field). The zone
