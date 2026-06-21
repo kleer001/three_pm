@@ -92,10 +92,13 @@ export const BALANCE = {
   // magic, plus percent-HP terms) resolved against the hero's stats; `manaCost`
   // spends the hero pool; `freeze`/`knockback` are on-hit effects.
   weapons: {
-    // A small knockback gives the freeze a satisfying shove on contact; a halved shotR
-    // makes the pellet read as a pebble; `persist` leaves a spent pellet on the ground
-    // where it lands (decorative — see THEME.pellet / the debris sink in combatKit).
-    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 3, life: 2, freeze: true,  manaCost: 0,  knockback: 1, persist: true, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 1 / 3, pctCur: 0 },   desc: "⅓ max HP + str · freezes" },
+    // Strength-scaled damage, but now mana-fuelled. At the real fire rate (~1.67/s after the
+    // 1.2× heroFireCooldownMult) manaCost 6 drains ~10/s against the hero's 8/s regen, so a
+    // full 40 pool gives ~20s of continuous freeze before it eases to a regen-limited ~1.3/s
+    // (vs the ~1.67/s cd cap) — a gentle throttle, never a hard lockout. Bump toward 8 if it
+    // needs to bite sooner. This finally puts Marvin's magic stat (maxMana) — and his
+    // `honor_roll` track — to work; keep damage on strength so all four of his stats stay live.
+    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 3, life: 2, freeze: true,  manaCost: 6,  knockback: 1, persist: true, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 1 / 3, pctCur: 0 },   desc: "⅓ max HP + str · freezes · costs mana" },
     // 40% of current HP front-loads the chunk; the magic-scaled flat lets it finish
     // (a pure %-current weapon asymptotes and never kills).
     hex:       { name: "Hex",       shape: "projectile", cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, knockback: 0, damage: { scaling: "magic",    base: 2, ratio: 0.4, pctMax: 0, pctCur: 0.4 },  desc: "40% current HP + magic · costs mana" },
