@@ -57,12 +57,12 @@ export const BALANCE = {
   roster: [
     { id: "marvin",    name: "Marvin",    genre: "House",      color: "#f5c518", weaponId: "slingshot", signatureId: "good_vibes",   stats: { speed: 5, constitution: 5, strength: 5, magic: 5 }, unlockAtRuns: 0 },
     { id: "chad",      name: "Chad",      genre: "Industrial", color: "#e8743b", weaponId: "cleave",    signatureId: "mosh_pit",     stats: { speed: 5, constitution: 8, strength: 8, magic: 2 }, unlockAtRuns: 1 },
-    { id: "dash",      name: "Dash",      genre: "Psytrance",  color: "#d6336c", weaponId: "spear",     signatureId: "redline",      stats: { speed: 9, constitution: 3, strength: 5, magic: 3 }, unlockAtRuns: 2 },
+    { id: "dash",      name: "Dash",      genre: "Psytrance",  color: "#d6336c", weaponId: "redline",   signatureId: "dust_devil",   stats: { speed: 9, constitution: 3, strength: 5, magic: 3 }, unlockAtRuns: 2 },
     { id: "wendolyn",  name: "Wendolyn",  genre: "Dubtechno",  color: "#0b7285", weaponId: "hex",       signatureId: "deep_freeze",  stats: { speed: 5, constitution: 3, strength: 2, magic: 9 }, unlockAtRuns: 3 },
     { id: "eugene",    name: "Eugene",    genre: "Techno",     color: "#4dabf7", weaponId: "bomb",      signatureId: "drum_machine", stats: { speed: 4, constitution: 5, strength: 3, magic: 7 }, unlockAtRuns: 4 },
     { id: "jess",      name: "Jess",      genre: "Trance",     color: "#e64980", weaponId: "nova",      signatureId: "the_drop",     stats: { speed: 5, constitution: 5, strength: 4, magic: 7 }, unlockAtRuns: 5 },
     { id: "zigzag",    name: "ZigZag",    genre: "Acid",       color: "#82c91e", weaponId: "beam",      signatureId: "bad_trip",     stats: { speed: 6, constitution: 4, strength: 3, magic: 7 }, unlockAtRuns: 6 },
-    { id: "jasper",    name: "Jasper",    genre: "Ambient",    color: "#b197fc", weaponId: "field",     signatureId: "chill_zone",   stats: { speed: 4, constitution: 6, strength: 3, magic: 6 }, unlockAtRuns: 7 },
+    { id: "jasper",    name: "Jasper",    genre: "Ambient",    color: "#b197fc", weaponId: "switchblade", signatureId: "dead_air",   stats: { speed: 4, constitution: 6, strength: 3, magic: 6 }, unlockAtRuns: 7 },
     { id: "valentine", name: "Valentine", genre: "Synthwave",  color: "#cc5de8", weaponId: "whirl",     signatureId: "flashback",    stats: { speed: 6, constitution: 5, strength: 4, magic: 6 }, unlockAtRuns: 8 },
   ],
 
@@ -74,10 +74,17 @@ export const BALANCE = {
   // enemy move-speed debuff; `fuse` delays a bomb's detonation.
   signatures: {
     mosh_pit:     { name: "Mosh Pit",     shape: "nova", cd: 3.5, radius: 120, freeze: false, manaCost: 0,  knockback: 3, damage: { scaling: "strength", base: 7, ratio: 0.8, pctMax: 0.08, pctCur: 0 } },
-    redline:      { name: "Redline",      shape: "projectile", cd: 0.20, speed: 540, range: 360, shotR: 4, life: 0.8, freeze: false, manaCost: 0, knockback: 0, damage: { scaling: "strength", base: 1, ratio: 0.3, pctMax: 0, pctCur: 0 } },
     deep_freeze:  { name: "Deep Freeze",  shape: "nova", cd: 6, radius: 130, freeze: true, manaCost: 12, knockback: 1, damage: { scaling: "magic", base: 3, ratio: 0.3, pctMax: 0, pctCur: 0 } },
     flashback:    { name: "Flashback",    shape: "bomb", cd: 2.2, speed: 300, range: 440, shotR: 6, life: 1.4, radius: 150, fuse: 1.6, freeze: false, manaCost: 6, knockback: 1, impact: { scaling: "magic", base: 2, ratio: 0.2 }, damage: { scaling: "magic", base: 6, ratio: 0.7, pctMax: 0.12, pctCur: 0 } },
-    chill_zone:   { name: "Chill Zone",   shape: "field", cd: 6, range: 360, radius: 112, lifespan: 4.5, tickInterval: 0.5, slow: 0.5, slowDur: 0.9, freeze: false, manaCost: 14, knockback: 0, damage: { scaling: "magic", base: 1, ratio: 0.25, pctMax: 0.03, pctCur: 0 } },
+    // Jasper's trailing passive (Ambient): a lingering damage zone he leaves behind. Named for
+    // the genre (not "Hex Field" — that's the occult arsenal weapon, Wendolyn's lane).
+    dead_air:     { name: "Dead Air",     shape: "field", cd: 6, range: 420, radius: 90, lifespan: 4, tickInterval: 0.4, freeze: false, manaCost: 20, knockback: 0, damage: { scaling: "magic", base: 2, ratio: 0.3, pctMax: 0.04, pctCur: 0 } },
+    // Dash's trailing passive (Psytrance): a movement-emitted dust trail — expanding/fading puffs
+    // that slow enemies in them ("eat my dust"). `wake` is emission-based (no cd/mana): tickWake
+    // drops a puff every `emitDist` px travelled; stepDustPuffs ages them, refreshes the slow, and
+    // chips magic-scaled damage on `tickInterval` (negligible at base magic, grows with the Grit
+    // upgrade — control that can be invested into damage).
+    dust_devil:   { name: "Dust Devil",   shape: "wake", slow: 0.55, slowDur: 0.4, puffR: 26, emitDist: 18, life: 0.6, tickInterval: 0.3, damage: { scaling: "magic", base: 0, ratio: 0.15, pctMax: 0.01, pctCur: 0 } },
     good_vibes:   { name: "Good Vibes",   shape: "heal", hpPerSec: 1.6 },
     drum_machine: { name: "Drum Machine", shape: "deploy", cd: 4, manaCost: 16, maxActive: 2, life: 8, turretId: "slingshot" },
     bad_trip:     { name: "Bad Trip",     shape: "confuse", cd: 6, radius: 150, confuseDur: 2.5, manaCost: 14 },
@@ -92,18 +99,33 @@ export const BALANCE = {
   // magic, plus percent-HP terms) resolved against the hero's stats; `manaCost`
   // spends the hero pool; `freeze`/`knockback` are on-hit effects.
   weapons: {
-    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 6, life: 2, freeze: true,  manaCost: 0,  knockback: 0, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 1 / 3, pctCur: 0 },   desc: "⅓ max HP + str · freezes" },
+    // Strength-scaled damage, but now mana-fuelled. At the real fire rate (~1.67/s after the
+    // 1.2× heroFireCooldownMult) manaCost 6 drains ~10/s against the hero's 8/s regen, so a
+    // full 40 pool gives ~20s of continuous freeze before it eases to a regen-limited ~1.3/s
+    // (vs the ~1.67/s cd cap) — a gentle throttle, never a hard lockout. Bump toward 8 if it
+    // needs to bite sooner. This finally puts Marvin's magic stat (maxMana) — and his
+    // `honor_roll` track — to work; keep damage on strength so all four of his stats stay live.
+    slingshot: { name: "Slingshot", shape: "projectile", cd: 0.5, speed: 360, range: 470, shotR: 3, life: 2, freeze: true,  manaCost: 6,  knockback: 1, persist: true, damage: { scaling: "strength", base: 0, ratio: 1.0, pctMax: 1 / 3, pctCur: 0 },   desc: "⅓ max HP + str · freezes · costs mana" },
     // 40% of current HP front-loads the chunk; the magic-scaled flat lets it finish
     // (a pure %-current weapon asymptotes and never kills).
     hex:       { name: "Hex",       shape: "projectile", cd: 1.2, speed: 300, range: 420, shotR: 6, life: 2, freeze: false, manaCost: 10, knockback: 0, damage: { scaling: "magic",    base: 2, ratio: 0.4, pctMax: 0, pctCur: 0.4 },  desc: "40% current HP + magic · costs mana" },
-    // Beam: a piercing projectile — hits every enemy along its line, once each.
-    beam:      { name: "Beam",       shape: "projectile", pierce: true, cd: 1.5, speed: 520, range: 520, shotR: 6, life: 1.2, freeze: false, manaCost: 12, knockback: 0, damage: { scaling: "strength", base: 4, ratio: 0.8, pctMax: 0.18, pctCur: 0 }, desc: "pierces a whole line" },
-    // Nova: an instant burst centered on the hero — clears a closing swarm.
-    nova:      { name: "Nova",       shape: "nova", cd: 4, radius: 130, freeze: false, manaCost: 16, knockback: 4.5, damage: { scaling: "strength", base: 6, ratio: 1.0, pctMax: 0.12, pctCur: 0 }, desc: "burst around you + big knockback" },
+    // Beam: a piercing projectile — hits every enemy along its line, once each. Magic-scaled
+    // (ZigZag's stat): base/ratio trimmed from the old strength values because magic damage
+    // runs through abilityPower (~1.2 at magic 7).
+    beam:      { name: "Beam",       shape: "projectile", pierce: true, cd: 1.5, speed: 520, range: 520, shotR: 6, life: 1.2, freeze: false, manaCost: 12, knockback: 0, damage: { scaling: "magic", base: 2, ratio: 0.5, pctMax: 0.18, pctCur: 0 }, desc: "pierces a whole line" },
+    // Nova: an instant burst centered on the hero — clears a closing swarm. Magic-scaled
+    // (Jess's stat); base/ratio trimmed for the abilityPower multiplier.
+    nova:      { name: "Nova",       shape: "nova", cd: 4, radius: 130, freeze: false, manaCost: 16, knockback: 4.5, damage: { scaling: "magic", base: 3, ratio: 0.6, pctMax: 0.12, pctCur: 0 }, desc: "burst around you + big knockback" },
     // Bomb: lobbed at the nearest enemy, detonates an area on impact/expiry.
     bomb:      { name: "Bomb",       shape: "bomb", cd: 2.5, speed: 320, range: 460, shotR: 7, life: 1.6, radius: 190, freeze: false, manaCost: 14, knockback: 1, damage: { scaling: "magic", base: 5, ratio: 0.8, pctMax: 0.15, pctCur: 0 }, desc: "lobbed area blast" },
     // Field: a lingering zone dropped on the hero — ticks damage, denies ground.
     field:     { name: "Hex Field",  shape: "field", cd: 5, range: 420, radius: 90, lifespan: 4, tickInterval: 0.4, freeze: false, manaCost: 20, knockback: 0, damage: { scaling: "magic", base: 2, ratio: 0.3, pctMax: 0.04, pctCur: 0 }, desc: "lingering damage zone" },
+    // Redline: Dash's rapid-fire head weapon (Psytrance). Kept light per his control identity —
+    // a fast peashooter, with a tiny %-max term so it isn't useless against tanks.
+    redline: { name: "Redline", shape: "projectile", cd: 0.20, speed: 540, range: 360, shotR: 4, life: 0.8, freeze: false, manaCost: 0, knockback: 0, damage: { scaling: "strength", base: 1, ratio: 0.4, pctMax: 0.04, pctCur: 0 }, desc: "rapid-fire spray" },
+    // Switchblade: Jasper's short, tight melee (Ambient). MAGIC-scaled so his magic stat drives
+    // it (a strength clone would ride his dump stat); small %-max keeps it honest vs tanks.
+    switchblade: { name: "Switchblade", shape: "melee-arc", cd: 0.5, radius: 70, arc: 50, freeze: false, manaCost: 4, knockback: 1, damage: { scaling: "magic", base: 3, ratio: 0.7, pctMax: 0.08, pctCur: 0 }, desc: "quick magic shank" },
     // Melee — `arc` degrees of swing at short `radius` reach, auto-aimed at the
     // nearest enemy (360 = full circle). Free, strength-scaled, knockback-heavy:
     // you trade reach (into contact range) for raw burst. Reuse the AoE blast path.
@@ -220,9 +242,11 @@ export const THEME = {
   obstacleDarken: "rgba(0,0,0,0.4)", // darken obstacles so collision is legible
   homeBand: "rgba(255,215,0,0.35)",
   corpse: "#2b2622",
+  pellet: "rgba(120,112,96,0.7)", // spent slingshot pellet left on the ground (persist)
+  dust: "rgba(196,182,150,0.5)", // Dash's dust-trail puff (expands + fades; see dust_devil)
   enemyShot: { r: 5, color: "#145a32" },
   weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6", beam: "#1abc9c", bomb: "#e67e22", nova: "#f5d76e", field: "#8e44ad",
-    bat: "#bdc3c7", cleave: "#e74c3c", spear: "#95a5a6", whirl: "#f39c12",
+    bat: "#bdc3c7", cleave: "#e74c3c", spear: "#95a5a6", whirl: "#f39c12", switchblade: "#b197fc",
     redline: "#ff6b6b", flashback: "#cc5de8" }, // weapon color (shot + select swatch), keyed by id
   blast: { ring: "rgba(255,240,200,0.85)", dur: 0.28 }, // expanding ring for nova/bomb detonations
   beam: { width: 16 }, // max stroke width of a piercing shot drawn as a beam (thin→thick→fade over its life)
