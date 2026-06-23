@@ -10,14 +10,14 @@ import { makeRng, subSeed } from "../core/rng.js";
 import { findPath } from "../ai/ai.js";
 import { makeDirector, distanceFraction } from "./director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
-import { POWERUPS, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag, priceItem } from "./powerups.js";
+import { POWERUPS, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag } from "./powerups.js";
 import { applyHeroUpgrades } from "../meta/save.js";
-import { hitRect } from "../input/input.js";
 import { BALANCE, THEME } from "./balance.js";
 import { track, newRunId } from "./telemetry.js";
 import { createVoidRenderer } from "./voidBackgrounds.js";
 import { createCombat } from "./combatKit.js";
 import { createSoftBody } from "./softBody.js";
+import { createShop } from "./shop.js";
 import { sfx } from "../audio/sfx.js";
 import { disc, ring, bar, glyph, clamp, drawMember } from "./draw.js";
 
@@ -232,7 +232,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   }
 
   const pickups = []; // powerup drops lying on the ground, awaiting hero overlap
-  const shops = placeShops();
+  const shop = createShop({
+    ctx, input, level, homeSet, lootRng, lootBag, runState, acquire,
+    ts: TS, viewW: VIEW_W, viewH: VIEW_H,
+  });
 
   const cam = { x: 0, y: 0 };
   // Screen shake: a magnitude (px) that decays each frame and perturbs the render camera.
@@ -259,13 +262,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const deadThisRun = new Set();
   // One place to end the run as a loss with its cause — every lethal path routes here.
   const loseRun = (cause) => { outcome = "lose"; deathCause = cause; deadThisRun.add(head.id); sfx.play("scream"); sfx.play("lose"); emitRunEnd(false); };
-  let nearShop = null;  // shop the hero is standing on this frame
-  // Stepping onto a shop pauses the run and opens a pick-one-item modal. shopLatch
-  // keeps it from instantly reopening while the hero still overlaps after leaving;
-  // it clears once they step off. prev* edge-trigger the modal's discrete keys.
-  let shopOpen = false, shopLatch = false, shopSel = 0;
-  let prevBuy = false, prevUp = false, prevDown = false, prevLeave = false;
-
   // Build an enemy from its def at a tile and push it live. The entity holds live
   // state + the spec-03 component shape (stats/derived/faction/health/mana) the
   // shared resolver operates on; immutable config stays on `def` and is read
@@ -283,33 +279,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     e.hp = e.derived.maxHp;
     e.mana = e.derived.maxMana;
     enemies.push(e);
-  }
-
-  // Scatter shop spots down the descent — one per even depth band so they appear
-  // through the run. Each stall draws its stock from the shared bag (so no item is
-  // offered twice run-wide); prices are quoted later, at the moment the player
-  // reaches the stall (reactive market). Placed here, not in levelgen, which
-  // "emits geometry only".
-  function placeShops() {
-    const { count, minTileY, r, stock } = BALANCE.shop;
-    const lo = Math.max(minTileY, BALANCE.spawnMinTileY), hi = level.h - 3;
-    const bandH = (hi - lo) / count;
-    const out = [];
-    for (let b = 0; b < count; b++) {
-      const y0 = Math.floor(lo + b * bandH), y1 = Math.floor(lo + (b + 1) * bandH);
-      const cells = [];
-      for (let ty = y0; ty < y1; ty++)
-        for (let tx = 1; tx < level.w - 1; tx++)
-          if (isWalkable(level, tx, ty) && !homeSet.has(ty * level.w + tx)) cells.push([tx, ty]);
-      if (!cells.length) continue;
-      const [tx, ty] = lootRng.pick(cells);
-      const items = [];
-      for (let k = 0; k < stock && lootBag.length; k++)
-        items.push({ defId: lootBag.shift(), bought: false });
-      if (!items.length) continue; // bag exhausted — no stall here
-      out.push({ tx, ty, x: tx * TS + TS / 2, y: ty * TS + TS / 2, r, items });
-    }
-    return out;
   }
 
   // Adaptive difficulty: the director scales its threat budget by the party's current
@@ -585,76 +554,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     BEHAVIORS[e.def.behavior](e, dt, tgt, tileOf(tgt));
   }
 
-  // Standing on a shop freezes the world: the player browses the stall's stock and
-  // buys what they want without the descent crushing them. World sim is skipped while
-  // this returns true (update() returns early), so only the modal's keys are read.
-  // Shop panel/row geometry in logical canvas px — one source of truth for the
-  // renderer (draw) and stepShop (tap hit-testing). Rows carry their item index.
-  function shopLayout() {
-    const items = nearShop.items;
-    const panelW = 520, rowH = 56, gap = 8;
-    const panelH = 132 + items.length * (rowH + gap);
-    const px = (VIEW_W - panelW) / 2, py = (VIEW_H - panelH) / 2;
-    const rows = [];
-    let y = py + 92;
-    for (let n = 0; n < items.length; n++) {
-      rows.push({ x: px + 20, y, w: panelW - 40, h: rowH, index: n });
-      y += rowH + gap;
-    }
-    return { items, px, py, panelW, panelH, rowH, gap, rows };
-  }
-
-  // Reactive market: quote every unbought item as a fraction of the player's
-  // cash-on-hand, locked in the instant they reach the stall (not recomputed as
-  // they buy). With the rate tiers, one-of-each-tier sums to >1, so a stall can't
-  // be fully cleared from a single snapshot — and over-buying just stacks curses.
-  function priceShop(shop) {
-    const snapshot = runState.cash;
-    for (const it of shop.items)
-      if (!it.bought) it.price = priceItem(POWERUPS[it.defId].rarity, snapshot, LOOT);
-  }
-
-  function buyItem(n) {
-    const it = nearShop.items[n];
-    if (it.bought || runState.cash < it.price) return;
-    runState.cash -= it.price;
-    acquire(it.defId);
-    it.bought = true;
-  }
-
-  function leaveShop() {
-    shopOpen = false; shopLatch = true; nearShop = null;
-  }
-
-  function stepShop() {
-    const items = nearShop.items;
-    const up = input.down("ArrowUp") || input.down("KeyW") || input.down("KeyK");
-    const down = input.down("ArrowDown") || input.down("KeyS") || input.down("KeyJ");
-    if (up && !prevUp) shopSel = (shopSel - 1 + items.length) % items.length;
-    if (down && !prevDown) shopSel = (shopSel + 1) % items.length;
-    prevUp = up; prevDown = down;
-
-    const buy = input.down("KeyE") || input.down("Enter");
-    if (buy && !prevBuy) buyItem(shopSel);
-    prevBuy = buy;
-
-    // Touch: tap a row to select + buy it; tap outside the panel to leave.
-    const lay = shopLayout();
-    const panel = { x: lay.px, y: lay.py, w: lay.panelW, h: lay.panelH };
-    for (let tap; (tap = input.consumeTap()); ) {
-      const hit = lay.rows.find((r) => hitRect(tap, r));
-      if (hit) { shopSel = hit.index; buyItem(hit.index); }
-      else if (!hitRect(tap, panel)) { leaveShop(); break; }
-    }
-    if (!shopOpen) return; // a tap already left the stall
-
-    const leave = input.down("KeyQ") || input.down("Escape");
-    // Close on leave, or once the stall is cleared out. Latch so the still-overlapping
-    // hero doesn't reopen it; the latch clears when they step off (in update()).
-    if ((leave && !prevLeave) || items.every((it) => it.bought)) leaveShop();
-    prevLeave = leave;
-  }
-
   function update(dt) {
     voidClock += dt; // void background animates on real time, regardless of pause/outcome
     if (outcome) return; // run is over; main hands off to the summary scene (spec 15)
@@ -662,7 +561,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     // stall with Esc can't bleed into the same press toggling pause.
     const esc = input.down("Escape"), escEdge = esc && !pEsc;
     pEsc = esc;
-    if (shopOpen) { stepShop(); return; } // paused at a stall — only the modal runs
+    if (shop.isOpen()) { shop.step(); return; } // paused at a stall — only the modal runs
     if (escEdge) paused = !paused;
     if (paused) return; // frozen; render() draws the PAUSED overlay, Esc resumes
     while (input.consumeTap()) { /* gameplay has no tap actions — drain so taps don't
@@ -833,13 +732,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       }
     }
 
-    // Shops: stepping onto a stall with stock left opens the paused pick modal
-    // (handled by stepShop next frame). Leaving the pad re-arms the latch.
-    nearShop = null;
-    for (const s of shops)
-      if (dist(s.x, s.y, hero.x, hero.y) < hero.r + s.r) { nearShop = s; break; }
-    if (!nearShop) shopLatch = false;
-    else if (!shopLatch && nearShop.items.some((it) => !it.bought)) { priceShop(nearShop); shopOpen = true; shopSel = 0; }
+    shop.detect(hero); // stepping onto a stall with stock opens the paused pick modal
 
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
     for (let i = pickups.length - 1; i >= 0; i--) if (pickups[i].dead) pickups.splice(i, 1);
@@ -878,45 +771,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
 
     const [tx, ty] = tileOf(hero);
     if (homeSet.has(ty * level.w + tx)) { outcome = "win"; sfx.play("win"); emitRunEnd(true); }
-  }
-
-  // The paused stall: a centered card list of the shop's stock. Reuses the
-  // select-screen palette; cost is colored by affordability (dimmed once sold).
-  function renderShop() {
-    const S = THEME.select;
-    const { items, px, py, panelW, panelH, rows, rowH } = shopLayout();
-    ctx.fillStyle = THEME.overlay.bg;
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    ctx.fillStyle = S.bg;
-    ctx.fillRect(px, py, panelW, panelH);
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = S.title; ctx.font = S.titleFont;
-    ctx.fillText("Shop", VIEW_W / 2, py + 46);
-    ctx.fillStyle = S.hint; ctx.font = S.hintFont;
-    ctx.fillText(`cash ${runState.cash}`, VIEW_W / 2, py + 70);
-
-    for (let n = 0; n < items.length; n++) {
-      const it = items[n], def = POWERUPS[it.defId], active = n === shopSel, y = rows[n].y;
-      const can = runState.cash >= it.price;
-      ctx.fillStyle = active ? S.cardActive : S.card;
-      ctx.fillRect(px + 20, y, panelW - 40, rowH);
-      if (active) { ctx.strokeStyle = S.border; ctx.lineWidth = 2; ctx.strokeRect(px + 21, y + 1, panelW - 42, rowH - 2); }
-      ctx.textAlign = "left";
-      ctx.fillStyle = it.bought ? S.hint : S.name; ctx.font = S.nameFont;
-      ctx.fillText(it.bought ? `${def.name}  (sold)` : def.name, px + 40, y + 24);
-      ctx.fillStyle = S.desc; ctx.font = S.descFont;
-      ctx.fillText(def.blurb, px + 40, y + 44);
-      ctx.textAlign = "right";
-      ctx.fillStyle = it.bought ? S.hint : can ? THEME.shop.afford : THEME.shop.broke;
-      ctx.font = S.nameFont;
-      ctx.fillText(it.bought ? "—" : `${it.price}`, px + panelW - 40, y + 34);
-    }
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = S.hint; ctx.font = S.hintFont;
-    ctx.fillText("↑/↓ or tap to pick    E buy    Q / tap outside to leave", VIEW_W / 2, py + panelH - 18);
-    ctx.textAlign = "left";
   }
 
   // Dual-grid textured ground: a static grass base, then one offset pass per
@@ -1044,7 +898,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
         ctx.fillRect(Math.floor(hx * TS - cam.x), Math.floor(hy * TS - cam.y), TS + 1, TS + 1);
 
     // Shop spots are structures — draw on the ground, under everything live.
-    for (const s of shops) {
+    for (const s of shop.shops) {
       if (s.items.every((it) => it.bought)) continue;
       const sx = s.x - cam.x, sy = s.y - cam.y;
       ctx.fillStyle = THEME.shop.roof; // a little awning so the spot reads as a stall
@@ -1222,7 +1076,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
 
     // Paused shop modal: the frozen world shows behind a dimmed panel listing the
     // stall's stock; the player picks one to buy. Drawn last so it sits over everything.
-    if (shopOpen && nearShop) renderShop();
+    if (shop.isOpen()) shop.render();
     if (paused) {
       const O = THEME.overlay;
       ctx.fillStyle = O.bg; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
