@@ -17,6 +17,7 @@ import { BALANCE, THEME } from "./balance.js";
 import { track, newRunId } from "./telemetry.js";
 import { createVoidRenderer } from "./voidBackgrounds.js";
 import { createCombat } from "./combatKit.js";
+import { createSoftBody } from "./softBody.js";
 import { sfx } from "../audio/sfx.js";
 import { disc, ring, bar, glyph, clamp, drawMember } from "./draw.js";
 
@@ -249,6 +250,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const debris = [];      // spent slingshot pellets resting where they landed (persist), visual only
   const dustPuffs = [];   // Dash's dust-trail puffs (slow + chip), emitted along his path while trailing
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
+  const { shift, separate, separateHero, heroMove } = createSoftBody({ level, hero, enemies });
   let outcome = null;
   let paused = false, pEsc = false; // Esc toggles a full freeze during free descent
   let deathCause = null; // short label of what killed the hero (spec 15 RunResult.cause)
@@ -581,56 +583,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     e.repathT -= dt;
     const tgt = targetFor(e);
     BEHAVIORS[e.def.behavior](e, dt, tgt, tileOf(tgt));
-  }
-
-  // Soft body collision: shift `e` (and optionally `o`) so circles stop overlapping,
-  // never into a wall.
-  function shift(e, dx, dy) {
-    e.x += dx; e.y += dy;
-    if (boxBlocked(level, e)) { e.x -= dx; e.y -= dy; }
-  }
-  function separate(a, b, moveA) {
-    const dx = b.x - a.x, dy = b.y - a.y;
-    let d = Math.hypot(dx, dy) || 0.001;
-    const min = a.r + b.r;
-    if (d >= min) return;
-    const o = min - d, nx = dx / d, ny = dy / d;
-    if (moveA) { const p = BALANCE.softBodyPush; shift(a, -nx * o * p, -ny * o * p); shift(b, nx * o * p, ny * o * p); }
-    else shift(b, nx * o, ny * o); // push only b (b out of an immovable a)
-  }
-  // Hero vs an enemy: asymmetric split — the hero `a` yields only `aYield` of the overlap,
-  // the enemy `b` takes the rest, so a dense crowd's stacked nudges slow the head instead of
-  // parting like water. Crucially the hero's push never goes NORTH (toward the crush line at
-  // minY): `min(ny,0)` keeps the hero's y-shift >= 0 (southward or none), so no swarm can
-  // press the head back into the advancing edge — only the camera/input move it there.
-  function separateHero(a, b, aYield) {
-    const dx = b.x - a.x, dy = b.y - a.y;
-    let d = Math.hypot(dx, dy) || 0.001;
-    const min = a.r + b.r;
-    if (d >= min) return;
-    const o = min - d, nx = dx / d, ny = dy / d, ay = Math.min(ny, 0);
-    shift(a, -nx * o * aYield, -ay * o * aYield);
-    shift(b, nx * o * (1 - aYield), ny * o * (1 - aYield));
-  }
-
-  // Hard block: the hero cannot move deeper into any body (living enemy or corpse),
-  // but may always move away from one (so it never gets permanently stuck).
-  function bodyDeeper(px, py) {
-    for (const e of enemies) {
-      if (e.dead) continue; // corpses are pushable, only living enemies hard-block
-      const min = hero.r + e.r;
-      const nd = dist(hero.x, hero.y, e.x, e.y);
-      if (nd < min && nd < dist(px, py, e.x, e.y)) return true;
-    }
-    return false;
-  }
-  function heroMove(dx, dy) {
-    const ox = hero.x;
-    hero.x += dx;
-    if (boxBlocked(level, hero) || bodyDeeper(ox, hero.y)) hero.x = ox;
-    const oy = hero.y;
-    hero.y += dy;
-    if (boxBlocked(level, hero) || bodyDeeper(hero.x, oy)) hero.y = oy;
   }
 
   // Standing on a shop freezes the world: the player browses the stall's stock and
