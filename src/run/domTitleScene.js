@@ -59,7 +59,10 @@ function scene(buildHTML, onAction, keymap) {
 
 export function createTitleScene(ctx, input, blob) {
   const cmp = blob.campaign;
-  const inProgress = blob.runCount > 0 || cmp.day > 1 || cmp.dead.length > 0;
+  // "In progress" is a property of the CURRENT campaign, not lifetime play: past day 1,
+  // someone fell, or the crew grew beyond the lone starter. (Lifetime runCount must not
+  // count here, or a freshly reset campaign would still offer "Continue".)
+  const inProgress = cmp.day > 1 || cmp.dead.length > 0 || cmp.crew.length > 1;
   const build = () => `
     <div class="kick">Merriton High · 3:00 PM</div>
     <h1>3:<em>00</em> PM</h1>

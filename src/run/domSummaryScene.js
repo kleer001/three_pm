@@ -166,7 +166,9 @@ export function createSummaryScene(ctx, input, result, nextSeed, bgId) {
 
   const roster = BALANCE.roster;
   const headId = result.heroId;
-  const newUnlocks = after.unlockedHeroes.filter((id) => !before.unlockedHeroes.includes(id)); // heroes who "sign in" this run
+  // Heroes who "sign in" this run: those that become available now that the crew survived
+  // another day — their unlockAtRuns equals the day just played. None on a wipe (no new day).
+  const newUnlocks = wipe ? [] : roster.filter((c) => c.unlockAtRuns === before.campaign.day).map((c) => c.id);
   const dist = Math.round(result.distanceFraction * 1200);
   const day = before.campaign.day;
   const justFell = new Set(result.died || []);

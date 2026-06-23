@@ -65,10 +65,12 @@ export function resetCampaign(blob) {
   return blob;
 }
 
-// Heroes the crew can add at the picker: unlocked, still alive, not already enlisted.
+// Heroes the crew can add at the picker: available this campaign, still alive, not enlisted.
 export function recruitable(blob) {
   const c = blob.campaign;
-  return recomputeUnlocks(blob.runCount).filter((id) => !c.dead.includes(id) && !c.crew.includes(id));
+  return BALANCE.roster
+    .filter((h) => isHeroUnlocked(blob, h.id) && !c.dead.includes(h.id) && !c.crew.includes(h.id))
+    .map((h) => h.id);
 }
 
 // Per-hero permanent upgrade trees (spec 08 upgrades.json). `apply` mirrors the
@@ -175,8 +177,7 @@ const clone = (blob) => JSON.parse(JSON.stringify(blob));
 
 function defaultBlob() {
   return {
-    version: VERSION, credits: 0, runCount: 0,
-    unlockedHeroes: recomputeUnlocks(0), heroUpgrades: {},
+    version: VERSION, credits: 0, runCount: 0, heroUpgrades: {},
     stats: { wins: 0, bestDistance: 0, totalKills: 0 },
     campaign: startCampaign(),
   };
@@ -216,12 +217,13 @@ export function save(blob) {
   return blob;
 }
 
-// Heroes whose unlock gate the given runCount satisfies (the source of truth; the
-// blob's unlockedHeroes is just a cache recordRun rewrites).
-export function recomputeUnlocks(runCount) {
-  return Object.keys(HERO_UNLOCKS).filter((id) => runCount >= HERO_UNLOCKS[id]);
-}
-export const isHeroUnlocked = (blob, id) => blob.runCount >= HERO_UNLOCKS[id];
+// Hero availability — the SINGLE source of truth. A hero is available once the crew has
+// survived its `unlockAtRuns`'th run THIS campaign. "Runs survived" = campaign.day - 1
+// (day 1 is the start, before any run). Bound to the campaign, not to lifetime play, so a
+// fresh campaign (resetCampaign → day 1) shows only the run-0 hero and re-earns the rest.
+// Lifetime `runCount` is a stat, not a gate — it never decides who's playable.
+export const runsSurvived = (blob) => blob.campaign.day - 1;
+export const isHeroUnlocked = (blob, id) => runsSurvived(blob) >= HERO_UNLOCKS[id];
 
 // Credits earned this run (spec 08 formula): distance + kills + a flat win bonus.
 export function computePayout(result) {
@@ -238,8 +240,9 @@ export function bankCurrency(blob, n) {
   return blob;
 }
 
-// Fold one completed run into the save (spec 08): bank the payout, bump runCount
-// and the lifetime stats, refresh the unlock cache. Pure — caller persists.
+// Fold one completed run into the save (spec 08): bank the payout, bump the lifetime
+// runCount and stats. Hero availability is NOT touched here — it derives from the
+// campaign day (see isHeroUnlocked). Pure — caller persists.
 export function recordRun(blob, result) {
   blob = clone(blob);
   blob.credits += computePayout(result);
@@ -247,7 +250,6 @@ export function recordRun(blob, result) {
   blob.stats.wins += result.won ? 1 : 0;
   blob.stats.totalKills += result.kills;
   blob.stats.bestDistance = Math.max(blob.stats.bestDistance, result.distanceFraction);
-  blob.unlockedHeroes = recomputeUnlocks(blob.runCount);
   return blob;
 }
 

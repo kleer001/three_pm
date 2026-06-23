@@ -7,13 +7,14 @@ import { makeRng } from "../src/core/rng.js";
 import { distanceFraction, budget, eligible, makeDirector } from "../src/run/director.js";
 import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "../src/run/combat.js";
 import { POWERUPS, SYNERGIES, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag, priceItem } from "../src/run/powerups.js";
-import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgrade, applyHeroUpgrades, recomputeUnlocks, isHeroUnlocked, upgradeRank, nextCost } from "../src/meta/save.js";
+import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgrade, applyHeroUpgrades, isHeroUnlocked, startCampaign, upgradeRank, nextCost } from "../src/meta/save.js";
 import { BALANCE, THEME } from "../src/run/balance.js";
 import { createPartyPreview } from "../src/run/partyPreview.js";
 
 const freshBlob = () => ({
-  version: 1, credits: 0, runCount: 0, unlockedHeroes: recomputeUnlocks(0), heroUpgrades: {},
+  version: 2, credits: 0, runCount: 0, heroUpgrades: {},
   stats: { wins: 0, bestDistance: 0, totalKills: 0 },
+  campaign: startCampaign(),
 });
 
 let failures = 0;
@@ -367,14 +368,19 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   ok(hero.stats[k] === 5 + def.apply[k] * 2, "applyHeroUpgrades scales stat delta by rank");
   ok(hero.derived && hero.derived.maxHp > 0, "applyHeroUpgrades derives after folding stats");
 
-  // Unlock gate: runCount >= unlockAtRuns. A run-0 character is always available; a
-  // later-gated one is locked early and opens once runCount reaches its gate.
+  // Unlock gate is CAMPAIGN-scoped: a hero opens once the crew has survived its
+  // unlockAtRuns'th run this campaign (runsSurvived = campaign.day - 1).
   const day0 = BALANCE.roster.find((c) => c.unlockAtRuns === 0).id;
   const gated = BALANCE.roster.find((c) => c.unlockAtRuns > 0);
-  ok(recomputeUnlocks(0).includes(day0), "run-0 character unlocked from the first load");
-  ok(isHeroUnlocked(freshBlob(), day0), "isHeroUnlocked: run-0 character");
-  ok(!recomputeUnlocks(gated.unlockAtRuns - 1).includes(gated.id), "gated character locked before its run");
-  ok(recomputeUnlocks(gated.unlockAtRuns).includes(gated.id), "gated character unlocks at its run");
+  const blobAtDay = (day) => ({ ...freshBlob(), campaign: { day, crew: ["marvin"], dead: [] } });
+  ok(isHeroUnlocked(blobAtDay(1), day0), "run-0 character available on day 1");
+  ok(!isHeroUnlocked(blobAtDay(gated.unlockAtRuns), gated.id), "gated character locked before surviving enough runs");
+  ok(isHeroUnlocked(blobAtDay(gated.unlockAtRuns + 1), gated.id), "gated character unlocks the day after its run count");
+  // Regression: availability is campaign-scoped, NOT lifetime. A veteran (high runCount)
+  // starting a fresh campaign (day 1) still only sees the run-0 hero.
+  const veteran = { ...freshBlob(), runCount: 99, campaign: startCampaign() };
+  ok(isHeroUnlocked(veteran, day0), "veteran: run-0 hero available on a fresh campaign");
+  ok(!isHeroUnlocked(veteran, gated.id), "veteran: lifetime runCount does NOT unlock heroes on a fresh campaign");
 }
 
 // Party-select live preview: the self-contained mini-sim must run every roster hero —
