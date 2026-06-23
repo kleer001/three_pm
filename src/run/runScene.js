@@ -4,7 +4,7 @@
 // payload. The subsystems live in their own modules (softBody, shop, enemyAI,
 // followerTrain, runRender, combatKit) and receive the live world plus the
 // coupling callbacks below via createX(env) injection.
-import { generate, isWalkable } from "./levelgen.js";
+import { generate, isWalkable, TILE } from "./levelgen.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
 import { makeDirector, distanceFraction } from "./director.js";
@@ -243,6 +243,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters, debris, dustPuffs,
     knockback,
     projectileBlocked: (x, y) => !isWalkable(level, Math.floor(x / TS), Math.floor(y / TS)),
+    inVoid: (x, y) => { // true over a reality break (RUBBLE hole) — distinct from a solid wall
+      const tx = Math.floor(x / TS), ty = Math.floor(y / TS);
+      return tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE;
+    },
     cullDeployable: (d) => d.y < cam.y + MARGIN, // left behind once the crush line passes it
     sfx: sfx.play,
     shake: addShake,

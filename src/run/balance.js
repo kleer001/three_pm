@@ -217,6 +217,10 @@ export const BALANCE = {
                    // it's intangible (can't be hit) while fading
   enemyShotLife: 2.5, // s an enemy projectile lives before fizzling
   enemyShotHitPad: 5, // px added to hero radius for enemy-projectile hits
+  // A ball shot that flies into a reality break (void/RUBBLE) doesn't die at the edge —
+  // it drifts in, decelerating (drag) and shrinking (shrink, both per-second e-fold rates)
+  // until it's a single pixel (minR), then it's swallowed. Walls still block normally.
+  voidFall: { drag: 4, shrink: 3.2, minR: 0.5 },
 };
 
 // Suburb generator tuning (consumed by levelgen.js). Algorithm structure (BFS,

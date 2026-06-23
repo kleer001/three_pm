@@ -237,11 +237,22 @@ export function createCombat(env) {
   function dropDebris(p) { if (p.persist && env.debris) env.debris.push({ x: p.x, y: p.y, r: p.shotR }); }
 
   function stepProjectiles(dt) {
+    const vf = BALANCE.voidFall;
     for (const p of projectiles) {
       if (p.dead) continue;
       if (p.planted) { p.fuse -= dt; if (p.fuse <= 0) { detonate(p); p.dead = true; } continue; }
+      if (p.voidFall) { // drifting into a reality break: decelerate, shrink to a pixel, then swallowed
+        const drag = Math.exp(-vf.drag * dt);
+        p.vx *= drag; p.vy *= drag;
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.shotR *= Math.exp(-vf.shrink * dt);
+        if (p.shotR <= vf.minR) p.dead = true;
+        continue;
+      }
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life <= 0 || env.projectileBlocked(p.x, p.y)) {
+        // A ball that flew into the void (not a solid wall) falls in rather than dying at the edge.
+        if (p.life > 0 && p.fuse == null && p.shape !== "bomb" && !p.pierce && env.inVoid?.(p.x, p.y)) { p.voidFall = true; continue; }
         if (p.fuse != null) { p.planted = true; p.vx = 0; p.vy = 0; continue; } // plant, then fuse
         if (p.shape === "bomb") detonate(p); // a lob that fizzles still bursts where it lands
         dropDebris(p); p.dead = true; continue;
