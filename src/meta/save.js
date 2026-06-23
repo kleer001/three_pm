@@ -27,8 +27,10 @@ export const HERO_UNLOCKS = Object.fromEntries(BALANCE.roster.map((c) => [c.id, 
 // which a fresh campaign keeps the durable meta (credits/unlocks/upgrades) but resets
 // the crew + day. `runCount` stays the lifetime counter across campaigns; `campaign.day`
 // is the per-campaign day, reset on wipe/new-game.
-// A new campaign opens with just the lead hero on the walk; the other run-0 heroes are
-// available as reserves to enlist (recruitable from day 1), the rest unlock by run count.
+// A new campaign opens with just the lead hero on the walk (Marvin — the only run-0 hero).
+// The rest unlock one per surviving run by lifetime runCount, and each becomes recruitable
+// at the picker as soon as it unlocks — so a fresh crew can only grow as fast as that drip,
+// while a post-wipe campaign can immediately enlist from everything already unlocked.
 const STARTERS = BALANCE.roster.filter((c) => c.unlockAtRuns === 0).map((c) => c.id);
 
 export function startCampaign() {
