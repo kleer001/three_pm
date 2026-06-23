@@ -221,6 +221,10 @@ export const BALANCE = {
   // it drifts in, decelerating (drag) and shrinking (shrink, both per-second e-fold rates)
   // until it's a single pixel (minR), then it's swallowed. Walls still block normally.
   voidFall: { drag: 4, shrink: 3.2, minR: 0.5 },
+  // A reality break tugs nearby corpses in: a dead body within rangeTiles of a hole
+  // accelerates toward the nearest one (accel px/s²), then is swallowed into the void-fall.
+  // accel ≈ 2·(rangeTiles·tile)/t² for a ~t-second pull from the far edge.
+  voidVacuum: { rangeTiles: 2, accel: 60 },
 };
 
 // Suburb generator tuning (consumed by levelgen.js). Algorithm structure (BFS,

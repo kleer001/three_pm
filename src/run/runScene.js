@@ -181,6 +181,19 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
         if (tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE) return true;
     return false;
   };
+  // Center of the nearest reality-break tile within `rangeTiles`, or null — for the corpse vacuum.
+  const nearestVoid = (x, y, rangeTiles) => {
+    const ctx = Math.floor(x / TS), cty = Math.floor(y / TS);
+    let best = null, bestD = Infinity;
+    for (let ty = cty - rangeTiles; ty <= cty + rangeTiles; ty++)
+      for (let tx = ctx - rangeTiles; tx <= ctx + rangeTiles; tx++) {
+        if (tx < 0 || ty < 0 || tx >= level.w || ty >= level.h) continue;
+        if (level.tiles[ty * level.w + tx] !== TILE.RUBBLE) continue;
+        const vcx = tx * TS + TS / 2, vcy = ty * TS + TS / 2, d = Math.hypot(vcx - x, vcy - y);
+        if (d < bestD) { bestD = d; best = { x: vcx, y: vcy, d }; }
+      }
+    return best;
+  };
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   const { shift, separate, separateHero, heroMove } = createSoftBody({ level, hero, enemies });
   let outcome = null;
@@ -361,6 +374,27 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       else if (e.staggerT > 0) e.staggerT--;
     }
     applyKb(hero);
+
+    // Vacuum: a reality break tugs nearby corpses in. A dead body within rangeTiles of a hole
+    // accelerates toward the nearest one; once its box reaches the hole it's swallowed (joins the
+    // void-fall list to shrink away). Iterate backwards so the splice is safe.
+    {
+      const V = BALANCE.voidVacuum, maxD = V.rangeTiles * TS;
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (!e.dead) continue;
+        const v = nearestVoid(e.x, e.y, V.rangeTiles);
+        if (!v || v.d > maxD) continue;
+        const m = v.d || 1;
+        e.vacx = (e.vacx || 0) + ((v.x - e.x) / m) * V.accel * dt;
+        e.vacy = (e.vacy || 0) + ((v.y - e.y) / m) * V.accel * dt;
+        e.x += e.vacx * dt; e.y += e.vacy * dt;
+        if (boxOverlapsVoid(e.x, e.y, e.w, e.h)) {
+          voidFalling.push({ x: e.x, y: e.y, r: e.r, color: THEME.corpse, vfx: e.vacx * dt, vfy: e.vacy * dt });
+          enemies.splice(i, 1);
+        }
+      }
+    }
 
     // Bodies (and the spent balls) sinking into a reality break: drift on their shove, decelerate
     // and shrink to a pixel, then they're swallowed. Same feel/knobs as the projectile void-fall.
