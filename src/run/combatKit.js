@@ -248,14 +248,17 @@ export function createCombat(env) {
       }
       const pad = p.faction === "enemy" ? BALANCE.enemyShotHitPad : 0;
       for (const t of (p.faction === "player" ? enemies : env.heroTargets)) {
-        if (t.dead || t.pending || t.fadeT > 0) continue; // not-yet-joined or still fading in: can't be hit
-        if (dist(p.x, p.y, t.x, t.y) < p.shotR + t.r + pad) {
-          if (p.fuse != null) { applyHit(p.attacker, t, p.impact || p.damage, 0, p.vx, p.vy, false); p.planted = true; p.vx = 0; p.vy = 0; break; }
-          if (p.shape === "bomb") { detonate(p); p.dead = true; break; }
-          if (p.pierce) { if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze); p.hits.add(t); } continue; }
-          applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze);
+        if (t.pending || t.fadeT > 0) continue; // not-yet-joined or still fading in: intangible
+        if (dist(p.x, p.y, t.x, t.y) >= p.shotR + t.r + pad) continue;
+        if (t.dead) { // a corpse is a solid body — it stops a plain shot so it can't hit a live enemy behind; bombs/fuses/beams pass as before
+          if (p.pierce || p.shape === "bomb" || p.fuse != null) continue;
           dropDebris(p); p.dead = true; break;
         }
+        if (p.fuse != null) { applyHit(p.attacker, t, p.impact || p.damage, 0, p.vx, p.vy, false); p.planted = true; p.vx = 0; p.vy = 0; break; }
+        if (p.shape === "bomb") { detonate(p); p.dead = true; break; }
+        if (p.pierce) { if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze); p.hits.add(t); } continue; }
+        applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze);
+        dropDebris(p); p.dead = true; break;
       }
     }
   }
