@@ -242,7 +242,7 @@ export const THEME = {
   obstacleDarken: "rgba(0,0,0,0.4)", // darken obstacles so collision is legible
   homeBand: "rgba(255,215,0,0.35)",
   corpse: "#2b2622",
-  pellet: "rgba(216,212,200,0.7)", // spent slingshot pellet: same color as the in-flight shot (weaponShot.slingshot), just slightly faded so it reads as "landed"
+  pellet: "#d8d4c8", // spent slingshot pellet: identical to the in-flight shot color (weaponShot.slingshot)
   dust: "rgba(196,182,150,0.5)", // Dash's dust-trail puff (expands + fades; see dust_devil)
   enemyShot: { r: 5, color: "#145a32" },
   weaponShot: { slingshot: "#d8d4c8", hex: "#9b59b6", beam: "#1abc9c", bomb: "#e67e22", nova: "#f5d76e", field: "#8e44ad",
