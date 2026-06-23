@@ -17,8 +17,6 @@ import { recomputeDerived, regenMana } from "./combat.js";
 import { createCombat } from "./combatKit.js";
 import { disc, ring, bar, drawMember } from "./draw.js";
 
-const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
-
 // Arena tuning — a tiny static target range (no marching wave).
 const KB_SHOVE = 1.2;     // px of shove per unit of resolved knockback (preview-only feel)
 const POKE_EVERY = 0.55;  // seconds between simulated incoming hits (so charge/heal passives demo)
