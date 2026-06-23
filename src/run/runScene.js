@@ -163,11 +163,23 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const debris = [];      // spent slingshot pellets resting where they landed, visual only
   const dustPuffs = [];   // Dash's dust-trail puffs (slow + chip)
   const voidFalling = []; // enemies shoved into a reality break: drifting, shrinking, soon gone
-  // True over a reality break (a RUBBLE hole) — distinct from a solid wall; shared by the
-  // projectile/enemy void-fall and the combat env's projectileBlocked sibling.
+  // True over a reality break (a RUBBLE hole) — distinct from a solid wall. The point form
+  // backs the projectile void-fall (shots are points) + the combat env. The box form backs
+  // the enemy void-fall: moveAndCollide keeps a body's AABB out of every non-walkable tile,
+  // so a center-point test never lands inside the hole — instead ask whether the shoved box
+  // would OVERLAP a hole (i.e. the void, not a wall, is what's stopping it).
   const inVoid = (x, y) => {
     const tx = Math.floor(x / TS), ty = Math.floor(y / TS);
     return tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE;
+  };
+  const boxOverlapsVoid = (cx, cy, w, h) => {
+    const hw = w / 2, hh = h / 2;
+    const x0 = Math.floor((cx - hw) / TS), x1 = Math.floor((cx + hw - 1e-6) / TS);
+    const y0 = Math.floor((cy - hh) / TS), y1 = Math.floor((cy + hh - 1e-6) / TS);
+    for (let ty = y0; ty <= y1; ty++)
+      for (let tx = x0; tx <= x1; tx++)
+        if (tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE) return true;
+    return false;
   };
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   const { shift, separate, separateHero, heroMove } = createSoftBody({ level, hero, enemies });
@@ -339,7 +351,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     // backwards so the splice is safe), where it drifts in and shrinks away — no body to loot.
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
-      if (e.kb && e.kb.frames > 0 && inVoid(e.x + e.kb.vx, e.y + e.kb.vy)) {
+      if (e.kb && e.kb.frames > 0 && boxOverlapsVoid(e.x + e.kb.vx, e.y + e.kb.vy, e.w, e.h)) {
         voidFalling.push({ x: e.x, y: e.y, r: e.r, color: e.def.color, vfx: e.kb.vx, vfy: e.kb.vy });
         enemies.splice(i, 1);
         continue;
