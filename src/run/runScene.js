@@ -162,6 +162,13 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const floaters = [];    // rising damage numbers, one per landed hit, visual only
   const debris = [];      // spent slingshot pellets resting where they landed, visual only
   const dustPuffs = [];   // Dash's dust-trail puffs (slow + chip)
+  const voidFalling = []; // enemies shoved into a reality break: drifting, shrinking, soon gone
+  // True over a reality break (a RUBBLE hole) — distinct from a solid wall; shared by the
+  // projectile/enemy void-fall and the combat env's projectileBlocked sibling.
+  const inVoid = (x, y) => {
+    const tx = Math.floor(x / TS), ty = Math.floor(y / TS);
+    return tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE;
+  };
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   const { shift, separate, separateHero, heroMove } = createSoftBody({ level, hero, enemies });
   let outcome = null;
@@ -243,10 +250,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters, debris, dustPuffs,
     knockback,
     projectileBlocked: (x, y) => !isWalkable(level, Math.floor(x / TS), Math.floor(y / TS)),
-    inVoid: (x, y) => { // true over a reality break (RUBBLE hole) — distinct from a solid wall
-      const tx = Math.floor(x / TS), ty = Math.floor(y / TS);
-      return tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE;
-    },
+    inVoid,
     cullDeployable: (d) => d.y < cam.y + MARGIN, // left behind once the crush line passes it
     sfx: sfx.play,
     shake: addShake,
@@ -330,13 +334,32 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     }
 
     // Knockback rides out after brains so a killing blow still flings the body, and the
-    // post-shove stun ticks down (pause first, then the speed ramp).
-    for (const e of enemies) {
+    // post-shove stun ticks down (pause first, then the speed ramp). A shove whose next step
+    // lands in a reality break pulls the enemy out of play into the void-fall list (iterate
+    // backwards so the splice is safe), where it drifts in and shrinks away — no body to loot.
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (e.kb && e.kb.frames > 0 && inVoid(e.x + e.kb.vx, e.y + e.kb.vy)) {
+        voidFalling.push({ x: e.x, y: e.y, r: e.r, color: e.def.color, vfx: e.kb.vx, vfy: e.kb.vy });
+        enemies.splice(i, 1);
+        continue;
+      }
       applyKb(e);
       if (e.pauseT > 0) e.pauseT--;
       else if (e.staggerT > 0) e.staggerT--;
     }
     applyKb(hero);
+
+    // Bodies (and the spent balls) sinking into a reality break: drift on their shove, decelerate
+    // and shrink to a pixel, then they're swallowed. Same feel/knobs as the projectile void-fall.
+    {
+      const vf = BALANCE.voidFall, drag = Math.exp(-vf.drag * dt), shrink = Math.exp(-vf.shrink * dt);
+      for (let i = voidFalling.length - 1; i >= 0; i--) {
+        const b = voidFalling[i];
+        b.x += b.vfx; b.y += b.vfy; b.vfx *= drag; b.vfy *= drag; b.r *= shrink;
+        if (b.r <= vf.minR) voidFalling.splice(i, 1);
+      }
+    }
 
     // Follower train re-homes after enemy brains + knockback so it chases settled positions;
     // its soft-body shove against enemies/corpses runs after that pass below.
@@ -406,7 +429,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   // scalars it reads (shake/paused/voidClock/heldLine).
   const { render } = createRunRenderer({
     ctx, input, level, cam, hero, weapon, followers, enemies, shop,
-    pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs,
+    pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, voidFalling,
     runState, bgId,
     getShake: () => shake, getPaused: () => paused, getVoidClock: () => voidClock, getHeldLine: () => heldLine,
     ts: TS, viewW: VIEW_W, viewH: VIEW_H,

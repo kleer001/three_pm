@@ -63,7 +63,7 @@ let tileAtlas = null; // { sheet, ground, mats:{name:[16 frames]}, order:[names]
 
 export function createRunRenderer({
   ctx, input, level, cam, hero, weapon, followers, enemies, shop,
-  pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs,
+  pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, voidFalling,
   runState, bgId, getShake, getPaused, getVoidClock, getHeldLine, ts, viewW, viewH,
 }) {
   const TS = ts, VIEW_W = viewW, VIEW_H = viewH;
@@ -232,6 +232,9 @@ export function createRunRenderer({
 
     for (const e of enemies)
       if (e.dead) disc(ctx, e.x - cam.x, e.y - cam.y, e.r, THEME.corpse);
+
+    // Bodies sinking into a reality break: drawn in their own color, shrinking toward a pixel.
+    for (const b of voidFalling) disc(ctx, b.x - cam.x, b.y - cam.y, b.r, b.color);
 
     for (const p of pickups) {
       if (p.dead) continue;
