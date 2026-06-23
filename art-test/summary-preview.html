@@ -44,27 +44,27 @@
   <p class="hint">Click the window to skip the type-out (then again to “advance”). The messenger is the live game scene — whatever looks right here is what the game does.</p>
 
 <script type="module">
-import { save, recomputeUnlocks } from "../src/meta/save.js";
+import { save } from "../src/meta/save.js";
 import { createSummaryScene } from "../src/run/domSummaryScene.js";
 
 const BASE_CPS = 62; // matches domSummaryScene CPS
 let speed = 1, scene = null, last = performance.now();
 
-// Deterministic save state per scenario so a replay shows the same conversation. runCount is set
-// so recordRun() crosses an unlock gate → a hero "signs in" this run.
+// Deterministic save state per scenario so a replay shows the same conversation. campaign.day is
+// set so surviving this run crosses an unlock gate (unlockAtRuns === day) → a hero "signs in".
 const SCENARIOS = {
   lost: {
-    blob: { version:2, credits:320, runCount:4, unlockedHeroes:recomputeUnlocks(4), heroUpgrades:{},
+    blob: { version:2, credits:320, runCount:4, heroUpgrades:{},
             stats:{wins:2,bestDistance:0.8,totalKills:140}, campaign:{ day:5, crew:["marvin","chad","dash"], dead:["eugene"] } },
     result: { won:false, heroId:"marvin", distanceFraction:0.62, kills:20, cashDiscarded:180, cause:"Brute", died:["dash"], survived:["marvin","chad"] },
   },
   won: {
-    blob: { version:2, credits:500, runCount:3, unlockedHeroes:recomputeUnlocks(3), heroUpgrades:{},
+    blob: { version:2, credits:500, runCount:3, heroUpgrades:{},
             stats:{wins:3,bestDistance:1,totalKills:120}, campaign:{ day:4, crew:["marvin","chad","dash"], dead:[] } },
     result: { won:true, heroId:"marvin", distanceFraction:1, kills:18, cashDiscarded:0, cause:null, died:[], survived:["marvin","chad","dash"] },
   },
   first: {
-    blob: { version:2, credits:0, runCount:0, unlockedHeroes:recomputeUnlocks(0), heroUpgrades:{},
+    blob: { version:2, credits:0, runCount:0, heroUpgrades:{},
             stats:{wins:0,bestDistance:0,totalKills:0}, campaign:{ day:1, crew:["marvin"], dead:[] } },
     result: { won:true, heroId:"marvin", distanceFraction:1, kills:12, cashDiscarded:0, cause:null, died:[], survived:["marvin"] },
   },
