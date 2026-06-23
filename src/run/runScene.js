@@ -7,9 +7,8 @@
 import { generate, isWalkable, TILE } from "./levelgen.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
-import { findPath } from "../ai/ai.js";
 import { makeDirector, distanceFraction } from "./director.js";
-import { recomputeDerived, weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
+import { recomputeDerived, applyDamage, regenMana } from "./combat.js";
 import { POWERUPS, applyHeld, snapshotBase, cashForKill, rollDrop, makeLootBag } from "./powerups.js";
 import { applyHeroUpgrades } from "../meta/save.js";
 import { BALANCE, THEME } from "./balance.js";
@@ -18,6 +17,7 @@ import { createVoidRenderer } from "./voidBackgrounds.js";
 import { createCombat } from "./combatKit.js";
 import { createSoftBody } from "./softBody.js";
 import { createShop } from "./shop.js";
+import { createEnemyAI } from "./enemyAI.js";
 import { sfx } from "../audio/sfx.js";
 import { disc, ring, bar, glyph, clamp, drawMember } from "./draw.js";
 
@@ -296,22 +296,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
 
   const tileOf = (e) => [Math.floor(e.x / TS), Math.floor(e.y / TS)];
 
-  function followPath(e, speed, dt) {
-    if (!e.path || e.pi >= e.path.length) return true;
-    const [tx, ty] = e.path[e.pi];
-    const cx = tx * TS + TS / 2, cy = ty * TS + TS / 2;
-    const dx = cx - e.x, dy = cy - e.y, d = Math.hypot(dx, dy) || 1;
-    if (d < BALANCE.waypointArrive) { e.pi++; return e.pi >= e.path.length; }
-    moveAndCollide(level, e, (dx / d) * speed * dt, (dy / d) * speed * dt);
-    return false;
-  }
-
-  function repathTo(e, k, tx, ty) {
-    e.path = findPath(level, ...tileOf(e), tx, ty) || [];
-    e.pi = 0;
-    e.repathT = k.repath;
-  }
-
   // Spawn a projectile owned by `attacker`; its faction (which side it can hit)
   // comes from the attacker. `shape` defaults to a single-hit projectile; a `bomb`
   // detonates an area on contact, a `pierce` projectile (beam) hits each enemy once.
@@ -339,14 +323,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     if (!t.kb || t.kb.frames <= 0) return;
     moveAndCollide(level, t, t.kb.vx, t.kb.vy);
     t.kb.frames--;
-  }
-  // An enemy's current locomotion speed: full, except while recovering from a knockback,
-  // when it ramps from a near-stop back to full over its stagger window.
-  function moveSpeedOf(e) {
-    if (e.pauseT > 0) return 0; // dead stop right after a shove, before the ramp
-    const slow = e.slowT > 0 ? e.slowMult : 1; // Chill Zone debuff
-    const base = e.staggerT > 0 ? e.derived.moveSpeed * (1 - e.staggerT / e.staggerMax) : e.derived.moveSpeed;
-    return base * slow;
   }
   // An enemy just died (the slice's stand-in for spec 04's `death` event, funneled
   // through the single hit path below). Pay cash and roll a world drop on the loot
@@ -381,30 +357,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   });
   const nearestEnemy = () => combat.nearestEnemyTo(hero.x, hero.y);
 
-  // Nearest living enemy to `self`, excluding itself — confused-enemy targeting.
-  function nearestOtherEnemy(self) {
-    let best = null, bd = Infinity;
-    for (const e of enemies) {
-      if (e.dead || e === self) continue;
-      const d = dist(e.x, e.y, self.x, self.y);
-      if (d < bd) { bd = d; best = e; }
-    }
-    return best;
-  }
-
-  // A confused enemy chases and contact-damages the nearest other enemy — the only
-  // enemy-on-enemy damage path (Bad Trip).
-  function stepConfused(e, dt) {
-    const t = nearestOtherEnemy(e);
-    if (!t) return;
-    const dx = t.x - e.x, dy = t.y - e.y, d = Math.hypot(dx, dy) || 1;
-    moveAndCollide(level, e, (dx / d) * moveSpeedOf(e) * dt, (dy / d) * moveSpeedOf(e) * dt);
-    if (d < e.r + t.r && e.def.contactDamage) {
-      const dealt = applyDamage(t, e.def.contactDamage);
-      if (dealt > 0) { combat.spawnHitNumber(t, dealt); if (t.dead && !t.looted) onEnemyDeath(t); }
-    }
-  }
-
   // Point on the hero's breadcrumb trail `back` world-units behind the head, walking
   // the polyline and interpolating. Null only before the trail has any points.
   function trailPointBack(back) {
@@ -431,128 +383,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     if (m === hero && hero.dead) loseRun(srcName);
   }
 
-  // Enemies spread their aggro across the whole train, not just the head. Each enemy
-  // locks onto a living party member (random, so the followers trailing north actually
-  // draw fire — nearest would always resolve to the head leading the descent south) and
-  // keeps it until that member dies, then re-rolls. This is what makes a big party
-  // costly to field: every extra hero is another body the enemies will hunt.
-  function targetFor(e) {
-    if (e.target && !e.target.dead) return e.target;
-    const party = hero.dead ? [] : [hero];
-    for (const f of followers) if (!f.dead) party.push(f);
-    e.target = party.length ? rng.pick(party) : hero;
-    return e.target;
-  }
-
-  // Spec 06's four behavior archetypes, one function per family — the frozen
-  // `brainFor(def.behavior)` registry. The slice steers along a BFS path (it has
-  // no movement integrator), so brains repath toward the hero rather than writing
-  // a pure intent vector; the spec's intent is preserved, the mechanism is the
-  // slice's. Only chargers carry scratch state beyond the shared state machine.
-  const BEHAVIORS = {
-    // Shamblers — chase straight in, contact damage on overlap. No telegraph.
-    chaser(e, dt, tgt, tgtTile) {
-      const k = e.def, d = dist(e.x, e.y, tgt.x, tgt.y);
-      if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, tgtTile[0], tgtTile[1]);
-      followPath(e, moveSpeedOf(e), dt);
-      if (d < tgt.r + e.r) hurtMember(tgt, k.contactDamage, k.name);
-    },
-
-    // Imps — chaser, but faster with a random per-step drift so packs fan out
-    // instead of stacking on a single pixel. Only a threat in numbers.
-    swarmer(e, dt, tgt, tgtTile) {
-      const k = e.def, d = dist(e.x, e.y, tgt.x, tgt.y);
-      if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, tgtTile[0], tgtTile[1]);
-      followPath(e, moveSpeedOf(e), dt);
-      const a = rng.next() * Math.PI * 2, j = k.jitter * moveSpeedOf(e) * dt;
-      moveAndCollide(level, e, Math.cos(a) * j, Math.sin(a) * j);
-      if (d < tgt.r + e.r) hurtMember(tgt, k.contactDamage, k.name);
-    },
-
-    // Cultists — hold a preferred range: approach, aim (telegraph), fire a bolt
-    // (costs mana), then cool down and kite if the target closes. Mana regenerates
-    // every tick; a tapped-out caster can't start an aim, so it holds and kites
-    // until the pool refills — positioning lets you wait one out.
-    shooter(e, dt, tgt, tgtTile) {
-      const k = e.def, d = dist(e.x, e.y, tgt.x, tgt.y);
-      regenMana(e, dt); // same mana code the hero's weapons use
-      const kite = () => {
-        if (d < k.prefRange * k.retreatFrac) {
-          const dx = e.x - tgt.x, dy = e.y - tgt.y, m = Math.hypot(dx, dy) || 1;
-          moveAndCollide(level, e, (dx / m) * moveSpeedOf(e) * dt, (dy / m) * moveSpeedOf(e) * dt);
-        }
-      };
-      e.state = e.state || "approach";
-      if (e.state === "approach") {
-        if (d <= k.prefRange) {
-          if (canCast(e, k.attack.manaCost)) { e.state = "aim"; e.timer = k.aim; return; }
-          kite(); // in range but dry — hold and regen
-          return;
-        }
-        if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, tgtTile[0], tgtTile[1]);
-        followPath(e, moveSpeedOf(e), dt);
-      } else if (e.state === "aim") {
-        e.timer -= dt;
-        if (e.timer <= 0) {
-          const dx = tgt.x - e.x, dy = tgt.y - e.y, m = Math.hypot(dx, dy) || 1;
-          combat.fireShot(e, (dx / m) * k.shot, (dy / m) * k.shot, {
-            damage: k.attack, life: BALANCE.enemyShotLife, shotR: THEME.enemyShot.r,
-            color: THEME.enemyShot.color, freeze: false, knockback: 0,
-          });
-          spendMana(e, k.attack.manaCost);
-          e.state = "cooldown"; e.timer = k.cooldown;
-        }
-      } else {
-        e.timer -= dt;
-        kite();
-        if (e.timer <= 0) e.state = "approach";
-      }
-    },
-
-    // Brutes — approach to lunge range, telegraph (intent frozen, the counterplay
-    // window), then dash along the aim captured at telegraph start. A sidestep
-    // during the wind-up dodges the lunge because the aim is locked, not tracked.
-    charger(e, dt, tgt, tgtTile) {
-      const k = e.def, d = dist(e.x, e.y, tgt.x, tgt.y);
-      e.state = e.state || "approach";
-      if (e.state === "approach") {
-        if (d <= k.lungeRange) {
-          const dx = tgt.x - e.x, dy = tgt.y - e.y, m = Math.hypot(dx, dy) || 1;
-          e.lockAim = { x: dx / m, y: dy / m };
-          e.state = "telegraph"; e.timer = k.telegraph;
-          return;
-        }
-        if (!e.path || e.pi >= e.path.length || e.repathT <= 0) repathTo(e, k, tgtTile[0], tgtTile[1]);
-        followPath(e, moveSpeedOf(e), dt);
-        if (d < tgt.r + e.r) hurtMember(tgt, k.contactDamage, k.name);
-      } else if (e.state === "telegraph") {
-        e.timer -= dt; // hold still and tell the lunge
-        if (e.timer <= 0) { e.state = "lunge"; e.timer = k.lungeDur; e.lunged = false; }
-      } else if (e.state === "lunge") {
-        e.timer -= dt;
-        moveAndCollide(level, e, e.lockAim.x * k.lungeSpeed * dt, e.lockAim.y * k.lungeSpeed * dt);
-        if (!e.lunged && d < tgt.r + e.r) { // strength-scaled slam + heavy knockback
-          hurtMember(tgt, weaponDamage(k.attack, e, tgt.derived.maxHp, tgt.hp), k.name);
-          knockback(tgt, tgt.x - e.x, tgt.y - e.y, e.derived.knockback * k.attack.knockback);
-          e.lunged = true;
-        }
-        if (e.timer <= 0) { e.state = "cooldown"; e.timer = k.cooldown; }
-      } else {
-        e.timer -= dt;
-        if (d < tgt.r + e.r) hurtMember(tgt, k.contactDamage, k.name);
-        if (e.timer <= 0) e.state = "approach";
-      }
-    },
-  };
-
-  // brainFor: pick the def's behavior. repathT ticks here so every brain shares
-  // one repath clock (spec 06: behavior is selected by def.behavior). The enemy's
-  // chosen party member (head or a follower) and its tile are resolved here.
-  function stepEnemy(e, dt) {
-    e.repathT -= dt;
-    const tgt = targetFor(e);
-    BEHAVIORS[e.def.behavior](e, dt, tgt, tileOf(tgt));
-  }
+  const { stepEnemy, stepConfused } = createEnemyAI({
+    level, enemies, hero, followers, rng, combat,
+    hurtMember, knockback, onEnemyDeath, ts: TS,
+  });
 
   function update(dt) {
     voidClock += dt; // void background animates on real time, regardless of pause/outcome
