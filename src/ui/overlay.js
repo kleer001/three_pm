@@ -10,13 +10,14 @@ function ensure() {
   if (overlay) return;
   const canvas = document.getElementById("game");
 
-  // The approved comps use these three families (Anton / Oswald / Space Mono). Inject the
-  // web-font link once. (If offline — e.g. the itch sandbox — the browser falls back to the
-  // CSS stack's system fonts; layout still holds.)
+  // The approved comps use these three families (Anton / Oswald / Space Mono). They're
+  // self-hosted under assets/fonts/ (relative path — no CDN) so the menu scenes render
+  // right with no network, e.g. inside the itch sandbox. Relative to the page, not this
+  // module. (Still degrades to the CSS stack's system fonts if the files are absent.)
   if (!document.getElementById("ui-fonts")) {
     const link = document.createElement("link");
     link.id = "ui-fonts"; link.rel = "stylesheet";
-    link.href = "https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;500;600;700&family=Space+Mono&display=swap";
+    link.href = "assets/fonts/fonts.css";
     document.head.appendChild(link);
   }
 
