@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3pm — BUDDY summary preview</title>
+<style>
+  :root { --ink:#1a1a1a; --paper:#fafafa; --line:#e2e2e2; --accent:#c4322b; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:1rem 1.25rem 2rem; background:var(--paper); color:var(--ink);
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  h1 { font-size:1.1rem; margin:0 0 .2rem; } h1 span { color:var(--accent); }
+  .sub { color:#666; font-size:.85rem; margin:0 0 .9rem; }
+  .bar { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:1rem; }
+  button { font:inherit; font-weight:600; cursor:pointer; border:1px solid var(--ink);
+           background:#fff; color:var(--ink); border-radius:7px; padding:.5rem .9rem; }
+  button:hover { background:var(--ink); color:#fff; }
+  button.accent { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .read { font-family:ui-monospace,Menlo,monospace; font-size:.85rem; color:#444;
+          background:#fff; border:1px solid var(--line); border-radius:7px; padding:.45rem .7rem; }
+  .read b { color:var(--accent); }
+  select { font:inherit; padding:.45rem .5rem; border:1px solid var(--line); border-radius:7px; background:#fff; }
+  .stage-wrap { width:800px; max-width:96vw; }
+  #game { display:block; width:800px; max-width:96vw; height:auto; aspect-ratio:4/3;
+          background:#101216; border:1px solid #ccc; border-radius:4px; }
+  .hint { color:#888; font-size:.8rem; margin-top:.6rem; }
+</style>
+</head>
+<body>
+  <h1>3pm · <span>BUDDY summary</span> preview</h1>
+  <p class="sub">The real summary scene (src/run/domSummaryScene.js), driven here so you can tune the type-out without a run.</p>
+  <div class="bar">
+    <button id="replay" class="accent">↻ Replay</button>
+    <button id="slower">– Slower</button>
+    <button id="faster">+ Faster</button>
+    <span class="read">speed <b id="speedR">1.0×</b> · ≈<b id="cpsR">62</b> cps</span>
+    <select id="scenario">
+      <option value="lost">Scenario: lost run · Dash falls · Jess signs in</option>
+      <option value="won">Scenario: won run · full crew home</option>
+      <option value="first">Scenario: first run · Marvin home · Chad signs in</option>
+    </select>
+  </div>
+  <div class="stage-wrap"><canvas id="game" width="800" height="600"></canvas></div>
+  <p class="hint">Click the window to skip the type-out (then again to “advance”). The messenger is the live game scene — whatever looks right here is what the game does.</p>
+
+<script type="module">
+import { save, recomputeUnlocks } from "../src/meta/save.js";
+import { createSummaryScene } from "../src/run/domSummaryScene.js";
+
+const BASE_CPS = 62; // matches domSummaryScene CPS
+let speed = 1, scene = null, last = performance.now();
+
+// Deterministic save state per scenario so a replay shows the same conversation. runCount is set
+// so recordRun() crosses an unlock gate → a hero "signs in" this run.
+const SCENARIOS = {
+  lost: {
+    blob: { version:2, credits:320, runCount:4, unlockedHeroes:recomputeUnlocks(4), heroUpgrades:{},
+            stats:{wins:2,bestDistance:0.8,totalKills:140}, campaign:{ day:5, crew:["marvin","chad","dash"], dead:["eugene"] } },
+    result: { won:false, heroId:"marvin", distanceFraction:0.62, kills:20, cashDiscarded:180, cause:"Brute", died:["dash"], survived:["marvin","chad"] },
+  },
+  won: {
+    blob: { version:2, credits:500, runCount:3, unlockedHeroes:recomputeUnlocks(3), heroUpgrades:{},
+            stats:{wins:3,bestDistance:1,totalKills:120}, campaign:{ day:4, crew:["marvin","chad","dash"], dead:[] } },
+    result: { won:true, heroId:"marvin", distanceFraction:1, kills:18, cashDiscarded:0, cause:null, died:[], survived:["marvin","chad","dash"] },
+  },
+  first: {
+    blob: { version:2, credits:0, runCount:0, unlockedHeroes:recomputeUnlocks(0), heroUpgrades:{},
+            stats:{wins:0,bestDistance:0,totalKills:0}, campaign:{ day:1, crew:["marvin"], dead:[] } },
+    result: { won:true, heroId:"marvin", distanceFraction:1, kills:12, cashDiscarded:0, cause:null, died:[], survived:["marvin"] },
+  },
+};
+
+function build() {
+  const s = SCENARIOS[document.getElementById("scenario").value];
+  save(JSON.parse(JSON.stringify(s.blob)));               // reset to the scenario's pre-run state
+  scene = createSummaryScene({}, { down: () => false }, s.result, 9, "stars");
+}
+function readout() {
+  document.getElementById("speedR").textContent = speed.toFixed(2).replace(/0$/, "") + "×";
+  document.getElementById("cpsR").textContent = Math.round(BASE_CPS * speed);
+}
+
+document.getElementById("replay").onclick = () => { build(); };
+document.getElementById("slower").onclick = () => { speed = Math.max(0.15, speed * 0.65); readout(); };
+document.getElementById("faster").onclick = () => { speed = Math.min(6, speed * 1.5); readout(); };
+document.getElementById("scenario").onchange = () => { build(); };
+
+function frame(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  if (scene && !scene.done) scene.update(dt * speed);
+  requestAnimationFrame(frame);
+}
+readout(); build(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
