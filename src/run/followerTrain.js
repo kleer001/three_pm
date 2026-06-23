@@ -7,8 +7,7 @@
 import { regenMana } from "./combat.js";
 import { boxBlocked } from "./collision.js";
 import { BALANCE } from "./balance.js";
-
-const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+import { dist } from "../core/geom.js";
 
 export function createFollowerTrain({ hero, followers, trail, gap, level, deadThisRun, heroTargets, combat, shift, separate }) {
   // Point on the breadcrumb trail `back` world-units behind the head, interpolated

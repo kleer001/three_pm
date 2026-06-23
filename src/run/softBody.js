@@ -4,8 +4,7 @@
 // run via createSoftBody(env); env carries the live level/hero/enemies by reference.
 import { boxBlocked } from "./collision.js";
 import { BALANCE } from "./balance.js";
-
-const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+import { dist } from "../core/geom.js";
 
 export function createSoftBody({ level, hero, enemies }) {
   function shift(e, dx, dy) {
@@ -54,5 +53,5 @@ export function createSoftBody({ level, hero, enemies }) {
     if (boxBlocked(level, hero) || bodyDeeper(hero.x, oy)) hero.y = oy;
   }
 
-  return { shift, separate, separateHero, bodyDeeper, heroMove };
+  return { shift, separate, separateHero, heroMove };
 }

@@ -9,8 +9,7 @@ import { moveAndCollide } from "./collision.js";
 import { findPath } from "../ai/ai.js";
 import { weaponDamage, applyDamage, regenMana, canCast, spendMana } from "./combat.js";
 import { BALANCE, THEME } from "./balance.js";
-
-const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+import { dist } from "../core/geom.js";
 
 export function createEnemyAI({ level, enemies, hero, followers, rng, combat, hurtMember, knockback, onEnemyDeath, ts }) {
   const tileOf = (e) => [Math.floor(e.x / ts), Math.floor(e.y / ts)];

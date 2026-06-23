@@ -18,10 +18,10 @@
 // }
 import { BALANCE, THEME } from "./balance.js";
 import { weaponDamage, applyDamage, canCast, spendMana } from "./combat.js";
+import { dist } from "../core/geom.js";
 
 const FREEZE_DUR = BALANCE.freezeDur;
 const LOOT = BALANCE.loot;
-const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 export function createCombat(env) {
   const { enemies, projectiles, blasts, fields, deployables, swings, floaters } = env;

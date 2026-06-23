@@ -21,6 +21,7 @@ import { createFollowerTrain } from "./followerTrain.js";
 import { createRunRenderer } from "./runRender.js";
 import { sfx } from "../audio/sfx.js";
 import { clamp } from "./draw.js";
+import { dist } from "../core/geom.js";
 
 const VIEW_W = 800, VIEW_H = 600;
 const SCALE = 2;
@@ -29,8 +30,6 @@ const MARGIN = TS;
 
 const { hero: HERO, enemies: ENEMIES } = BALANCE;
 const { scroll: SCROLL, mapH: MAP_H } = BALANCE;
-
-const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const level = generate(seed, {

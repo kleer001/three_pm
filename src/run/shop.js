@@ -7,8 +7,7 @@ import { BALANCE, THEME } from "./balance.js";
 import { POWERUPS, priceItem } from "./powerups.js";
 import { isWalkable } from "./levelgen.js";
 import { hitRect } from "../input/input.js";
-
-const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+import { dist } from "../core/geom.js";
 
 export function createShop({ ctx, input, level, homeSet, lootRng, lootBag, runState, acquire, ts, viewW, viewH }) {
   const LOOT = BALANCE.loot;
