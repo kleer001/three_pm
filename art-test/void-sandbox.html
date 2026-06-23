@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3pm — void sandbox</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 16px; font: 13px/1.5 system-ui, sans-serif; color: #1a1a1a; background: #fafafa; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p.lede { margin: 0 0 12px; color: #555; max-width: 760px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+  button, select { font: 13px system-ui, sans-serif; padding: 5px 10px; border: 1px solid #bbb; border-radius: 5px;
+    background: #fff; color: #1a1a1a; cursor: pointer; }
+  button:hover { border-color: #888; }
+  button.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .sep { width: 1px; height: 22px; background: #ccc; margin: 0 4px; }
+  #stage { border: 1px solid #ccc; border-radius: 6px; display: block; image-rendering: pixelated; cursor: crosshair; background: #11151c; }
+  .status { margin-top: 8px; font: 12px ui-monospace, monospace; color: #333; }
+  #err { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: #fdecea; color: #8a1c12;
+    border: 1px solid #f3b6ae; white-space: pre-wrap; font: 12px ui-monospace, monospace; display: none; }
+  .legend { margin-top: 6px; color: #666; font-size: 12px; }
+  kbd { background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font: 11px ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<h1>Void sandbox</h1>
+<p class="lede">A fixed, non-scrolling level with a reality break in the middle. Drives the real
+<code>voidPull</code> + <code>collision</code> on a fixed <code>dt = 1/60</code>, so you can determine exactly what
+happens and when. <b>Click</b> a tile to drop the selected actor; the buttons shove/kill them. Any thrown error
+(with stack) shows below — that's the point.</p>
+
+<div class="bar">
+  <label>Drop: <select id="actor">
+    <option value="shambler">Shambler (r15)</option>
+    <option value="brute">Brute (r18)</option>
+    <option value="behemoth">Behemoth (r20)</option>
+    <option value="imp">Imp (r11)</option>
+  </select></label>
+  <label><input type="checkbox" id="asCorpse"> as corpse</label>
+  <span class="sep"></span>
+  <button id="knock" class="primary">Knock all → void</button>
+  <button id="kill">Kill all (→ corpses)</button>
+  <span class="sep"></span>
+  <button id="step">Step 1 frame</button>
+  <button id="play">▶ Play</button>
+  <button id="reset">Reset</button>
+</div>
+
+<canvas id="stage"></canvas>
+<div class="status" id="status"></div>
+<div class="legend">Live enemies are drawn in their body color; corpses are dark; bodies in the void shrink to nothing.
+The void tug reaches <span id="rangeTxt"></span>. <kbd>click</kbd> drop · <kbd>K</kbd> knock · <kbd>X</kbd> kill · <kbd>space</kbd> step</div>
+<div id="err"></div>
+
+<script type="module">
+import { TILE } from "../src/run/levelgen.js";
+import { moveAndCollide } from "../src/run/collision.js";
+import { createVoidPull } from "../src/run/voidPull.js";
+import { BALANCE, THEME } from "../src/run/balance.js";
+
+const TS = 48, COLS = 15, ROWS = 11, DT = 1 / 60;
+const W = COLS * TS, H = ROWS * TS;
+const cv = document.getElementById("stage");
+cv.width = W; cv.height = H;
+const ctx = cv.getContext("2d");
+document.getElementById("rangeTxt").textContent = `${BALANCE.voidVacuum.rangeTiles} tiles`;
+
+// Fixed hand-authored level: open street with a 3x2 reality break in the middle and a short wall
+// stub (to prove walls still block while the void swallows). walkable mirrors levelgen's rule.
+let level, enemies, voidFalling, voidPull, frame, playing, raf;
+function buildLevel() {
+  const tiles = new Array(COLS * ROWS).fill(TILE.STREET);
+  const set = (tx, ty, v) => { if (tx >= 0 && ty >= 0 && tx < COLS && ty < ROWS) tiles[ty * COLS + tx] = v; };
+  for (let tx = 6; tx <= 8; tx++) for (let ty = 4; ty <= 5; ty++) set(tx, ty, TILE.RUBBLE); // the hole
+  for (let ty = 4; ty <= 6; ty++) set(11, ty, TILE.WALL);                                   // a wall stub
+  const walkable = tiles.map((t) => (t === TILE.WALL || t === TILE.RUBBLE) ? 0 : 1);
+  return { w: COLS, h: ROWS, tileSize: TS, tiles, walkable };
+}
+function reset() {
+  level = buildLevel();
+  enemies = [];
+  voidFalling = [];
+  voidPull = createVoidPull({ level, ts: TS, enemies, voidFalling, balance: BALANCE, corpseColor: THEME.corpse });
+  frame = 0; playing = false; setPlayLabel();
+  hideErr(); render();
+}
+
+function spawnAt(px, py) {
+  const def = BALANCE.enemies[document.getElementById("actor").value];
+  const dead = document.getElementById("asCorpse").checked;
+  enemies.push({ x: px, y: py, w: def.r * 2, h: def.r * 2, r: def.r, def, dead,
+    kb: null, pauseT: 0, staggerT: 0 });
+  render();
+}
+function knockAllToVoid() {
+  const SHOVE = 80, FRAMES = 9; // a firm kick; ~9px/frame toward the nearest hole
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const v = voidPull.nearestVoid(e.x, e.y, 99);
+    const dx = v ? v.x - e.x : 1, dy = v ? v.y - e.y : 0, m = Math.hypot(dx, dy) || 1;
+    e.kb = { vx: (dx / m) * SHOVE / FRAMES, vy: (dy / m) * SHOVE / FRAMES, frames: FRAMES };
+  }
+}
+function killAll() { for (const e of enemies) e.dead = true; render(); }
+
+// One fixed-dt tick, mirroring runScene's order. Wrapped so any throw lands in the UI with a stack.
+const applyKb = (e) => { if (!e.kb || e.kb.frames <= 0) return; moveAndCollide(level, e, e.kb.vx, e.kb.vy); e.kb.frames--; };
+function step() {
+  try {
+    voidPull.convertKnocked();
+    for (const e of enemies) { applyKb(e); if (e.pauseT > 0) e.pauseT--; else if (e.staggerT > 0) e.staggerT--; }
+    voidPull.vacuumCorpses(DT);
+    voidPull.stepFall(DT);
+    frame++;
+    render();
+  } catch (e) {
+    playing = false; setPlayLabel();
+    showErr((e && e.stack) ? e.stack : String(e));
+  }
+}
+
+function loop() { if (!playing) return; step(); raf = requestAnimationFrame(loop); }
+function togglePlay() { playing = !playing; setPlayLabel(); if (playing) loop(); else cancelAnimationFrame(raf); }
+function setPlayLabel() { document.getElementById("play").textContent = playing ? "⏸ Pause" : "▶ Play"; }
+
+// --- draw ---
+const disc = (x, y, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
+function render() {
+  for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
+    const t = level.tiles[ty * COLS + tx], x = tx * TS, y = ty * TS;
+    if (t === TILE.RUBBLE) { ctx.fillStyle = "#070a10"; ctx.fillRect(x, y, TS, TS); ctx.strokeStyle = "rgba(90,180,255,.7)"; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, TS - 2, TS - 2); }
+    else if (t === TILE.WALL) { ctx.fillStyle = "#2e2e2e"; ctx.fillRect(x, y, TS, TS); }
+    else { ctx.fillStyle = (tx + ty) % 2 ? "#5e5e5e" : "#666"; ctx.fillRect(x, y, TS, TS); }
+  }
+  for (const e of enemies) { disc(e.x, e.y, e.r, e.dead ? THEME.corpse : e.def.color); if (!e.dead) { ctx.strokeStyle = "rgba(255,255,255,.25)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, 7); ctx.stroke(); } }
+  for (const b of voidFalling) disc(b.x, b.y, b.r, b.color);
+  document.getElementById("status").textContent =
+    `frame ${frame}   t=${(frame * DT).toFixed(2)}s   live=${enemies.filter((e) => !e.dead).length}   corpses=${enemies.filter((e) => e.dead).length}   inVoid=${voidFalling.length}`;
+}
+function showErr(s) { const el = document.getElementById("err"); el.style.display = "block"; el.textContent = "⚠ threw:\n" + s; }
+function hideErr() { document.getElementById("err").style.display = "none"; }
+
+// --- wiring ---
+cv.addEventListener("click", (ev) => { const r = cv.getBoundingClientRect(); spawnAt((ev.clientX - r.left) * (W / r.width), (ev.clientY - r.top) * (H / r.height)); });
+document.getElementById("knock").onclick = () => { knockAllToVoid(); render(); };
+document.getElementById("kill").onclick = killAll;
+document.getElementById("step").onclick = step;
+document.getElementById("play").onclick = togglePlay;
+document.getElementById("reset").onclick = reset;
+addEventListener("keydown", (e) => {
+  if (e.code === "KeyK") { knockAllToVoid(); render(); }
+  else if (e.code === "KeyX") killAll();
+  else if (e.code === "Space") { e.preventDefault(); step(); }
+});
+reset();
+</script>
+</body>
+</html>

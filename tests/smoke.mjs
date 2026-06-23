@@ -10,6 +10,7 @@ import { POWERUPS, SYNERGIES, applyHeld, snapshotBase, cashForKill, rollDrop, ma
 import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgrade, applyHeroUpgrades, isHeroUnlocked, startCampaign, upgradeRank, nextCost } from "../src/meta/save.js";
 import { BALANCE, THEME } from "../src/run/balance.js";
 import { createPartyPreview } from "../src/run/partyPreview.js";
+import { createVoidPull } from "../src/run/voidPull.js";
 
 const freshBlob = () => ({
   version: 2, credits: 0, runCount: 0, heroUpgrades: {},
@@ -381,6 +382,32 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   const veteran = { ...freshBlob(), runCount: 99, campaign: startCampaign() };
   ok(isHeroUnlocked(veteran, day0), "veteran: run-0 hero available on a fresh campaign");
   ok(!isHeroUnlocked(veteran, gated.id), "veteran: lifetime runCount does NOT unlock heroes on a fresh campaign");
+}
+
+// Reality-break (voidPull): knock-into-void, corpse vacuum range, and fall-to-gone — the logic
+// the void-sandbox drives, pinned here so the boundary cases don't regress.
+{
+  const TS = 48, W = 10, H = 6;
+  const mkLevel = () => { const tiles = new Array(W * H).fill(0); tiles[2 * W + 5] = 6 /*RUBBLE*/; return { w: W, h: H, tileSize: TS, tiles }; };
+  const mkPull = (enemies, voidFalling) => createVoidPull({ level: mkLevel(), ts: TS, enemies, voidFalling, balance: BALANCE, corpseColor: "#000" });
+  const body = (tx, dead, kb) => ({ x: tx * TS + TS / 2, y: 2 * TS + TS / 2, w: 30, h: 30, r: 15, def: { color: "#fff" }, dead, kb: kb || null });
+
+  // (a) a shove that carries the box into the hole pulls the enemy out of play into voidFalling.
+  { const enemies = [body(4, false, { vx: 6, vy: 0, frames: 12 })], vfl = [], vp = mkPull(enemies, vfl);
+    for (let f = 0; f < 12 && enemies.length; f++) { vp.convertKnocked(); if (enemies.length) { enemies[0].x += enemies[0].kb.vx; enemies[0].kb.frames--; } }
+    ok(enemies.length === 0 && vfl.length === 1, "voidPull: shove into the void removes the enemy and adds a falling body"); }
+
+  // (b) corpse vacuum reaches rangeTiles (2) but no further.
+  const swallowed = (tx) => { const enemies = [body(tx, true, null)], vfl = [], vp = mkPull(enemies, vfl);
+    for (let f = 0; f < 300 && enemies.length; f++) { vp.vacuumCorpses(1 / 60); vp.stepFall(1 / 60); } return enemies.length === 0; };
+  ok(swallowed(4), "voidPull: corpse 1 tile from a hole is vacuumed in");
+  ok(swallowed(3), "voidPull: corpse 2 tiles from a hole is vacuumed in (boundary)");
+  ok(!swallowed(2), "voidPull: corpse 3 tiles from a hole is NOT vacuumed");
+
+  // (c) anything in the void shrinks to nothing and is removed.
+  { const vfl = [{ x: 0, y: 0, r: 15, color: "#fff", vfx: 0, vfy: 0 }], vp = mkPull([], vfl);
+    for (let f = 0; f < 300 && vfl.length; f++) vp.stepFall(1 / 60);
+    ok(vfl.length === 0, "voidPull: a body in the void shrinks away and is removed"); }
 }
 
 // Party-select live preview: the self-contained mini-sim must run every roster hero —

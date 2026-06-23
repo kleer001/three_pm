@@ -4,7 +4,8 @@
 // payload. The subsystems live in their own modules (softBody, shop, enemyAI,
 // followerTrain, runRender, combatKit) and receive the live world plus the
 // coupling callbacks below via createX(env) injection.
-import { generate, isWalkable, TILE } from "./levelgen.js";
+import { generate, isWalkable } from "./levelgen.js";
+import { createVoidPull } from "./voidPull.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
 import { makeDirector, distanceFraction } from "./director.js";
@@ -162,38 +163,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const floaters = [];    // rising damage numbers, one per landed hit, visual only
   const debris = [];      // spent slingshot pellets resting where they landed, visual only
   const dustPuffs = [];   // Dash's dust-trail puffs (slow + chip)
-  const voidFalling = []; // enemies shoved into a reality break: drifting, shrinking, soon gone
-  // True over a reality break (a RUBBLE hole) — distinct from a solid wall. The point form
-  // backs the projectile void-fall (shots are points) + the combat env. The box form backs
-  // the enemy void-fall: moveAndCollide keeps a body's AABB out of every non-walkable tile,
-  // so a center-point test never lands inside the hole — instead ask whether the shoved box
-  // would OVERLAP a hole (i.e. the void, not a wall, is what's stopping it).
-  const inVoid = (x, y) => {
-    const tx = Math.floor(x / TS), ty = Math.floor(y / TS);
-    return tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE;
-  };
-  const boxOverlapsVoid = (cx, cy, w, h) => {
-    const hw = w / 2, hh = h / 2;
-    const x0 = Math.floor((cx - hw) / TS), x1 = Math.floor((cx + hw - 1e-6) / TS);
-    const y0 = Math.floor((cy - hh) / TS), y1 = Math.floor((cy + hh - 1e-6) / TS);
-    for (let ty = y0; ty <= y1; ty++)
-      for (let tx = x0; tx <= x1; tx++)
-        if (tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE) return true;
-    return false;
-  };
-  // Center of the nearest reality-break tile within `rangeTiles`, or null — for the corpse vacuum.
-  const nearestVoid = (x, y, rangeTiles) => {
-    const ctx = Math.floor(x / TS), cty = Math.floor(y / TS);
-    let best = null, bestD = Infinity;
-    for (let ty = cty - rangeTiles; ty <= cty + rangeTiles; ty++)
-      for (let tx = ctx - rangeTiles; tx <= ctx + rangeTiles; tx++) {
-        if (tx < 0 || ty < 0 || tx >= level.w || ty >= level.h) continue;
-        if (level.tiles[ty * level.w + tx] !== TILE.RUBBLE) continue;
-        const vcx = tx * TS + TS / 2, vcy = ty * TS + TS / 2, d = Math.hypot(vcx - x, vcy - y);
-        if (d < bestD) { bestD = d; best = { x: vcx, y: vcy, d }; }
-      }
-    return best;
-  };
+  const voidFalling = []; // bodies/balls sinking into a reality break: drifting, shrinking, soon gone
+  // Reality-break interactions (membership tests + the knock-in/vacuum/fall steppers), bound to
+  // this run's live arrays. Extracted so the same logic drives the run, the tests, and the sandbox.
+  const voidPull = createVoidPull({ level, ts: TS, enemies, voidFalling, balance: BALANCE, corpseColor: THEME.corpse });
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   const { shift, separate, separateHero, heroMove } = createSoftBody({ level, hero, enemies });
   let outcome = null;
@@ -275,7 +248,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters, debris, dustPuffs,
     knockback,
     projectileBlocked: (x, y) => !isWalkable(level, Math.floor(x / TS), Math.floor(y / TS)),
-    inVoid,
+    inVoid: voidPull.inVoid,
     cullDeployable: (d) => d.y < cam.y + MARGIN, // left behind once the crush line passes it
     sfx: sfx.play,
     shake: addShake,
@@ -358,54 +331,18 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
       else stepEnemy(e, dt);
     }
 
-    // Knockback rides out after brains so a killing blow still flings the body, and the
-    // post-shove stun ticks down (pause first, then the speed ramp). A shove whose next step
-    // lands in a reality break pulls the enemy out of play into the void-fall list (iterate
-    // backwards so the splice is safe), where it drifts in and shrinks away — no body to loot.
-    for (let i = enemies.length - 1; i >= 0; i--) {
-      const e = enemies[i];
-      if (e.kb && e.kb.frames > 0 && boxOverlapsVoid(e.x + e.kb.vx, e.y + e.kb.vy, e.w, e.h)) {
-        voidFalling.push({ x: e.x, y: e.y, r: e.r, color: e.def.color, vfx: e.kb.vx, vfy: e.kb.vy });
-        enemies.splice(i, 1);
-        continue;
-      }
+    // A shove whose next step lands in a reality break pulls the enemy out of play (before applyKb
+    // moves it), then knockback rides out and the post-shove stun ticks down (pause, then ramp).
+    voidPull.convertKnocked();
+    for (const e of enemies) {
       applyKb(e);
       if (e.pauseT > 0) e.pauseT--;
       else if (e.staggerT > 0) e.staggerT--;
     }
     applyKb(hero);
 
-    // Vacuum: a reality break tugs nearby corpses in. A dead body within rangeTiles of a hole
-    // accelerates toward the nearest one; once its box reaches the hole it's swallowed (joins the
-    // void-fall list to shrink away). Iterate backwards so the splice is safe.
-    {
-      const V = BALANCE.voidVacuum, maxD = V.rangeTiles * TS;
-      for (let i = enemies.length - 1; i >= 0; i--) {
-        const e = enemies[i];
-        if (!e.dead) continue;
-        const v = nearestVoid(e.x, e.y, V.rangeTiles);
-        if (!v || v.d > maxD) continue;
-        const m = v.d || 1;
-        e.vacx = (e.vacx || 0) + ((v.x - e.x) / m) * V.accel * dt;
-        e.vacy = (e.vacy || 0) + ((v.y - e.y) / m) * V.accel * dt;
-        e.x += e.vacx * dt; e.y += e.vacy * dt;
-        if (boxOverlapsVoid(e.x, e.y, e.w, e.h)) {
-          voidFalling.push({ x: e.x, y: e.y, r: e.r, color: THEME.corpse, vfx: e.vacx * dt, vfy: e.vacy * dt });
-          enemies.splice(i, 1);
-        }
-      }
-    }
-
-    // Bodies (and the spent balls) sinking into a reality break: drift on their shove, decelerate
-    // and shrink to a pixel, then they're swallowed. Same feel/knobs as the projectile void-fall.
-    {
-      const vf = BALANCE.voidFall, drag = Math.exp(-vf.drag * dt), shrink = Math.exp(-vf.shrink * dt);
-      for (let i = voidFalling.length - 1; i >= 0; i--) {
-        const b = voidFalling[i];
-        b.x += b.vfx; b.y += b.vfy; b.vfx *= drag; b.vfy *= drag; b.r *= shrink;
-        if (b.r <= vf.minR) voidFalling.splice(i, 1);
-      }
-    }
+    voidPull.vacuumCorpses(dt); // holes tug nearby corpses in, then swallow them
+    voidPull.stepFall(dt);      // everything in the void drifts, shrinks, and is gone
 
     // Follower train re-homes after enemy brains + knockback so it chases settled positions;
     // its soft-body shove against enemies/corpses runs after that pass below.
