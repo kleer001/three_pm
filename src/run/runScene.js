@@ -17,6 +17,7 @@ import { createCombat } from "./combatKit.js";
 import { createSoftBody } from "./softBody.js";
 import { createShop } from "./shop.js";
 import { createEnemyAI } from "./enemyAI.js";
+import { createFollowerTrain } from "./followerTrain.js";
 import { createRunRenderer } from "./runRender.js";
 import { sfx } from "../audio/sfx.js";
 import { clamp } from "./draw.js";
@@ -292,22 +293,6 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   });
   const nearestEnemy = () => combat.nearestEnemyTo(hero.x, hero.y);
 
-  // Point on the hero's breadcrumb trail `back` world-units behind the head, walking
-  // the polyline and interpolating. Null only before the trail has any points.
-  function trailPointBack(back) {
-    if (trail.length < 2) return trail[0] || null;
-    let acc = 0;
-    for (let i = 1; i < trail.length; i++) {
-      const seg = dist(trail[i].x, trail[i].y, trail[i - 1].x, trail[i - 1].y);
-      if (acc + seg >= back) {
-        const t = (back - acc) / (seg || 1);
-        return { x: trail[i - 1].x + (trail[i].x - trail[i - 1].x) * t, y: trail[i - 1].y + (trail[i].y - trail[i - 1].y) * t };
-      }
-      acc += seg;
-    }
-    return trail[trail.length - 1];
-  }
-
   // Party-member damage flows through the shared resolver (i-frames + death) like any
   // entity; only the head's death ends the run — a follower just permadies and is reaped.
   function hurtMember(m, amount, srcName) {
@@ -321,6 +306,9 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const { stepEnemy, stepConfused } = createEnemyAI({
     level, enemies, hero, followers, rng, combat,
     hurtMember, knockback, onEnemyDeath, ts: TS,
+  });
+  const followerTrain = createFollowerTrain({
+    hero, followers, trail, gap, level, deadThisRun, heroTargets, combat, shift, separate,
   });
 
   function update(dt) {
@@ -365,17 +353,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     const intent = input.intent();
     heroMove(intent.x * hero.derived.moveSpeed * bpm * rawDt, intent.y * hero.derived.moveSpeed * bpm * rawDt);
 
-    // Breadcrumb the hero's path (newest first) for the follower train to retrace,
-    // sampling only on real movement and keeping just enough length for the whole train.
-    if (!trail.length || dist(hero.x, hero.y, trail[0].x, trail[0].y) > 1) {
-      trail.unshift({ x: hero.x, y: hero.y });
-      const maxLen = (followers.length + 1) * gap;
-      let acc = 0;
-      for (let i = 1; i < trail.length; i++) {
-        acc += dist(trail[i].x, trail[i].y, trail[i - 1].x, trail[i - 1].y);
-        if (acc > maxLen) { trail.length = i + 1; break; }
-      }
-    }
+    followerTrain.sampleTrail(); // breadcrumb the head's path right after it moves
 
     // Selected weapon: SPACE (or auto-fire on touch) fires through the shared resolver
     // (cooldown + mana + reach/range gated inside, per the weapon's own `autofire`),
@@ -407,52 +385,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     }
     applyKb(hero);
 
-    // Follower train: snap each to its breadcrumb a fixed arc-length back, auto-swing
-    // its bat, and permadie when crushed against the advancing edge. Contact damage to
-    // a follower is dealt by the enemies that target it (BEHAVIORS, via hurtMember);
-    // enemy projectiles already hit followers through the shared heroTargets faction.
-    // Total trail length so far — a follower joins only once the head has descended past
-    // its slot, so the train materializes into cleared space instead of stacking at spawn.
-    let trailLen = 0;
-    for (let t = 1; t < trail.length; t++) trailLen += dist(trail[t].x, trail[t].y, trail[t - 1].x, trail[t - 1].y);
-
-    for (let i = 0; i < followers.length; i++) {
-      const f = followers[i];
-      if (f.pending) {
-        if (trailLen >= (i + 1) * gap) { // room opened: materialize at the trail point
-          const p = trailPointBack((i + 1) * gap);
-          if (p) { f.x = p.x; f.y = p.y; f.pending = false; f.fadeT = BALANCE.spawnFade; }
-        }
-        continue; // not in play yet — no move, fire, crush, collision, or render
-      }
-      f.cd = Math.max(0, f.cd - dt);
-      f.sigCd = Math.max(0, f.sigCd - dt);
-      f.iframes = Math.max(0, f.iframes - dt);
-      f.fadeT = Math.max(0, f.fadeT - dt);
-      regenMana(f, dt);
-      combat.tickHeal(f, dt);
-      combat.tickCharge(f, dt); // The Drop's baseline trickle, so a back-line follower still fires
-      combat.tickWake(f, dt); // Dash's dust trail, emitted as he retraces the conga path
-      const p = trailPointBack((i + 1) * gap);
-      // Re-home to the trail point at a capped speed (its own moveSpeed × the knob),
-      // not a fixed fraction: a shoved follower closes the gap at a steady rate, so
-      // out-running the train strands it — slow down to let the line re-form. bpm/rawDt
-      // tie its pace to the head's (BPM-boost / Slow-Jam). In normal following the trail
-      // point only advances a head-step each frame, so d <= step and it snaps on-point.
-      if (p) {
-        const dx = p.x - f.x, dy = p.y - f.y, d = Math.hypot(dx, dy);
-        const step = f.derived.moveSpeed * BALANCE.followerReturnSpeedMult * bpm * rawDt;
-        if (d <= step || d < 1e-3) { f.x = p.x; f.y = p.y; }
-        // Per-axis shift mirrors heroMove: a returning follower slides along a wall
-        // instead of clipping a corner (shift reverts a blocked axis).
-        else { const s = step / d; shift(f, dx * s, 0); shift(f, 0, dy * s); }
-      }
-      // Mirror the hero's crush rule (below): riding the advancing edge is fine,
-      // but being pinned against a wall there is fatal — that's "left behind".
-      if (f.y < minY) { f.y = minY; if (boxBlocked(level, f)) { f.dead = true; continue; } }
-      const near = combat.nearestEnemyTo(f.x, f.y);
-      combat.fireSignature(f, near); // followers contribute only their passive signature, no weapon
-    }
+    // Follower train: re-home along the breadcrumb, tick passives, fire signatures,
+    // permadie when crushed. Runs after enemy brains + knockback so it chases settled
+    // positions; the soft-body shove against enemies/corpses runs after that pass below.
+    followerTrain.stepFollowers({ dt, rawDt, bpm, minY });
 
     // Projectiles, lingering fields, and turrets all advance through the shared combat kit
     // (same hit/detonate/pierce/fuse path the preview uses); the world-coupled wall test and
@@ -477,19 +413,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     }
     for (const c of corpses) separate(hero, c, false); // the hero shoves (heavy) corpses aside
 
-    // Followers are soft bodies too: living enemies and corpses shove them off their
-    // trail point (they re-home at a capped speed via followerReturnSpeedMult). shift()'s wall-revert keeps
-    // them from clipping into walls. Runs after the enemy/hero pass so enemy positions are
-    // settled. Crush leniency: a shove past minY isn't fatal here — the check at the top of
-    // the follower loop catches a genuine pin next frame.
-    for (let i = 0; i < followers.length; i++) {
-      const f = followers[i];
-      if (f.dead || f.pending) continue;
-      for (const e of live) separate(e, f, false);
-      for (const c of corpses) separate(c, f, false);
-      // No follower-vs-follower push: they're spaced by the trail, and mutual separation
-      // can fling briefly-coincident bodies. Letting them overlap on a tight turn is calmer.
-    }
+    followerTrain.separateFollowers({ live, corpses });
 
     // Powerup pickups: collect on hero overlap → append to held + rebuild from base.
     for (const p of pickups) {
@@ -515,14 +439,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     for (let i = debris.length - 1; i >= 0; i--) if (debris[i].y < cam.y) debris.splice(i, 1);
     // Dust puffs are short-lived; reap them once faded out or scrolled above the crush line.
     for (let i = dustPuffs.length - 1; i >= 0; i--) if (dustPuffs[i].t >= dustPuffs[i].life || dustPuffs[i].y < cam.y) dustPuffs.splice(i, 1);
-    // Reap dead followers (HP gone or crushed) — permadeath, also off the shot-target list.
-    for (let i = followers.length - 1; i >= 0; i--) {
-      if (!followers[i].dead) continue;
-      deadThisRun.add(followers[i].id); // logged for the campaign's crew cull
-      const ti = heroTargets.indexOf(followers[i]);
-      if (ti >= 0) heroTargets.splice(ti, 1);
-      followers.splice(i, 1);
-    }
+    followerTrain.reapDead(); // permadeath: drop dead followers + their shot-target slot
 
     // Stay inside the moving window; being crushed against a wall is fatal.
     // (heroMove already keeps x within the map and out of walls — no x clamp.)
