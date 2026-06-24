@@ -64,6 +64,7 @@ let tileAtlas = null; // { sheet, ground, mats:{name:[16 frames]}, order:[names]
 export function createRunRenderer({
   ctx, input, level, cam, hero, weapon, followers, enemies, shop,
   pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, voidFalling,
+  voidTentacles,
   runState, bgId, getShake, getPaused, getVoidClock, getHeldLine, ts, viewW, viewH,
 }) {
   const TS = ts, VIEW_W = viewW, VIEW_H = viewH;
@@ -116,6 +117,43 @@ export function createRunRenderer({
         const f = frames[c];
         dst.drawImage(A.sheet, f.x, f.y, f.w, f.h, Math.floor(x * TS + TS / 2 - cam.x), Math.floor(y * TS + TS / 2 - cam.y), TS + 1, TS + 1);
       }
+  }
+
+  // Simple tapered glow (per the spec — not a segmented rope): the shaft is a smooth
+  // gradient of overlapping discs from a thick rim base to a thin glowing bulb tip, tinted
+  // from the tentacle's own color (so a future color reads at a glance). During the
+  // telegraph it shows a pulsing ring + the locked-aim line — the dodge cue.
+  function drawTentacles() {
+    const T = THEME.voidTentacle, vc = getVoidClock();
+    for (const t of voidTentacles.tentacles) {
+      const bx = t.baseX - cam.x, by = t.baseY - cam.y, body = t.color;
+      if (t.state === "telegraph") {
+        const pulse = 0.5 + 0.5 * Math.sin(vc * T.pulseRate);
+        ctx.globalAlpha = 0.4 + 0.4 * pulse;
+        ring(ctx, bx, by, T.budR + 4 + pulse * 4, T.ring);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = T.aimLine;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + t.aimX * t.maxReach, by + t.aimY * t.maxReach);
+        ctx.stroke();
+      }
+      if (t.state === "bud") { disc(ctx, bx, by, T.budR * t.budT, body); continue; }
+      const tipX = bx + t.aimX * t.len, tipY = by + t.aimY * t.len;
+      const N = 8; // discs sampling the taper smoothly — not "segments", no wiggle
+      ctx.globalAlpha = t.state === "retract" ? 0.7 : 1;
+      for (let i = 0; i <= N; i++) {
+        const f = i / N;
+        disc(ctx, bx + (tipX - bx) * f, by + (tipY - by) * f, T.baseR * (1 - f) + t.tipR * f, body);
+      }
+      ctx.globalAlpha = 1;
+      // glowing bulb tip: a soft halo + a solid core (the purple glow)
+      const glow = 0.6 + 0.4 * Math.sin(vc * T.pulseRate + t.seed);
+      ctx.globalAlpha = glow;
+      disc(ctx, tipX, tipY, t.tipR + 3, T.tipGlow);
+      ctx.globalAlpha = 1;
+      disc(ctx, tipX, tipY, t.tipR, body);
+    }
   }
 
   function render() {
@@ -235,6 +273,10 @@ export function createRunRenderer({
 
     // Bodies sinking into a reality break: drawn in their own color, shrinking toward a pixel.
     for (const b of voidFalling) disc(ctx, b.x - cam.x, b.y - cam.y, b.r, b.color);
+
+    // Void tentacles: drawn here (over the hole, under the members) so a struck member's disc
+    // renders on top — the tentacle reads as gripping it.
+    if (voidTentacles) drawTentacles();
 
     for (const p of pickups) {
       if (p.dead) continue;

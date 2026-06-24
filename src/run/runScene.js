@@ -6,6 +6,7 @@
 // coupling callbacks below via createX(env) injection.
 import { generate, isWalkable } from "./levelgen.js";
 import { createVoidPull } from "./voidPull.js";
+import { createVoidTentacles } from "./voidTentacle.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
 import { makeDirector, distanceFraction } from "./director.js";
@@ -275,6 +276,16 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const followerTrain = createFollowerTrain({
     hero, followers, trail, gap, level, deadThisRun, heroTargets, combat, shift, separate,
   });
+  // Reality breaks grow tentacles that telegraph + lash at nearby members. A dedicated
+  // "tentacle" sub-seed keeps the director's "spawns" stream unperturbed (existing seeds
+  // reproduce) while making the color-keyed action deterministic per seed. removeMember
+  // splices a swallowed enemy; dead followers are dropped by the existing reap.
+  const voidTentacles = createVoidTentacles({
+    level, ts: TS, heroTargets, balance: BALANCE, hurtMember, knockback,
+    voidFalling, corpseColor: THEME.corpse, hero,
+    removeMember: (m) => { const i = enemies.indexOf(m); if (i >= 0) enemies.splice(i, 1); },
+    rng: makeRng(subSeed(seed, "tentacle")),
+  });
 
   function update(dt) {
     voidClock += dt; // void animates on real time, regardless of pause/outcome
@@ -343,6 +354,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
 
     voidPull.vacuumCorpses(dt); // holes tug nearby corpses in, then swallow them
     voidPull.stepFall(dt);      // everything in the void drifts, shrinks, and is gone
+    voidTentacles.update(dt);   // holes grow tentacles that telegraph + lash at heroes
 
     // Follower train re-homes after enemy brains + knockback so it chases settled positions;
     // its soft-body shove against enemies/corpses runs after that pass below.
@@ -413,6 +425,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const { render } = createRunRenderer({
     ctx, input, level, cam, hero, weapon, followers, enemies, shop,
     pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, voidFalling,
+    voidTentacles,
     runState, bgId,
     getShake: () => shake, getPaused: () => paused, getVoidClock: () => voidClock, getHeldLine: () => heldLine,
     ts: TS, viewW: VIEW_W, viewH: VIEW_H,
