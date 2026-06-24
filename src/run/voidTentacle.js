@@ -12,9 +12,11 @@
 // The on-hit effect is COLOR-KEYED and deterministic: TENTACLE_TYPES maps each color to
 // one action, and a tentacle picks its type once at spawn from a dedicated seeded rng —
 // never Math.random, never re-rolled per strike. Color is both the telegraph signal and
-// the effect selector. FIRST PASS ships only the purple dragToRim type; root/knock are
-// drop-in rows. A grabbed member that dies is pushed into voidFalling (reusing voidPull's
-// swallow animation) so the body is sucked into the hole instead of left as a corpse.
+// the effect selector. Three colors ship: purple `drag` (grab + pull INTO the hole — a
+// pure animation; we don't care that the hole is non-walkable, a live member is deposited
+// back at the lip on release so it never sticks), magenta `knock` (injure + knockback
+// away), teal `root` (injure + root in place for a beat). A grabbed member that dies is
+// pushed into voidFalling (reusing voidPull's swallow) so it's sucked into the hole.
 import { TILE, isWalkable } from "./levelgen.js";
 import { THEME } from "./balance.js";
 
@@ -22,17 +24,28 @@ const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 // COLOR → on-hit action. Each onHit(member, ten, api) has the same shape so any row is a
-// drop-in. FIRST PASS: only `drag`. `api` bundles { hurtMember, knockback, swallow, K, ts }.
-function dragToRim(member, ten, api) {
+// drop-in. `api` bundles { hurtMember, knockback, swallow, K, ts }. All three first damage
+// (and swallow a kill into the void); they differ only in what they do to a survivor.
+function dragIntoHole(member, ten, api) {
   api.hurtMember(member, api.K.damage, "void tentacle"); // flat injury, no fake attacker
   if (member.dead) { api.swallow(member, ten); return; } // died on the strike → into the void
-  ten.grabbed = member; // else the FSM enters `grab`: yank to the rim, hold, release → retract
+  ten.grabbed = member; // else the FSM enters `grab`: pulled into the hole, then deposited at the lip
+}
+function knockAway(member, ten, api) {
+  api.hurtMember(member, api.K.damage, "void tentacle");
+  if (member.dead) { api.swallow(member, ten); return; }
+  api.knockback(member, member.x - ten.baseX, member.y - ten.baseY, api.K.knockbackMag); // shoved off the hole
+}
+function rootInPlace(member, ten, api) {
+  api.hurtMember(member, api.K.damage, "void tentacle");
+  if (member.dead) { api.swallow(member, ten); return; }
+  member.rootT = Math.max(member.rootT || 0, api.K.rootT); // held fast for a beat (heroMove/follower re-home honor it)
 }
 
 export const TENTACLE_TYPES = [
-  { id: "drag", color: THEME.voidTentacle.colors.drag, onHit: dragToRim },
-  // { id: "root",  color: THEME.voidTentacle.colors.root,  onHit: rootInPlace }, // later
-  // { id: "knock", color: THEME.voidTentacle.colors.knock, onHit: knockAway },   // later
+  { id: "drag", color: THEME.voidTentacle.colors.drag, onHit: dragIntoHole },
+  { id: "knock", color: THEME.voidTentacle.colors.knock, onHit: knockAway },
+  { id: "root", color: THEME.voidTentacle.colors.root, onHit: rootInPlace },
 ];
 
 export function createVoidTentacles({
@@ -167,12 +180,17 @@ export function createVoidTentacles({
           if (m && m.dead) swallow(m, t); // died mid-hold → into the void
           t.grabbed = null; beginRetract(t); break;
         }
-        // Yank toward the rim base without overshooting; never crosses the lip into the hole.
-        const dx = t.baseX - m.x, dy = t.baseY - m.y, d = Math.hypot(dx, dy);
+        // Pull toward the hole INTERIOR — a pure animation, so we ignore that it's
+        // non-walkable. A live member is deposited back at the lip on release (below) so
+        // it never ends a turn stuck inside the hole.
+        const dx = t.holeCX - m.x, dy = t.holeCY - m.y, d = Math.hypot(dx, dy);
         const stepLen = Math.min(d, K.dragSpeed * dt);
         if (d > 1e-3) { m.x += (dx / d) * stepLen; m.y += (dy / d) * stepLen; }
         t.len = Math.hypot(m.x - t.baseX, m.y - t.baseY); // shaft visibly holds the victim
-        if (t.timer <= 0) { t.grabbed = null; beginRetract(t); }
+        if (t.timer <= 0) {
+          if (!m.dead) { m.x = t.baseX; m.y = t.baseY; } // deposit the survivor back at the walkable lip
+          t.grabbed = null; beginRetract(t);
+        }
         break;
       }
       case "retract": {

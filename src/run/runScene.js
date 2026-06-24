@@ -316,6 +316,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     hero.sigCd = Math.max(0, hero.sigCd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
     hero.fadeT = Math.max(0, hero.fadeT - dt);
+    hero.rootT = Math.max(0, (hero.rootT || 0) - dt); // a void tentacle's root holds the head fast
     regenMana(hero, dt);
 
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
@@ -324,7 +325,8 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     director.update(dt, hero, enemies, spawnEnemy);
 
     const intent = input.intent();
-    heroMove(intent.x * hero.derived.moveSpeed * bpm * rawDt, intent.y * hero.derived.moveSpeed * bpm * rawDt);
+    if (!(hero.rootT > 0)) // a rooted head can still aim/fire, but can't reposition
+      heroMove(intent.x * hero.derived.moveSpeed * bpm * rawDt, intent.y * hero.derived.moveSpeed * bpm * rawDt);
 
     followerTrain.sampleTrail(); // breadcrumb the head's path right after it moves
 

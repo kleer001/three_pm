@@ -481,19 +481,37 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     for (let f = 0; f < 400 && t.state !== "retract" && !t.done; f++) fl.vt._step(t, DT);
     ok(fl.hits.length === 0, "tentacle: a sidestep during telegraph makes the strike whiff"); }
 
-  // (e) strike-once + drag: with the hero on the locked aim line, the strike injures exactly
-  //     once and grabs+drags the survivor toward the rim, never past the lip into the hole.
+  // (e) strike-once + drag-into-hole (purple): the strike injures exactly once, then pulls
+  //     the survivor PAST the lip toward the hole interior (a pure animation), then deposits
+  //     it back at the lip on release so a live member is never left stuck inside the hole.
   { const st = mk(HX, HY);
     const rim = st.vt.rimToward(st.hero);
-    const t = st.vt._spawnAt(rim);
+    const t = st.vt._spawnAt(rim, "drag");
     for (let f = 0; f < 120 && t.state !== "strike"; f++) st.vt._step(t, DT);
     const startX = st.hero.x;
     for (let f = 0; f < 30 && t.state === "strike"; f++) st.vt._step(t, DT);
     ok(st.hits.length === 1, "tentacle: a clean strike injures exactly once");
-    ok(t.grabbed === st.hero || t.state === "grab", "tentacle: a clean hit grabs the member (drag type)");
-    for (let f = 0; f < 10; f++) st.vt._step(t, DT);
-    ok(st.hero.x > startX, "tentacle: grab drags the member toward the rim");
-    ok(st.hero.x <= rim.baseX + 0.001, "tentacle: drag clamps at the lip — never past the rim into the hole"); }
+    ok(t.grabbed === st.hero || t.state === "grab", "tentacle: the purple type grabs the member");
+    let crossed = false;
+    for (let f = 0; f < 30 && t.state === "grab"; f++) { st.vt._step(t, DT); if (st.hero.x > rim.baseX) crossed = true; }
+    ok(startX < rim.baseX && crossed, "tentacle: drag pulls the member past the lip into the hole");
+    ok(Math.abs(st.hero.x - rim.baseX) < 1e-3 && Math.abs(st.hero.y - rim.baseY) < 1e-3, "tentacle: the survivor is deposited back at the lip on release"); }
+
+  // (e2) knock (magenta): injure + shove the survivor away from the hole; no grab.
+  { const kn = mk(HX, HY);
+    const t = kn.vt._spawnAt(kn.vt.rimToward(kn.hero), "knock");
+    for (let f = 0; f < 200 && kn.hits.length === 0; f++) kn.vt._step(t, DT);
+    ok(kn.hits.length === 1, "tentacle: the magenta type injures once");
+    ok(kn.kbs.length === 1 && kn.kbs[0].dx < 0, "tentacle: the magenta type knocks the member away from the hole");
+    ok(t.grabbed === null, "tentacle: the magenta type does not grab"); }
+
+  // (e3) root (teal): injure + pin the member in place for a beat; no grab.
+  { const rt = mk(HX, HY);
+    const t = rt.vt._spawnAt(rt.vt.rimToward(rt.hero), "root");
+    for (let f = 0; f < 200 && rt.hits.length === 0; f++) rt.vt._step(t, DT);
+    ok(rt.hits.length === 1, "tentacle: the teal type injures once");
+    ok(rt.hero.rootT > 0, "tentacle: the teal type roots the member in place");
+    ok(t.grabbed === null, "tentacle: the teal type does not grab"); }
 
   // (f) void-death swallow: a member that dies on the strike is pushed into voidFalling with
   //     inward velocity (reusing voidPull's swallow), not left as a corpse. Hero stays clear.

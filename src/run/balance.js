@@ -244,12 +244,14 @@ export const BALANCE = {
     retractT: 0.4,        // retract: withdraw, then the hole cools down
     strikeSpeed: 1600,    // px/s the tip extends during the strike
     damage: 10,           // flat injury on a clean hit
-    // dragToRim (purple — first pass):
-    grabHoldT: 0.35,      // s the tip holds a grabbed member at the rim
-    dragSpeed: 900,       // px/s the grabbed member is yanked toward the rim base
+    // dragIntoHole (purple): grab + pull into the hole, then deposit at the lip on release.
+    grabHoldT: 0.35,      // s the tip holds a grabbed member before depositing it back
+    dragSpeed: 900,       // px/s the grabbed member is yanked toward the hole interior
     swallowVel: 4,        // per-frame inward velocity handed to voidFalling on a void-death
-    // knockAway (future color): multiplier passed to runScene.knockback
-    knockback: 1.2,
+    // knockAway (magenta): total px shove away from the hole (runScene.knockback splits it over frames).
+    knockbackMag: 240,
+    // rootInPlace (teal): seconds the struck member is held fast (heroMove + follower re-home honor it).
+    rootT: 0.6,
     tipHitPad: 4,         // px added to member radius for the tip-overlap test
   },
 };
@@ -299,9 +301,9 @@ export const THEME = {
   // is tinted from the tentacle's own color; ring/line/glow are the shared purple cues.
   voidTentacle: {
     colors: {
-      drag: "#7a2fb0", // deep purple — dragToRim (FIRST PASS)
-      // root:  "#2f80b0", // teal    — rootInPlace (later)
-      // knock: "#b02f6a", // magenta — knockAway  (later)
+      drag: "#7a2fb0",  // deep purple — grab + pull into the hole
+      knock: "#b02f6a", // magenta     — injure + knockback away
+      root: "#2f80b0",  // teal        — injure + root in place
     },
     tipGlow: "rgba(190,120,255,0.55)", // glowing bulb halo
     ring: "rgba(190,120,255,0.85)",    // telegraph pulse ring

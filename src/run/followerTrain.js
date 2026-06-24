@@ -59,14 +59,16 @@ export function createFollowerTrain({ hero, followers, trail, gap, level, deadTh
       f.sigCd = Math.max(0, f.sigCd - dt);
       f.iframes = Math.max(0, f.iframes - dt);
       f.fadeT = Math.max(0, f.fadeT - dt);
+      f.rootT = Math.max(0, (f.rootT || 0) - dt); // a void tentacle's root pins a follower off its trail point
       regenMana(f, dt);
       combat.tickHeal(f, dt);
       combat.tickCharge(f, dt); // The Drop's baseline trickle, so a back-line follower still fires
       combat.tickWake(f, dt); // Dash's dust trail, emitted as he retraces the conga path
       const p = trailPointBack((i + 1) * gap);
       // Re-home at a capped speed (its own moveSpeed × the knob), so a shoved follower
-      // closes the gap at a steady rate; bpm/rawDt tie its pace to the head's.
-      if (p) {
+      // closes the gap at a steady rate; bpm/rawDt tie its pace to the head's. A rooted
+      // follower skips the re-home (it's held fast) but still fires + checks the crush line.
+      if (p && !(f.rootT > 0)) {
         const dx = p.x - f.x, dy = p.y - f.y, d = Math.hypot(dx, dy);
         const step = f.derived.moveSpeed * BALANCE.followerReturnSpeedMult * bpm * rawDt;
         if (d <= step || d < 1e-3) { f.x = p.x; f.y = p.y; }
