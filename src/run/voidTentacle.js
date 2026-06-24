@@ -1,7 +1,7 @@
 // Void tentacles: the hazard that makes a reality break (TILE.RUBBLE hole) dangerous.
 // A hole near a hero grows a purple tentacle that BUDS as a small circle on the rim,
 // RISES, PAUSES (telegraph, aim locked), then LASHES out along the locked aim to grab a
-// member and drag it to the lip. Dodgeable by sidestepping during the pause — the same
+// member and drag it into the hole. Dodgeable by sidestepping during the pause — the same
 // counterplay model as the charger (enemyAI.js): the aim is captured once, never tracked
 // after the lock, so moving off the line whiffs.
 //
@@ -12,11 +12,11 @@
 // The on-hit effect is COLOR-KEYED and deterministic: TENTACLE_TYPES maps each color to
 // one action, and a tentacle picks its type once at spawn from a dedicated seeded rng —
 // never Math.random, never re-rolled per strike. Color is both the telegraph signal and
-// the effect selector. Three colors ship: purple `drag` (grab + pull INTO the hole — a
-// pure animation; we don't care that the hole is non-walkable, a live member is deposited
-// back at the lip on release so it never sticks), magenta `knock` (injure + knockback
-// away), teal `root` (injure + root in place for a beat). A grabbed member that dies is
-// pushed into voidFalling (reusing voidPull's swallow) so it's sucked into the hole.
+// the effect selector. Three colors ship: purple `drag` (grab + drag the member INTO the
+// hole, where it's pulled under and KILLED — gone, swallowed by the void), magenta `knock`
+// (injure + knockback away), teal `root` (injure + root in place for a beat). A killed
+// member is pushed into voidFalling (reusing voidPull's swallow) so it visibly sinks into
+// the hole; the head's death instead ends the run via hurtMember → loseRun.
 import { TILE, isWalkable } from "./levelgen.js";
 import { THEME } from "./balance.js";
 
@@ -29,7 +29,10 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 function dragIntoHole(member, ten, api) {
   api.hurtMember(member, api.K.damage, "void tentacle"); // flat injury, no fake attacker
   if (member.dead) { api.swallow(member, ten); return; } // died on the strike → into the void
-  ten.grabbed = member; // else the FSM enters `grab`: pulled into the hole, then deposited at the lip
+  // survived → the FSM enters `grab`, reeling it into the hole to kill it. Root it for the
+  // hold so neither player input (head) nor the follower train fights the pull-in.
+  ten.grabbed = member;
+  member.rootT = Math.max(member.rootT || 0, api.K.grabHoldT);
 }
 function knockAway(member, ten, api) {
   api.hurtMember(member, api.K.damage, "void tentacle");
@@ -87,8 +90,8 @@ export function createVoidTentacles({
   // The rim point a hole offers TOWARD a member: a RUBBLE tile in range whose 4-neighbor is
   // genuine open floor (isWalkable excludes both WALL and RUBBLE) and whose outward normal
   // points at the member (dot > 0 → the hero-facing side). Score by alignment minus a small
-  // distance penalty. Base sits at the lip (hole center pushed half a tile outward); the
-  // member can never be dragged past it into the non-walkable hole.
+  // distance penalty. Base sits at the lip (hole center pushed half a tile outward) — the
+  // shaft anchors there; a grabbed member is reeled from it toward holeCX/holeCY (interior).
   function rimToward(member) {
     const R = K.rangeTiles;
     const mtx = Math.floor(member.x / TS), mty = Math.floor(member.y / TS);
@@ -113,18 +116,29 @@ export function createVoidTentacles({
     return best;
   }
 
-  // Reuse voidPull's swallow animation: a grabbed member that died drifts into the hole and
-  // shrinks (stepFall, run from runScene) instead of leaving a normal corpse. The hero is
-  // never removed — its loss already routed through hurtMember → loseRun.
+  // Reuse voidPull's swallow animation: a killed member drifts into the hole and shrinks
+  // (stepFall, run from runScene) instead of leaving a normal corpse. Inward velocity comes
+  // from the rim→interior normal (baseX/Y → holeCX/Y) so it's always non-zero, even when the
+  // body is already at the hole center. The hero is never removed — its loss already routed
+  // through hurtMember → loseRun.
   function swallow(member, ten) {
     if (member === hero) return; // head loss is handled by hurtMember/loseRun; never remove it
-    const dx = ten.holeCX - member.x, dy = ten.holeCY - member.y, m = Math.hypot(dx, dy) || 1;
+    const dx = ten.holeCX - ten.baseX, dy = ten.holeCY - ten.baseY, m = Math.hypot(dx, dy) || 1;
     voidFalling.push({
       x: member.x, y: member.y, r: member.r,
       color: member.color || (member.def && member.def.color) || corpseColor,
       vfx: (dx / m) * K.swallowVel, vfy: (dy / m) * K.swallowVel,
     });
     removeMember(member); // enemy: splice from `enemies`. follower: no-op (reapDead drops it).
+  }
+
+  // The grab completed: the member has been dragged into the hole and is pulled under — it
+  // dies, unconditionally (a grab ignores i-frames). hurtMember routes the head's death to
+  // loseRun and plays the scream for others; non-heroes then sink into the void via swallow.
+  function pullKill(member, ten) {
+    member.iframes = 0; // a grab can't be shrugged off by a lingering i-frame window
+    hurtMember(member, member.hp * 2 + K.damage, "dragged into the void"); // guaranteed lethal (resist ≤ 50%)
+    if (member !== hero && member.dead) swallow(member, ten);
   }
 
   const api = { hurtMember, knockback, swallow, K, ts: TS };
@@ -177,18 +191,18 @@ export function createVoidTentacles({
         t.timer -= dt;
         const m = t.grabbed;
         if (!m || m.dead) {
-          if (m && m.dead) swallow(m, t); // died mid-hold → into the void
+          if (m && m.dead) swallow(m, t); // already dead → into the void
           t.grabbed = null; beginRetract(t); break;
         }
-        // Pull toward the hole INTERIOR — a pure animation, so we ignore that it's
-        // non-walkable. A live member is deposited back at the lip on release (below) so
-        // it never ends a turn stuck inside the hole.
+        // Reel the member toward the hole INTERIOR (we ignore that it's non-walkable — this
+        // is a death animation). When it reaches the center (or the safety cap fires) it's
+        // pulled under and KILLED — dragged into the void and gone, never deposited back.
         const dx = t.holeCX - m.x, dy = t.holeCY - m.y, d = Math.hypot(dx, dy);
         const stepLen = Math.min(d, K.dragSpeed * dt);
         if (d > 1e-3) { m.x += (dx / d) * stepLen; m.y += (dy / d) * stepLen; }
         t.len = Math.hypot(m.x - t.baseX, m.y - t.baseY); // shaft visibly holds the victim
-        if (t.timer <= 0) {
-          if (!m.dead) { m.x = t.baseX; m.y = t.baseY; } // deposit the survivor back at the walkable lip
+        if (d <= K.pullInRadius || t.timer <= 0) {
+          pullKill(m, t);
           t.grabbed = null; beginRetract(t);
         }
         break;

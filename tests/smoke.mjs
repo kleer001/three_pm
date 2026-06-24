@@ -481,9 +481,9 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     for (let f = 0; f < 400 && t.state !== "retract" && !t.done; f++) fl.vt._step(t, DT);
     ok(fl.hits.length === 0, "tentacle: a sidestep during telegraph makes the strike whiff"); }
 
-  // (e) strike-once + drag-into-hole (purple): the strike injures exactly once, then pulls
-  //     the survivor PAST the lip toward the hole interior (a pure animation), then deposits
-  //     it back at the lip on release so a live member is never left stuck inside the hole.
+  // (e) strike-once + drag-into-hole (purple): the strike injures once, then the grab reels the
+  //     member PAST the lip toward the hole interior and KILLS it there — dragged under and gone,
+  //     never deposited back at the lip.
   { const st = mk(HX, HY);
     const rim = st.vt.rimToward(st.hero);
     const t = st.vt._spawnAt(rim, "drag");
@@ -493,9 +493,20 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     ok(st.hits.length === 1, "tentacle: a clean strike injures exactly once");
     ok(t.grabbed === st.hero || t.state === "grab", "tentacle: the purple type grabs the member");
     let crossed = false;
-    for (let f = 0; f < 30 && t.state === "grab"; f++) { st.vt._step(t, DT); if (st.hero.x > rim.baseX) crossed = true; }
-    ok(startX < rim.baseX && crossed, "tentacle: drag pulls the member past the lip into the hole");
-    ok(Math.abs(st.hero.x - rim.baseX) < 1e-3 && Math.abs(st.hero.y - rim.baseY) < 1e-3, "tentacle: the survivor is deposited back at the lip on release"); }
+    for (let f = 0; f < 60 && t.state === "grab"; f++) { st.vt._step(t, DT); if (st.hero.x > rim.baseX) crossed = true; }
+    ok(startX < rim.baseX && crossed, "tentacle: the grab reels the member past the lip into the hole");
+    ok(st.hero.dead, "tentacle: a grabbed hero is dragged into the void and killed (never deposited back)"); }
+
+  // (e1) the killed victim is swallowed: a grabbed FOLLOWER is reeled in, killed, and pushed
+  //      into voidFalling (the visible sink) — not deposited at the lip, not left as a corpse.
+  { const fol = { x: HX, y: HY, r: 14, dead: false, hp: 100, color: "#abc" };
+    const dv = mk(HX, 5 * TS + TS / 2, [fol]); // hero off the line (south); follower on it
+    const t = dv.vt._spawnAt(dv.vt.rimToward(fol), "drag");
+    for (let f = 0; f < 300 && !fol.dead; f++) dv.vt._step(t, DT);
+    ok(fol.dead, "tentacle: a grabbed follower is dragged into the void and killed");
+    ok(dv.voidFalling.length === 1, "tentacle: the killed follower is swallowed into the hole");
+    ok(dv.voidFalling[0].vfx !== 0 || dv.voidFalling[0].vfy !== 0, "tentacle: the swallow body carries inward velocity");
+    ok(!dv.hero.dead, "tentacle: dragging a follower in leaves the hero untouched"); }
 
   // (e2) knock (magenta): injure + shove the survivor away from the hole; no grab.
   { const kn = mk(HX, HY);

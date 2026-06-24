@@ -244,10 +244,11 @@ export const BALANCE = {
     retractT: 0.4,        // retract: withdraw, then the hole cools down
     strikeSpeed: 1600,    // px/s the tip extends during the strike
     damage: 10,           // flat injury on a clean hit
-    // dragIntoHole (purple): grab + pull into the hole, then deposit at the lip on release.
-    grabHoldT: 0.35,      // s the tip holds a grabbed member before depositing it back
-    dragSpeed: 900,       // px/s the grabbed member is yanked toward the hole interior
-    swallowVel: 4,        // per-frame inward velocity handed to voidFalling on a void-death
+    // dragIntoHole (purple): grab + drag the member INTO the hole, where it's pulled under and KILLED.
+    grabHoldT: 0.35,      // s safety cap on the pull-in (it normally reaches the center first)
+    dragSpeed: 900,       // px/s the grabbed member is reeled toward the hole interior
+    pullInRadius: 6,      // px from the hole center at which the member is pulled under and dies
+    swallowVel: 4,        // per-frame inward velocity handed to voidFalling when a body sinks in
     // knockAway (magenta): total px shove away from the hole (runScene.knockback splits it over frames).
     knockbackMag: 240,
     // rootInPlace (teal): seconds the struck member is held fast (heroMove + follower re-home honor it).
