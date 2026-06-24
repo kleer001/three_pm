@@ -91,33 +91,58 @@ export function createVoidTentacles({
     return best;
   };
 
-  // The rim point a hole offers TOWARD a member: a RUBBLE tile in range whose 4-neighbor is
-  // genuine open floor (isWalkable excludes both WALL and RUBBLE) and whose outward normal
-  // points at the member (dot > 0 → the hero-facing side). Score by alignment minus a small
-  // distance penalty. Base sits at the lip (hole center pushed half a tile outward) — the
-  // shaft anchors there; a grabbed member is reeled from it toward holeCX/holeCY (interior).
+  // The rim a single RUBBLE tile offers TOWARD a member: the 4-neighbor that is genuine open
+  // floor (isWalkable excludes both WALL and RUBBLE) and whose outward normal points at the
+  // member (dot > 0 → the hero-facing side). Pick the best-aligned face (score = alignment
+  // minus a small distance penalty). Base sits at the lip (hole center pushed half a tile
+  // outward) — the shaft anchors there; a grabbed member is reeled toward holeCX/holeCY. Null
+  // if the tile offers no facing open side. `score` rides along for cross-tile comparison.
+  function rimForTile(tx, ty, member) {
+    const hcx = tx * TS + TS / 2, hcy = ty * TS + TS / 2;
+    const tdx = member.x - hcx, tdy = member.y - hcy, dm = Math.hypot(tdx, tdy) || 1;
+    let best = null, bestScore = -Infinity;
+    for (const [dx, dy] of NEIGHBORS) {
+      if (!isWalkable(level, tx + dx, ty + dy)) continue;
+      const dot = (dx * tdx + dy * tdy) / dm;
+      if (dot <= 0) continue; // only the side facing the member
+      const bx = hcx + dx * TS / 2, by = hcy + dy * TS / 2;
+      const score = dot - 0.002 * Math.hypot(member.x - bx, member.y - by);
+      if (score > bestScore) { bestScore = score; best = { tx, ty, baseX: bx, baseY: by, holeCX: hcx, holeCY: hcy, score }; }
+    }
+    return best;
+  }
+
+  // The single best rim any hole offers a member, scanning the ±rangeTiles box (used by the
+  // sandbox/tests). Spawning uses eligibleRims() below instead.
   function rimToward(member) {
     const R = K.rangeTiles;
     const mtx = Math.floor(member.x / TS), mty = Math.floor(member.y / TS);
-    let best = null, bestScore = -Infinity;
+    let best = null;
     for (let ty = mty - R; ty <= mty + R; ty++)
       for (let tx = mtx - R; tx <= mtx + R; tx++) {
         if (!tileVoid(tx, ty)) continue;
-        const hcx = tx * TS + TS / 2, hcy = ty * TS + TS / 2;
-        const tdx = member.x - hcx, tdy = member.y - hcy, dm = Math.hypot(tdx, tdy) || 1;
-        for (const [dx, dy] of NEIGHBORS) {
-          if (!isWalkable(level, tx + dx, ty + dy)) continue;
-          const dot = (dx * tdx + dy * tdy) / dm;
-          if (dot <= 0) continue; // only the side facing the member
-          const bx = hcx + dx * TS / 2, by = hcy + dy * TS / 2;
-          const score = dot - 0.002 * Math.hypot(member.x - bx, member.y - by);
-          if (score > bestScore) {
-            bestScore = score;
-            best = { tx, ty, baseX: bx, baseY: by, holeCX: hcx, holeCY: hcy };
-          }
-        }
+        const rim = rimForTile(tx, ty, member);
+        if (rim && (!best || rim.score > best.score)) best = rim;
       }
     return best;
+  }
+
+  // Every distinct void-edge cell in range of a living member that faces one, deduped by tile
+  // (a cell seen by two members keeps the better-aligned face). The spawn roll walks this set.
+  function eligibleRims() {
+    const R = K.rangeTiles, seen = new Map();
+    for (const m of livingTargets()) {
+      const mtx = Math.floor(m.x / TS), mty = Math.floor(m.y / TS);
+      for (let ty = mty - R; ty <= mty + R; ty++)
+        for (let tx = mtx - R; tx <= mtx + R; tx++) {
+          if (!tileVoid(tx, ty)) continue;
+          const rim = rimForTile(tx, ty, m);
+          if (!rim) continue;
+          const key = ty * level.w + tx, prev = seen.get(key);
+          if (!prev || rim.score > prev.score) seen.set(key, rim);
+        }
+    }
+    return [...seen.values()];
   }
 
   // Reuse voidPull's swallow animation: a killed member drifts into the hole and shrinks
@@ -240,22 +265,21 @@ export function createVoidTentacles({
     return t;
   }
 
-  // Proximity-gated, capped spawn. The rim scan only runs on a spawn ATTEMPT (every
-  // spawnInterval, skipped at maxActive), so it never costs per-frame work.
+  // Per-edge-cell spawn: on each attempt (every spawnInterval, so the scan never costs per-
+  // frame work), every void-edge cell near a hero independently rolls spawnChancePerRim to
+  // grow a tentacle — ~1 in 20 by default. Capped at maxActive; a cell that already hosts a
+  // live tentacle or is still cooling down is skipped so it never doubles up or spams.
   function trySpawn(dt) {
     spawnCd -= dt;
-    if (spawnCd > 0 || tentacles.length >= K.maxActive) return;
-    let chosen = null, chosenD = Infinity;
-    for (const m of livingTargets()) {
-      const rim = rimToward(m);
-      if (!rim) continue;
-      const d = Math.hypot(m.x - rim.baseX, m.y - rim.baseY);
-      if (d < chosenD) { chosenD = d; chosen = rim; }
-    }
+    if (spawnCd > 0) return;
     spawnCd = K.spawnInterval * (0.75 + 0.5 * rng.next()); // re-attempt later either way
-    if (!chosen) return;
-    if (holeCd.has(chosen.ty * level.w + chosen.tx)) return; // this hole is still cooling
-    _spawnAt(chosen);
+    for (const rim of eligibleRims()) {
+      if (tentacles.length >= K.maxActive) break;
+      const key = rim.ty * level.w + rim.tx;
+      if (holeCd.has(key)) continue;                            // still cooling from its last tentacle
+      if (tentacles.some((t) => t.holeKey === key)) continue;   // already has a live tentacle
+      if (rng.next() < K.spawnChancePerRim) _spawnAt(rim);
+    }
   }
 
   function update(dt) {

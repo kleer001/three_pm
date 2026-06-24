@@ -236,6 +236,7 @@ export const BALANCE = {
     restTiles: 0.6,       // resting extension during rise/telegraph, in tiles
     maxActive: 2,         // concurrent tentacles cap (perf + fairness)
     spawnInterval: 2.2,   // seconds between spawn attempts (jittered ±25%)
+    spawnChancePerRim: 0.05, // per attempt, each in-range void-edge cell rolls this to grow one (~1 in 20)
     holeCooldown: 4,      // seconds a given hole waits before re-spawning
     budT: 0.35,           // bud: the small circle swells at the rim
     riseT: 0.25,          // rise: stalk grows to restLen, still tracking the hero

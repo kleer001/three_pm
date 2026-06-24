@@ -418,14 +418,14 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   const TS = 48, W = 10, H = 6, DT = 1 / 60;
   // Build an isolated world; `walkable` is required (rimToward uses isWalkable). Members
   // default to ample hp so a single strike doesn't kill them (the swallow cases override).
-  const mk = (hx, hy, extra = []) => {
+  const mk = (hx, hy, extra = [], bal = BALANCE) => {
     const tiles = new Array(W * H).fill(0); tiles[2 * W + 5] = 6 /*RUBBLE*/;
     const walkable = tiles.map((t) => (t === 5 || t === 6) ? 0 : 1);
     const level = { w: W, h: H, tileSize: TS, tiles, walkable };
     const hero = { x: hx, y: hy, r: 14, dead: false, hp: 100 };
     const hits = [], kbs = [], voidFalling = [], enemies = [];
     const vt = createVoidTentacles({
-      level, ts: TS, heroTargets: [hero, ...extra], balance: BALANCE,
+      level, ts: TS, heroTargets: [hero, ...extra], balance: bal,
       hurtMember: (m, a) => { hits.push({ m, a }); m.hp = (m.hp ?? 1) - a; if (m.hp <= 0) m.dead = true; },
       knockback: (t, dx, dy, mag) => kbs.push({ dx, dy, mag }),
       voidFalling, corpseColor: "#000", hero,
@@ -453,16 +453,18 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     for (let f = 0; f < 400; f++) far.vt.update(DT);
     ok(far.vt.tentacles.length === 0, "tentacle: an out-of-range hole never spawns"); }
 
-  // (c) spawn gate + maxActive invariant: a hole near a hero spawns, and the live count
-  //     never exceeds the cap across a long run (spawn + complete + respawn churn).
-  { const sg = mk(HX, HY);
+  // (c) spawn gate + maxActive invariant: a void-edge cell near a hero spawns one, and the
+  //     live count never exceeds the cap across a long run (spawn + complete + respawn churn).
+  //     Force spawnChancePerRim to 1 so the per-cell roll is deterministic for the assertion.
+  { const certain = { ...BALANCE, voidTentacle: { ...BALANCE.voidTentacle, spawnChancePerRim: 1 } };
+    const sg = mk(HX, HY, [], certain);
     let spawned = false, capOk = true;
     for (let f = 0; f < 2000; f++) {
       sg.vt.update(DT);
       if (sg.vt.tentacles.length > 0) spawned = true;
       if (sg.vt.tentacles.length > BALANCE.voidTentacle.maxActive) { capOk = false; break; }
     }
-    ok(spawned, "tentacle: a hole near a hero spawns one");
+    ok(spawned, "tentacle: a void-edge cell near a hero spawns one");
     ok(capOk, "tentacle: never exceeds maxActive concurrent tentacles"); }
 
   // (d) FSM + aim lock: drive one tentacle by hand to telegraph, then sidestep — the aim,
