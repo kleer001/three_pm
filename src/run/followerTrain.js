@@ -60,6 +60,7 @@ export function createFollowerTrain({ hero, followers, trail, gap, level, deadTh
       f.iframes = Math.max(0, f.iframes - dt);
       f.fadeT = Math.max(0, f.fadeT - dt);
       f.rootT = Math.max(0, (f.rootT || 0) - dt); // a void tentacle's root pins a follower off its trail point
+      f.voidPerilT = Math.max(0, (f.voidPerilT || 0) - dt); // window where being off-screen = the dark takes it
       regenMana(f, dt);
       combat.tickHeal(f, dt);
       combat.tickCharge(f, dt); // The Drop's baseline trickle, so a back-line follower still fires
@@ -74,9 +75,10 @@ export function createFollowerTrain({ hero, followers, trail, gap, level, deadTh
         if (d <= step || d < 1e-3) { f.x = p.x; f.y = p.y; }
         else { const s = step / d; shift(f, dx * s, 0); shift(f, 0, dy * s); } // per-axis: slide along walls
       }
-      // Riding the advancing edge is fine, but being pinned against a wall there is
-      // fatal — that's "left behind".
-      if (f.y < minY) { f.y = minY; if (boxBlocked(level, f)) { f.dead = true; continue; } }
+      // Riding the advancing edge is fine, but being pinned against a wall there is fatal —
+      // that's "left behind". So is being caught there while a void tentacle holds (root) or
+      // has just flung (knockback) the follower: it can't outrun the dark.
+      if (f.y < minY) { f.y = minY; if (boxBlocked(level, f) || f.voidPerilT > 0) { f.dead = true; continue; } }
       const near = combat.nearestEnemyTo(f.x, f.y);
       combat.fireSignature(f, near); // followers contribute only their passive signature, no weapon
     }

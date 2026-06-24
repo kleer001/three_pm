@@ -253,6 +253,10 @@ export const BALANCE = {
     knockbackMag: 240,
     // rootInPlace (teal): seconds the struck member is held fast (heroMove + follower re-home honor it).
     rootT: 0.6,
+    // A root/knockback that strands a member north of the crush line is fatal — the dark takes a
+    // held-or-flung member (vs. the forgiving clamp normal play gets). perilT is how long a
+    // knockback stays lethal-if-offscreen; a root uses its own rootT as the window.
+    perilT: 0.5,
     tipHitPad: 4,         // px added to member radius for the tip-overlap test
   },
 };

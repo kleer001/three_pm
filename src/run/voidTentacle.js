@@ -14,9 +14,11 @@
 // never Math.random, never re-rolled per strike. Color is both the telegraph signal and
 // the effect selector. Three colors ship: purple `drag` (grab + drag the member INTO the
 // hole, where it's pulled under and KILLED — gone, swallowed by the void), magenta `knock`
-// (injure + knockback away), teal `root` (injure + root in place for a beat). A killed
-// member is pushed into voidFalling (reusing voidPull's swallow) so it visibly sinks into
-// the hole; the head's death instead ends the run via hurtMember → loseRun.
+// (injure + knockback away), teal `root` (injure + root in place for a beat). A knock or root
+// that strands a member north of the crush line is itself fatal (voidPerilT — the descent's
+// dark takes a held-or-flung member, bypassing the forgiving clamp). A killed member is pushed
+// into voidFalling (reusing voidPull's swallow) so it visibly sinks into the hole; the head's
+// death instead ends the run via hurtMember → loseRun.
 import { TILE, isWalkable } from "./levelgen.js";
 import { THEME } from "./balance.js";
 
@@ -38,11 +40,13 @@ function knockAway(member, ten, api) {
   api.hurtMember(member, api.K.damage, "void tentacle");
   if (member.dead) { api.swallow(member, ten); return; }
   api.knockback(member, member.x - ten.baseX, member.y - ten.baseY, api.K.knockbackMag); // shoved off the hole
+  member.voidPerilT = Math.max(member.voidPerilT || 0, api.K.perilT); // flung north of the crush line → the dark takes it
 }
 function rootInPlace(member, ten, api) {
   api.hurtMember(member, api.K.damage, "void tentacle");
   if (member.dead) { api.swallow(member, ten); return; }
   member.rootT = Math.max(member.rootT || 0, api.K.rootT); // held fast for a beat (heroMove/follower re-home honor it)
+  member.voidPerilT = Math.max(member.voidPerilT || 0, api.K.rootT); // held at the crush line → no escaping the dark
 }
 
 export const TENTACLE_TYPES = [

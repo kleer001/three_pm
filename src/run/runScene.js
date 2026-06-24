@@ -317,6 +317,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     hero.iframes = Math.max(0, hero.iframes - dt);
     hero.fadeT = Math.max(0, hero.fadeT - dt);
     hero.rootT = Math.max(0, (hero.rootT || 0) - dt); // a void tentacle's root holds the head fast
+    hero.voidPerilT = Math.max(0, (hero.voidPerilT || 0) - dt); // window where being off-screen = the dark takes it
     regenMana(hero, dt);
 
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
@@ -406,10 +407,12 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     for (let i = dustPuffs.length - 1; i >= 0; i--) if (dustPuffs[i].t >= dustPuffs[i].life || dustPuffs[i].y < cam.y) dustPuffs.splice(i, 1);
     followerTrain.reapDead(); // permadeath: drop dead followers + their shot-target slot
 
-    // Stay inside the moving window; being pinned against a wall at the crush line is fatal.
+    // Stay inside the moving window; being pinned against a wall at the crush line is fatal,
+    // and so is being caught there while a void tentacle holds (root) or has just flung
+    // (knockback) the head — it can't outrun the dark, so the dark takes it.
     if (hero.y < minY) {
       hero.y = minY;
-      if (boxBlocked(level, hero)) loseRun("left behind by the dark");
+      if (boxBlocked(level, hero) || hero.voidPerilT > 0) loseRun("left behind by the dark");
     }
     hero.y = clamp(hero.y, minY, cam.y + VIEW_H - MARGIN);
     cam.x = clamp(hero.x - VIEW_W / 2, 0, mapW - VIEW_W);
