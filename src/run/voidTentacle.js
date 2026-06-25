@@ -23,9 +23,9 @@
 // death instead ends the run via hurtMember → loseRun.
 import { TILE, isWalkable } from "./levelgen.js";
 import { THEME } from "./balance.js";
+import { clamp } from "./draw.js";
 
 const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 // COLOR → on-hit action. Each onHit(member, ten, api) has the same shape so any row is a
 // drop-in. `api` bundles { hurt, knockback, swallow, pin, hold, isEnemy, K, ts }. Both factions
@@ -219,7 +219,7 @@ export function createVoidTentacles({
     switch (t.state) {
       case "bud": {
         t.timer -= dt;
-        t.budT = clamp01(1 - t.timer / K.budT);
+        t.budT = clamp(1 - t.timer / K.budT, 0, 1);
         if (t.timer <= 0) { t.state = "rise"; t.timer = K.riseT; }
         break;
       }
@@ -230,7 +230,7 @@ export function createVoidTentacles({
           const m = Math.hypot(tgt.x - t.baseX, tgt.y - t.baseY) || 1;
           t.aimX = (tgt.x - t.baseX) / m; t.aimY = (tgt.y - t.baseY) / m;
         }
-        t.len = t.restLen * clamp01(1 - t.timer / K.riseT);
+        t.len = t.restLen * clamp(1 - t.timer / K.riseT, 0, 1);
         if (t.timer <= 0) { t.state = "telegraph"; t.timer = K.telegraphT; } // aim now LOCKED
         break;
       }
@@ -276,7 +276,7 @@ export function createVoidTentacles({
       }
       case "retract": {
         t.timer -= dt;
-        const f = clamp01(t.timer / K.retractT);
+        const f = clamp(t.timer / K.retractT, 0, 1);
         t.len = t.retractFrom * f;
         t.budT = f;
         if (t.timer <= 0) t.done = true;
