@@ -1,9 +1,11 @@
 // Void tentacles: the hazard that makes a reality break (TILE.RUBBLE hole) dangerous.
 // A hole near a hero grows a purple tentacle that BUDS as a small circle on the rim,
 // RISES, PAUSES (telegraph, aim locked), then LASHES out along the locked aim to grab a
-// member and drag it into the hole. Dodgeable by sidestepping during the pause — the same
+// creature and drag it into the hole. Dodgeable by sidestepping during the pause — the same
 // counterplay model as the charger (enemyAI.js): the aim is captured once, never tracked
-// after the lock, so moving off the line whiffs.
+// after the lock, so moving off the line whiffs. The void is NEUTRAL — it erupts where the
+// player is (spawning is hero-driven) but grabs the nearest creature of EITHER faction, so a
+// tentacle near a monster pack will yank monsters into the dark just as readily as the hero.
 //
 // One factory bound to the live world (the same heroTargets/voidFalling/enemies runScene
 // owns), mirroring voidPull: runScene wires update(dt) into its frame loop and the
@@ -26,9 +28,11 @@ const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 // COLOR → on-hit action. Each onHit(member, ten, api) has the same shape so any row is a
-// drop-in. `api` bundles { hurtMember, knockback, swallow, K, ts }. All three first damage
-// (and swallow a kill into the void); they differ only in what they do to a survivor.
+// drop-in. `api` bundles { hurtMember, knockback, swallow, pin, isEnemy, K, ts }. The effects
+// are faction-aware: party members are injured + displaced and the descent's dark can finish
+// them; enemies are grabbed/pinned/flung as pure CC (the drag still drags them to their death).
 function dragIntoHole(member, ten, api) {
+  if (api.isEnemy(member)) { ten.grabbed = member; api.pin(member); return; } // monster: reeled in, then swallowed
   api.hurtMember(member, api.K.damage, "void tentacle"); // flat injury, no fake attacker
   if (member.dead) { api.swallow(member, ten); return; } // died on the strike → into the void
   // survived → the FSM enters `grab`, reeling it into the hole to kill it. Root it for the
@@ -37,12 +41,14 @@ function dragIntoHole(member, ten, api) {
   member.rootT = Math.max(member.rootT || 0, api.K.grabHoldT);
 }
 function knockAway(member, ten, api) {
+  if (api.isEnemy(member)) { api.knockback(member, member.x - ten.baseX, member.y - ten.baseY, api.K.knockbackMag); return; }
   api.hurtMember(member, api.K.damage, "void tentacle");
   if (member.dead) { api.swallow(member, ten); return; }
   api.knockback(member, member.x - ten.baseX, member.y - ten.baseY, api.K.knockbackMag); // shoved off the hole
   member.voidPerilT = Math.max(member.voidPerilT || 0, api.K.perilT); // flung north of the crush line → the dark takes it
 }
 function rootInPlace(member, ten, api) {
+  if (api.isEnemy(member)) { api.pin(member); return; } // monster pinned via the freeze pause
   api.hurtMember(member, api.K.damage, "void tentacle");
   if (member.dead) { api.swallow(member, ten); return; }
   member.rootT = Math.max(member.rootT || 0, api.K.rootT); // held fast for a beat (heroMove/follower re-home honor it)
@@ -56,7 +62,7 @@ export const TENTACLE_TYPES = [
 ];
 
 export function createVoidTentacles({
-  level, ts, heroTargets, balance, hurtMember, knockback,
+  level, ts, heroTargets, enemies, balance, hurtMember, knockback,
   voidFalling, corpseColor, hero, removeMember, rng,
 }) {
   const TS = ts;
@@ -68,8 +74,19 @@ export function createVoidTentacles({
   const tileVoid = (tx, ty) =>
     tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE;
 
-  // Player-faction members that can be targeted/hit (skip dead + still-materializing).
-  const livingTargets = () => heroTargets.filter((m) => !m.dead && !(m.fadeT > 0));
+  const isEnemy = (m) => m.faction === "enemy";
+
+  // Where tentacles WANT to erupt: party members (alive, not still-materializing). Spawning is
+  // hero-driven so the hazard appears where the player is, even though it grabs either faction.
+  const partyAnchors = () => heroTargets.filter((m) => !m.dead && !(m.fadeT > 0));
+
+  // Everything a tentacle can grab/pin: BOTH factions. The void is neutral — it lashes at the
+  // nearest creature near its hole, hero or monster alike.
+  const livingTargets = () => {
+    const out = partyAnchors();
+    for (const e of enemies) if (!e.dead && !(e.fadeT > 0)) out.push(e);
+    return out;
+  };
 
   const nearestTarget = (x, y) => {
     let best = null, bestD = Infinity;
@@ -80,7 +97,7 @@ export function createVoidTentacles({
     return best;
   };
 
-  // Nearest living member whose body overlaps the strike tip, or null.
+  // Nearest living creature (either faction) whose body overlaps the strike tip, or null.
   const hitTest = (x, y, tipR) => {
     let best = null, bestD = Infinity;
     for (const m of livingTargets()) {
@@ -127,11 +144,12 @@ export function createVoidTentacles({
     return best;
   }
 
-  // Every distinct void-edge cell in range of a living member that faces one, deduped by tile
+  // Every distinct void-edge cell in range of a party member that faces one, deduped by tile
   // (a cell seen by two members keeps the better-aligned face). The spawn roll walks this set.
+  // Driven by party anchors only — tentacles erupt where the player is, then grab either faction.
   function eligibleRims() {
     const R = K.rangeTiles, seen = new Map();
-    for (const m of livingTargets()) {
+    for (const m of partyAnchors()) {
       const mtx = Math.floor(m.x / TS), mty = Math.floor(m.y / TS);
       for (let ty = mty - R; ty <= mty + R; ty++)
         for (let tx = mtx - R; tx <= mtx + R; tx++) {
@@ -161,16 +179,23 @@ export function createVoidTentacles({
     removeMember(member); // enemy: splice from `enemies`. follower: no-op (reapDead drops it).
   }
 
-  // The grab completed: the member has been dragged into the hole and is pulled under — it
-  // dies, unconditionally (a grab ignores i-frames). hurtMember routes the head's death to
-  // loseRun and plays the scream for others; non-heroes then sink into the void via swallow.
+  // Pin a creature in place: enemies honor the freeze pause (the brain loop skips a frozenT
+  // enemy), which `rootT` does not gate. Doesn't touch freezeCount, so it's a pure hold and
+  // never counts toward a freeze-kill.
+  function pin(e) { e.frozenT = Math.max(e.frozenT || 0, K.rootT); }
+
+  // The grab completed: the creature has been dragged into the hole and is pulled under. An
+  // enemy is simply swallowed (gone — no loot, the void ate the kill). A party member dies
+  // unconditionally (a grab ignores i-frames); hurtMember routes the head's death to loseRun
+  // and plays the scream for others, then non-heroes sink into the void via swallow.
   function pullKill(member, ten) {
+    if (isEnemy(member)) { swallow(member, ten); return; }
     member.iframes = 0; // a grab can't be shrugged off by a lingering i-frame window
     hurtMember(member, member.hp * 2 + K.damage, "dragged into the void"); // guaranteed lethal (resist ≤ 50%)
     if (member !== hero && member.dead) swallow(member, ten);
   }
 
-  const api = { hurtMember, knockback, swallow, K, ts: TS };
+  const api = { hurtMember, knockback, swallow, pin, isEnemy, K, ts: TS };
 
   function beginRetract(t) { t.retractFrom = t.len; t.state = "retract"; t.timer = K.retractT; }
 

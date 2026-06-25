@@ -425,7 +425,7 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     const hero = { x: hx, y: hy, r: 14, dead: false, hp: 100 };
     const hits = [], kbs = [], voidFalling = [], enemies = [];
     const vt = createVoidTentacles({
-      level, ts: TS, heroTargets: [hero, ...extra], balance: bal,
+      level, ts: TS, heroTargets: [hero, ...extra], enemies, balance: bal,
       hurtMember: (m, a) => { hits.push({ m, a }); m.hp = (m.hp ?? 1) - a; if (m.hp <= 0) m.dead = true; },
       knockback: (t, dx, dy, mag) => kbs.push({ dx, dy, mag }),
       voidFalling, corpseColor: "#000", hero,
@@ -550,6 +550,31 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     const ta = a.vt._spawnAt(a.vt.rimToward(a.hero));
     const tb = b.vt._spawnAt(b.vt.rimToward(b.hero));
     ok(ta.type.id === tb.type.id, "tentacle: same seed picks the same color-keyed type"); }
+
+  // (i) tentacles grab the OTHER faction too: with the hero parked out of range (south) and an
+  //     enemy on the strike line, each color resolves against the monster. drag swallows it into
+  //     the void (gone, no corpse), knock shoves it off the hole, root pins it via the freeze.
+  const mkEnemy = () => ({ x: HX, y: HY, r: 14, dead: false, faction: "enemy", frozenT: 0, hp: 100, def: { color: "#abc" } });
+  const withEnemy = () => { const env = mk(HX, 5 * TS + TS / 2); const e = mkEnemy(); env.enemies.push(e); return { env, e }; };
+
+  { const { env, e } = withEnemy();
+    const t = env.vt._spawnAt(env.vt.rimToward(e), "drag");
+    for (let f = 0; f < 300 && env.enemies.length > 0; f++) env.vt._step(t, DT);
+    ok(env.enemies.length === 0, "tentacle: a drag grabs an enemy and swallows it out of play");
+    ok(env.voidFalling.length === 1, "tentacle: the swallowed enemy sinks into the void");
+    ok(!env.hero.dead, "tentacle: grabbing an enemy leaves the parked hero untouched"); }
+
+  { const { env, e } = withEnemy();
+    const t = env.vt._spawnAt(env.vt.rimToward(e), "knock");
+    for (let f = 0; f < 200 && env.kbs.length === 0; f++) env.vt._step(t, DT);
+    ok(env.kbs.length === 1 && env.kbs[0].dx < 0, "tentacle: a knock shoves an enemy away from the hole");
+    ok(t.grabbed === null && env.enemies.length === 1, "tentacle: a knocked enemy is displaced, not grabbed"); }
+
+  { const { env, e } = withEnemy();
+    const t = env.vt._spawnAt(env.vt.rimToward(e), "root");
+    for (let f = 0; f < 200 && e.frozenT === 0; f++) env.vt._step(t, DT);
+    ok(e.frozenT > 0, "tentacle: a root pins an enemy via the freeze pause");
+    ok(t.grabbed === null && env.enemies.length === 1, "tentacle: a pinned enemy stays in play"); }
 }
 
 // Party-select live preview: the self-contained mini-sim must run every roster hero —

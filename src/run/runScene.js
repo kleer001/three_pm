@@ -281,7 +281,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   // reproduce) while making the color-keyed action deterministic per seed. removeMember
   // splices a swallowed enemy; dead followers are dropped by the existing reap.
   const voidTentacles = createVoidTentacles({
-    level, ts: TS, heroTargets, balance: BALANCE, hurtMember, knockback,
+    level, ts: TS, heroTargets, enemies, balance: BALANCE, hurtMember, knockback,
     voidFalling, corpseColor: THEME.corpse, hero,
     removeMember: (m) => { const i = enemies.indexOf(m); if (i >= 0) enemies.splice(i, 1); },
     rng: makeRng(subSeed(seed, "tentacle")),
