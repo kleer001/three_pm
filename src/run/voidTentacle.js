@@ -28,29 +28,29 @@ const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 // COLOR → on-hit action. Each onHit(member, ten, api) has the same shape so any row is a
-// drop-in. `api` bundles { hurtMember, knockback, swallow, pin, isEnemy, K, ts }. The effects
-// are faction-aware: party members are injured + displaced and the descent's dark can finish
-// them; enemies are grabbed/pinned/flung as pure CC (the drag still drags them to their death).
+// drop-in. `api` bundles { hurt, knockback, swallow, pin, hold, isEnemy, K, ts }. Both factions
+// get the SAME treatment — injured by the strike (api.hurt routes to the party or enemy
+// resolver), then displaced/pinned/dragged. A drag always pulls its catch into the hole and
+// swallows it; a knock/root that kills outright dies normally (a party member into the void, a
+// monster as a looted corpse). The descent's dark (voidPerilT) only applies to party members.
 function dragIntoHole(member, ten, api) {
-  if (api.isEnemy(member)) { ten.grabbed = member; api.pin(member); return; } // monster: reeled in, then swallowed
-  api.hurtMember(member, api.K.damage, "void tentacle"); // flat injury, no fake attacker
+  api.hurt(member, api.K.damage, "void tentacle"); // injure, same as any target
   if (member.dead) { api.swallow(member, ten); return; } // died on the strike → into the void
-  // survived → the FSM enters `grab`, reeling it into the hole to kill it. Root it for the
-  // hold so neither player input (head) nor the follower train fights the pull-in.
+  // survived → the FSM enters `grab`, reeling it into the hole to kill it. Hold it for the
+  // pull-in (rootT for party, the freeze pause for an enemy) so nothing fights the reel.
   ten.grabbed = member;
-  member.rootT = Math.max(member.rootT || 0, api.K.grabHoldT);
+  api.hold(member);
 }
 function knockAway(member, ten, api) {
-  if (api.isEnemy(member)) { api.knockback(member, member.x - ten.baseX, member.y - ten.baseY, api.K.knockbackMag); return; }
-  api.hurtMember(member, api.K.damage, "void tentacle");
-  if (member.dead) { api.swallow(member, ten); return; }
+  api.hurt(member, api.K.damage, "void tentacle");
+  if (member.dead) { if (!api.isEnemy(member)) api.swallow(member, ten); return; } // monster → normal looted corpse
   api.knockback(member, member.x - ten.baseX, member.y - ten.baseY, api.K.knockbackMag); // shoved off the hole
-  member.voidPerilT = Math.max(member.voidPerilT || 0, api.K.perilT); // flung north of the crush line → the dark takes it
+  if (!api.isEnemy(member)) member.voidPerilT = Math.max(member.voidPerilT || 0, api.K.perilT); // flung into the dark = fatal
 }
 function rootInPlace(member, ten, api) {
+  api.hurt(member, api.K.damage, "void tentacle");
+  if (member.dead) { if (!api.isEnemy(member)) api.swallow(member, ten); return; }
   if (api.isEnemy(member)) { api.pin(member); return; } // monster pinned via the freeze pause
-  api.hurtMember(member, api.K.damage, "void tentacle");
-  if (member.dead) { api.swallow(member, ten); return; }
   member.rootT = Math.max(member.rootT || 0, api.K.rootT); // held fast for a beat (heroMove/follower re-home honor it)
   member.voidPerilT = Math.max(member.voidPerilT || 0, api.K.rootT); // held at the crush line → no escaping the dark
 }
@@ -62,7 +62,7 @@ export const TENTACLE_TYPES = [
 ];
 
 export function createVoidTentacles({
-  level, ts, heroTargets, enemies, balance, hurtMember, knockback,
+  level, ts, heroTargets, enemies, balance, hurtMember, hurtEnemy, knockback,
   voidFalling, corpseColor, hero, removeMember, rng,
 }) {
   const TS = ts;
@@ -75,6 +75,18 @@ export function createVoidTentacles({
     tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE;
 
   const isEnemy = (m) => m.faction === "enemy";
+
+  // Faction-aware injury: route to the party resolver (hit number + i-frames, head death ends
+  // the run) or the enemy resolver (hit number + loot/kill credit on death). Same damage either
+  // way — that's the "enemies get the same treatment" contract.
+  const hurt = (m, amount, src) => (isEnemy(m) ? hurtEnemy(m, amount) : hurtMember(m, amount, src));
+
+  // Hold a grabbed creature still during the pull-in: a party member is rooted (heroMove /
+  // follower re-home honor rootT); an enemy uses the freeze pause its brain already honors.
+  const hold = (m) => {
+    if (isEnemy(m)) m.frozenT = Math.max(m.frozenT || 0, K.grabHoldT);
+    else m.rootT = Math.max(m.rootT || 0, K.grabHoldT);
+  };
 
   // Where tentacles WANT to erupt: party members (alive, not still-materializing). Spawning is
   // hero-driven so the hazard appears where the player is, even though it grabs either faction.
@@ -184,18 +196,17 @@ export function createVoidTentacles({
   // never counts toward a freeze-kill.
   function pin(e) { e.frozenT = Math.max(e.frozenT || 0, K.rootT); }
 
-  // The grab completed: the creature has been dragged into the hole and is pulled under. An
-  // enemy is simply swallowed (gone — no loot, the void ate the kill). A party member dies
-  // unconditionally (a grab ignores i-frames); hurtMember routes the head's death to loseRun
-  // and plays the scream for others, then non-heroes sink into the void via swallow.
+  // The grab completed: the creature has been dragged into the hole and is pulled under. It dies
+  // unconditionally (a grab ignores i-frames) through its own resolver — so an enemy still pays
+  // out a kill + loot, a party member's head death ends the run — and then the body is swallowed
+  // into the void (sucked in) instead of left as a corpse.
   function pullKill(member, ten) {
-    if (isEnemy(member)) { swallow(member, ten); return; }
     member.iframes = 0; // a grab can't be shrugged off by a lingering i-frame window
-    hurtMember(member, member.hp * 2 + K.damage, "dragged into the void"); // guaranteed lethal (resist ≤ 50%)
-    if (member !== hero && member.dead) swallow(member, ten);
+    hurt(member, member.hp * 2 + K.damage, "dragged into the void"); // guaranteed lethal (resist ≤ 50%)
+    if (member !== hero && member.dead) swallow(member, ten); // hero loss already routed via loseRun
   }
 
-  const api = { hurtMember, knockback, swallow, pin, isEnemy, K, ts: TS };
+  const api = { hurt, knockback, swallow, pin, hold, isEnemy, K, ts: TS };
 
   function beginRetract(t) { t.retractFrom = t.len; t.state = "retract"; t.timer = K.retractT; }
 

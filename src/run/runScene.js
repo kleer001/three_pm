@@ -269,6 +269,16 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     if (m === hero && hero.dead) loseRun(srcName);
   }
 
+  // Enemy damage from the void hazard: the same resolver + death payout an ordinary hit uses,
+  // so a tentacle injures/kills a monster exactly like a weapon would (hit number, loot, kill
+  // credit). Mirrors hurtMember but routes death through onEnemyDeath instead of loseRun.
+  function hurtEnemy(e, amount) {
+    if (e.fadeT > 0) return;
+    const dealt = applyDamage(e, amount);
+    if (dealt > 0) { combat.spawnHitNumber(e, dealt); sfx.play("hit"); }
+    if (e.dead && !e.looted) onEnemyDeath(e);
+  }
+
   const { stepEnemy, stepConfused } = createEnemyAI({
     level, enemies, hero, followers, rng, combat,
     hurtMember, knockback, onEnemyDeath, ts: TS,
@@ -281,7 +291,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   // reproduce) while making the color-keyed action deterministic per seed. removeMember
   // splices a swallowed enemy; dead followers are dropped by the existing reap.
   const voidTentacles = createVoidTentacles({
-    level, ts: TS, heroTargets, enemies, balance: BALANCE, hurtMember, knockback,
+    level, ts: TS, heroTargets, enemies, balance: BALANCE, hurtMember, hurtEnemy, knockback,
     voidFalling, corpseColor: THEME.corpse, hero,
     removeMember: (m) => { const i = enemies.indexOf(m); if (i >= 0) enemies.splice(i, 1); },
     rng: makeRng(subSeed(seed, "tentacle")),
