@@ -269,14 +269,15 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     if (m === hero && hero.dead) loseRun(srcName);
   }
 
-  // Enemy damage from the void hazard: the same resolver + death payout an ordinary hit uses,
-  // so a tentacle injures/kills a monster exactly like a weapon would (hit number, loot, kill
-  // credit). Mirrors hurtMember but routes death through onEnemyDeath instead of loseRun.
+  // Enemy damage from the void hazard. The void is not the player's weapon: a tentacle that
+  // injures or kills a monster grants NO reward — no kill credit, cash, loot, or charge (so it
+  // skips onEnemyDeath and never creditCharges). Mark a kill `looted` so nothing else pays out
+  // for it either; the body is then a plain corpse (or swallowed, for a drag).
   function hurtEnemy(e, amount) {
     if (e.fadeT > 0) return;
     const dealt = applyDamage(e, amount);
     if (dealt > 0) { combat.spawnHitNumber(e, dealt); sfx.play("hit"); }
-    if (e.dead && !e.looted) onEnemyDeath(e);
+    if (e.dead) { e.looted = true; sfx.play("death"); }
   }
 
   const { stepEnemy, stepConfused } = createEnemyAI({

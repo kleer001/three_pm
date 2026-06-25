@@ -29,10 +29,11 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 // COLOR → on-hit action. Each onHit(member, ten, api) has the same shape so any row is a
 // drop-in. `api` bundles { hurt, knockback, swallow, pin, hold, isEnemy, K, ts }. Both factions
-// get the SAME treatment — injured by the strike (api.hurt routes to the party or enemy
-// resolver), then displaced/pinned/dragged. A drag always pulls its catch into the hole and
-// swallows it; a knock/root that kills outright dies normally (a party member into the void, a
-// monster as a looted corpse). The descent's dark (voidPerilT) only applies to party members.
+// take the SAME hit — injured by the strike (api.hurt routes to the party or enemy resolver),
+// then displaced/pinned/dragged. A drag always pulls its catch into the hole and swallows it; a
+// knock/root that kills outright dies in place (a party member swallowed, a monster a plain
+// corpse). A monster killed by the void grants the player NOTHING (no points/cash/loot — see
+// hurtEnemy). The descent's dark (voidPerilT) only applies to party members.
 function dragIntoHole(member, ten, api) {
   api.hurt(member, api.K.damage, "void tentacle"); // injure, same as any target
   if (member.dead) { api.swallow(member, ten); return; } // died on the strike → into the void
@@ -77,8 +78,9 @@ export function createVoidTentacles({
   const isEnemy = (m) => m.faction === "enemy";
 
   // Faction-aware injury: route to the party resolver (hit number + i-frames, head death ends
-  // the run) or the enemy resolver (hit number + loot/kill credit on death). Same damage either
-  // way — that's the "enemies get the same treatment" contract.
+  // the run) or the enemy resolver (hit number + death, but NO reward — the void is not the
+  // player's weapon, so a tentacle kill grants no points/cash/loot/charge). Same DAMAGE either
+  // way — that's the "enemies get the same treatment" contract; only the spoils differ.
   const hurt = (m, amount, src) => (isEnemy(m) ? hurtEnemy(m, amount) : hurtMember(m, amount, src));
 
   // Hold a grabbed creature still during the pull-in: a party member is rooted (heroMove /
@@ -197,9 +199,9 @@ export function createVoidTentacles({
   function pin(e) { e.frozenT = Math.max(e.frozenT || 0, K.rootT); }
 
   // The grab completed: the creature has been dragged into the hole and is pulled under. It dies
-  // unconditionally (a grab ignores i-frames) through its own resolver — so an enemy still pays
-  // out a kill + loot, a party member's head death ends the run — and then the body is swallowed
-  // into the void (sucked in) instead of left as a corpse.
+  // unconditionally (a grab ignores i-frames) through its own resolver — a party member's head
+  // death ends the run; a monster dies but rewards the player nothing — then the body is
+  // swallowed into the void (sucked in) instead of left as a corpse.
   function pullKill(member, ten) {
     member.iframes = 0; // a grab can't be shrugged off by a lingering i-frame window
     hurt(member, member.hp * 2 + K.damage, "dragged into the void"); // guaranteed lethal (resist ≤ 50%)

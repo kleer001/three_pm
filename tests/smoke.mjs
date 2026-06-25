@@ -428,7 +428,9 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     const vt = createVoidTentacles({
       level, ts: TS, heroTargets: [hero, ...extra], enemies, balance: bal,
       hurtMember: (m, a) => damage(m, a, hits),
-      hurtEnemy: (e, a) => { damage(e, a, ehits); if (e.dead && !e.looted) { e.looted = true; loot.push(e); } },
+      // Mirrors the real hurtEnemy: damages, and on death marks looted WITHOUT any payout — the
+      // void rewards the player nothing. `loot` would only fill if a reward path fired (it must not).
+      hurtEnemy: (e, a) => { damage(e, a, ehits); if (e.dead) e.looted = true; },
       knockback: (t, dx, dy, mag) => kbs.push({ dx, dy, mag }),
       voidFalling, corpseColor: "#000", hero,
       removeMember: (m) => { const i = enemies.indexOf(m); if (i >= 0) enemies.splice(i, 1); },
@@ -553,11 +555,11 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     const tb = b.vt._spawnAt(b.vt.rimToward(b.hero));
     ok(ta.type.id === tb.type.id, "tentacle: same seed picks the same color-keyed type"); }
 
-  // (i) tentacles give enemies the SAME treatment as heroes: the strike injures the monster
-  //     (enemy resolver → hit number + loot/kill credit), then each color displaces it. With the
-  //     hero parked out of range (south) and an enemy on the strike line, the lash resolves
-  //     against the monster: drag injures + reels + kills (paid out) + swallows the body, knock
-  //     injures + shoves, root injures + pins via the freeze pause.
+  // (i) tentacles give enemies the SAME hit as heroes but NO spoils: the strike injures the
+  //     monster (enemy resolver, but the void grants the player no points/cash/loot), then each
+  //     color displaces it. With the hero parked out of range (south) and an enemy on the strike
+  //     line, the lash resolves against the monster: drag injures + reels + kills + swallows the
+  //     body (no reward), knock injures + shoves, root injures + pins via the freeze pause.
   const mkEnemy = () => ({ x: HX, y: HY, r: 14, dead: false, faction: "enemy", frozenT: 0, hp: 100, def: { color: "#abc" } });
   const withEnemy = () => { const env = mk(HX, 5 * TS + TS / 2); const e = mkEnemy(); env.enemies.push(e); return { env, e }; };
 
@@ -565,7 +567,7 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     const t = env.vt._spawnAt(env.vt.rimToward(e), "drag");
     for (let f = 0; f < 300 && env.enemies.length > 0; f++) env.vt._step(t, DT);
     ok(env.ehits.length >= 1, "tentacle: a drag injures the enemy (strike + lethal pull-in)");
-    ok(env.loot.length === 1, "tentacle: a drag-killed enemy still pays out (kill credit + loot)");
+    ok(env.loot.length === 0, "tentacle: a drag-killed enemy pays out NOTHING (the void is not the player's kill)");
     ok(env.enemies.length === 0 && env.voidFalling.length === 1, "tentacle: the killed enemy is swallowed into the void");
     ok(!env.hero.dead, "tentacle: grabbing an enemy leaves the parked hero untouched"); }
 
