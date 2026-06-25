@@ -11,6 +11,7 @@ import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgra
 import { BALANCE, THEME } from "../src/run/balance.js";
 import { createPartyPreview } from "../src/run/partyPreview.js";
 import { createVoidPull } from "../src/run/voidPull.js";
+import { createVoidTentacles } from "../src/run/voidTentacle.js";
 
 const freshBlob = () => ({
   version: 2, credits: 0, runCount: 0, heroUpgrades: {},
@@ -408,6 +409,181 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   { const vfl = [{ x: 0, y: 0, r: 15, color: "#fff", vfx: 0, vfy: 0 }], vp = mkPull([], vfl);
     for (let f = 0; f < 300 && vfl.length; f++) vp.stepFall(1 / 60);
     ok(vfl.length === 0, "voidPull: a body in the void shrinks away and is removed"); }
+}
+
+// Void tentacles: rim detection, FSM transitions, the aim-lock dodge guarantee, strike-once,
+// the color-keyed deterministic action, and the void-death swallow — all browser-free, driven
+// on fixed dt exactly like voidPull. One RUBBLE tile at (5,2); members sit to its west.
+{
+  const TS = 48, W = 10, H = 6, DT = 1 / 60;
+  // Build an isolated world; `walkable` is required (rimToward uses isWalkable). Members
+  // default to ample hp so a single strike doesn't kill them (the swallow cases override).
+  const mk = (hx, hy, extra = [], bal = BALANCE) => {
+    const tiles = new Array(W * H).fill(0); tiles[2 * W + 5] = 6 /*RUBBLE*/;
+    const walkable = tiles.map((t) => (t === 5 || t === 6) ? 0 : 1);
+    const level = { w: W, h: H, tileSize: TS, tiles, walkable };
+    const hero = { x: hx, y: hy, r: 14, dead: false, hp: 100 };
+    const hits = [], ehits = [], kbs = [], voidFalling = [], loot = [], enemies = [];
+    const damage = (m, a, bucket) => { bucket.push({ m, a }); m.hp = (m.hp ?? 1) - a; if (m.hp <= 0) m.dead = true; };
+    const vt = createVoidTentacles({
+      level, ts: TS, heroTargets: [hero, ...extra], enemies, balance: bal,
+      hurtMember: (m, a) => damage(m, a, hits),
+      // Mirrors the real hurtEnemy: damages, and on death marks looted WITHOUT any payout — the
+      // void rewards the player nothing. `loot` would only fill if a reward path fired (it must not).
+      hurtEnemy: (e, a) => { damage(e, a, ehits); if (e.dead) e.looted = true; },
+      knockback: (t, dx, dy, mag) => kbs.push({ dx, dy, mag }),
+      voidFalling, corpseColor: "#000", hero,
+      removeMember: (m) => { const i = enemies.indexOf(m); if (i >= 0) enemies.splice(i, 1); },
+      rng: makeRng(1),
+    });
+    return { vt, hero, hits, ehits, kbs, voidFalling, loot, enemies, level };
+  };
+  const HX = 4 * TS + TS / 2, HY = 2 * TS + TS / 2; // one tile WEST of the hole
+
+  // (table) the color->action registry exists and its first row is the purple drag type.
+  { const { vt } = mk(HX, HY);
+    ok(vt.TENTACLE_TYPES.length >= 1 && typeof vt.TENTACLE_TYPES[0].onHit === "function", "tentacle: color->action table populated");
+    ok(vt.TENTACLE_TYPES[0].color === THEME.voidTentacle.colors.drag, "tentacle: first type is the purple drag (color-keyed action)"); }
+
+  // (a) rim detection: the facing rim is the WEST face; its base sits on the hero side.
+  { const { vt, hero } = mk(HX, HY);
+    const rim = vt.rimToward(hero);
+    ok(rim && rim.tx === 5 && rim.ty === 2, "tentacle: finds the hole tile in range");
+    ok(rim && rim.baseX < 5 * TS + TS / 2, "tentacle: rim base is on the hero-facing (west) side"); }
+
+  // (b) out of range: a hero 5 tiles from the hole offers no rim and never wakes one.
+  { const far = mk(0 * TS + TS / 2, HY);
+    ok(far.vt.rimToward(far.hero) === null, "tentacle: no rim when the hero is out of range");
+    for (let f = 0; f < 400; f++) far.vt.update(DT);
+    ok(far.vt.tentacles.length === 0, "tentacle: an out-of-range hole never spawns"); }
+
+  // (c) spawn gate + maxActive invariant: a void-edge cell near a hero spawns one, and the
+  //     live count never exceeds the cap across a long run (spawn + complete + respawn churn).
+  //     Force spawnChancePerRim to 1 so the per-cell roll is deterministic for the assertion.
+  { const certain = { ...BALANCE, voidTentacle: { ...BALANCE.voidTentacle, spawnChancePerRim: 1 } };
+    const sg = mk(HX, HY, [], certain);
+    let spawned = false, capOk = true;
+    for (let f = 0; f < 2000; f++) {
+      sg.vt.update(DT);
+      if (sg.vt.tentacles.length > 0) spawned = true;
+      if (sg.vt.tentacles.length > BALANCE.voidTentacle.maxActive) { capOk = false; break; }
+    }
+    ok(spawned, "tentacle: a void-edge cell near a hero spawns one");
+    ok(capOk, "tentacle: never exceeds maxActive concurrent tentacles"); }
+
+  // (d) FSM + aim lock: drive one tentacle by hand to telegraph, then sidestep — the aim,
+  //     captured at the lock, must NOT follow, so the strike whiffs (the dodge guarantee).
+  { const fl = mk(HX, HY);
+    const t = fl.vt._spawnAt(fl.vt.rimToward(fl.hero));
+    ok(t.state === "bud", "tentacle: starts in the bud state");
+    const seen = new Set();
+    for (let f = 0; f < 200 && t.state !== "telegraph"; f++) { fl.vt._step(t, DT); seen.add(t.state); }
+    ok(seen.has("bud") && seen.has("rise"), "tentacle: passes through bud + rise");
+    ok(t.state === "telegraph", "tentacle: reaches the telegraph window");
+    const lockX = t.aimX, lockY = t.aimY;
+    fl.hero.y -= 3 * TS; // sidestep north during the locked window
+    for (let f = 0; f < 5; f++) fl.vt._step(t, DT);
+    ok(t.aimX === lockX && t.aimY === lockY, "tentacle: aim stays locked after telegraph (sidestep dodges)");
+    for (let f = 0; f < 400 && t.state !== "retract" && !t.done; f++) fl.vt._step(t, DT);
+    ok(fl.hits.length === 0, "tentacle: a sidestep during telegraph makes the strike whiff"); }
+
+  // (e) strike-once + drag-into-hole (purple): the strike injures once, then the grab reels the
+  //     member PAST the lip toward the hole interior and KILLS it there — dragged under and gone,
+  //     never deposited back at the lip.
+  { const st = mk(HX, HY);
+    const rim = st.vt.rimToward(st.hero);
+    const t = st.vt._spawnAt(rim, "drag");
+    for (let f = 0; f < 120 && t.state !== "strike"; f++) st.vt._step(t, DT);
+    const startX = st.hero.x;
+    for (let f = 0; f < 30 && t.state === "strike"; f++) st.vt._step(t, DT);
+    ok(st.hits.length === 1, "tentacle: a clean strike injures exactly once");
+    ok(t.grabbed === st.hero || t.state === "grab", "tentacle: the purple type grabs the member");
+    let crossed = false;
+    for (let f = 0; f < 60 && t.state === "grab"; f++) { st.vt._step(t, DT); if (st.hero.x > rim.baseX) crossed = true; }
+    ok(startX < rim.baseX && crossed, "tentacle: the grab reels the member past the lip into the hole");
+    ok(st.hero.dead, "tentacle: a grabbed hero is dragged into the void and killed (never deposited back)"); }
+
+  // (e1) the killed victim is swallowed: a grabbed FOLLOWER is reeled in, killed, and pushed
+  //      into voidFalling (the visible sink) — not deposited at the lip, not left as a corpse.
+  { const fol = { x: HX, y: HY, r: 14, dead: false, hp: 100, color: "#abc" };
+    const dv = mk(HX, 5 * TS + TS / 2, [fol]); // hero off the line (south); follower on it
+    const t = dv.vt._spawnAt(dv.vt.rimToward(fol), "drag");
+    for (let f = 0; f < 300 && !fol.dead; f++) dv.vt._step(t, DT);
+    ok(fol.dead, "tentacle: a grabbed follower is dragged into the void and killed");
+    ok(dv.voidFalling.length === 1, "tentacle: the killed follower is swallowed into the hole");
+    ok(dv.voidFalling[0].vfx !== 0 || dv.voidFalling[0].vfy !== 0, "tentacle: the swallow body carries inward velocity");
+    ok(!dv.hero.dead, "tentacle: dragging a follower in leaves the hero untouched"); }
+
+  // (e2) knock (magenta): injure + shove the survivor away from the hole; no grab.
+  { const kn = mk(HX, HY);
+    const t = kn.vt._spawnAt(kn.vt.rimToward(kn.hero), "knock");
+    for (let f = 0; f < 200 && kn.hits.length === 0; f++) kn.vt._step(t, DT);
+    ok(kn.hits.length === 1, "tentacle: the magenta type injures once");
+    ok(kn.kbs.length === 1 && kn.kbs[0].dx < 0, "tentacle: the magenta type knocks the member away from the hole");
+    ok(t.grabbed === null, "tentacle: the magenta type does not grab"); }
+
+  // (e3) root (teal): injure + pin the member in place for a beat; no grab.
+  { const rt = mk(HX, HY);
+    const t = rt.vt._spawnAt(rt.vt.rimToward(rt.hero), "root");
+    for (let f = 0; f < 200 && rt.hits.length === 0; f++) rt.vt._step(t, DT);
+    ok(rt.hits.length === 1, "tentacle: the teal type injures once");
+    ok(rt.hero.rootT > 0, "tentacle: the teal type roots the member in place");
+    ok(t.grabbed === null, "tentacle: the teal type does not grab"); }
+
+  // (f) void-death swallow: a member that dies on the strike is pushed into voidFalling with
+  //     inward velocity (reusing voidPull's swallow), not left as a corpse. Hero stays clear.
+  { const weak = { x: HX, y: HY, r: 14, dead: false, hp: 5, color: "#abc" };
+    const sw = mk(HX, 5 * TS + TS / 2, [weak]); // hero off the line (south); weak on it
+    const t = sw.vt._spawnAt(sw.vt.rimToward(weak));
+    for (let f = 0; f < 120 && !weak.dead; f++) sw.vt._step(t, DT);
+    ok(weak.dead, "void-death: a lethal strike kills the struck member");
+    ok(sw.voidFalling.length === 1, "void-death: the killed member is swallowed into the hole");
+    ok(sw.voidFalling[0].vfx !== 0 || sw.voidFalling[0].vfy !== 0, "void-death: the swallow body carries inward velocity");
+    ok(!sw.hero.dead, "void-death: swallowing a non-hero leaves the hero untouched"); }
+
+  // (g) the hero is never swallowed: a lethal strike still kills the head (loss routes via
+  //     hurtMember/loseRun in the real game) but never pushes a voidFalling body for it.
+  { const hg = mk(HX, HY); hg.hero.hp = 5;
+    const t = hg.vt._spawnAt(hg.vt.rimToward(hg.hero));
+    for (let f = 0; f < 120 && !hg.hero.dead; f++) hg.vt._step(t, DT);
+    ok(hg.hero.dead, "void-death: a lethal strike still kills the hero");
+    ok(hg.voidFalling.length === 0, "void-death: the hero is never pushed into voidFalling"); }
+
+  // (h) determinism: a fresh factory on the same seed grows the same color (no per-strike RNG).
+  { const a = mk(HX, HY), b = mk(HX, HY);
+    const ta = a.vt._spawnAt(a.vt.rimToward(a.hero));
+    const tb = b.vt._spawnAt(b.vt.rimToward(b.hero));
+    ok(ta.type.id === tb.type.id, "tentacle: same seed picks the same color-keyed type"); }
+
+  // (i) tentacles give enemies the SAME hit as heroes but NO spoils: the strike injures the
+  //     monster (enemy resolver, but the void grants the player no points/cash/loot), then each
+  //     color displaces it. With the hero parked out of range (south) and an enemy on the strike
+  //     line, the lash resolves against the monster: drag injures + reels + kills + swallows the
+  //     body (no reward), knock injures + shoves, root injures + pins via the freeze pause.
+  const mkEnemy = () => ({ x: HX, y: HY, r: 14, dead: false, faction: "enemy", frozenT: 0, hp: 100, def: { color: "#abc" } });
+  const withEnemy = () => { const env = mk(HX, 5 * TS + TS / 2); const e = mkEnemy(); env.enemies.push(e); return { env, e }; };
+
+  { const { env, e } = withEnemy();
+    const t = env.vt._spawnAt(env.vt.rimToward(e), "drag");
+    for (let f = 0; f < 300 && env.enemies.length > 0; f++) env.vt._step(t, DT);
+    ok(env.ehits.length >= 1, "tentacle: a drag injures the enemy (strike + lethal pull-in)");
+    ok(env.loot.length === 0, "tentacle: a drag-killed enemy pays out NOTHING (the void is not the player's kill)");
+    ok(env.enemies.length === 0 && env.voidFalling.length === 1, "tentacle: the killed enemy is swallowed into the void");
+    ok(!env.hero.dead, "tentacle: grabbing an enemy leaves the parked hero untouched"); }
+
+  { const { env, e } = withEnemy();
+    const t = env.vt._spawnAt(env.vt.rimToward(e), "knock");
+    for (let f = 0; f < 200 && env.kbs.length === 0; f++) env.vt._step(t, DT);
+    ok(env.ehits.length === 1, "tentacle: a knock injures the enemy");
+    ok(env.kbs.length === 1 && env.kbs[0].dx < 0, "tentacle: a knock shoves the enemy away from the hole");
+    ok(t.grabbed === null && env.enemies.length === 1, "tentacle: a knocked (surviving) enemy is displaced, not grabbed"); }
+
+  { const { env, e } = withEnemy();
+    const t = env.vt._spawnAt(env.vt.rimToward(e), "root");
+    for (let f = 0; f < 200 && e.frozenT === 0; f++) env.vt._step(t, DT);
+    ok(env.ehits.length === 1, "tentacle: a root injures the enemy");
+    ok(e.frozenT > 0, "tentacle: a root pins the enemy via the freeze pause");
+    ok(t.grabbed === null && env.enemies.length === 1, "tentacle: a pinned (surviving) enemy stays in play"); }
 }
 
 // Party-select live preview: the self-contained mini-sim must run every roster hero —

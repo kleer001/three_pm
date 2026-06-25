@@ -225,6 +225,41 @@ export const BALANCE = {
   // accelerates toward the nearest one (accel px/s²), then is swallowed into the void-fall.
   // accel ≈ 2·(rangeTiles·tile)/t² for a ~t-second pull from the far edge.
   voidVacuum: { rangeTiles: 2, accel: 60 },
+  // Holes grow a tentacle that telegraphs then lashes at a nearby hero. The aim is LOCKED
+  // at telegraph start (sidestep to dodge, exactly like the charger). Proximity-gated +
+  // capped for perf and fairness. The on-hit effect is keyed by the tentacle's COLOR
+  // (see THEME.voidTentacle.colors + voidTentacle.js TENTACLE_TYPES); only the purple
+  // drag-to-rim type ships first. Reach/rest are in TILES (× tileSize at construction).
+  voidTentacle: {
+    rangeTiles: 3,        // a hero within this many tiles of a hole can wake one
+    reachTiles: 1.6,      // strike reach from the rim, in tiles — ~just past one tile
+    restTiles: 0.6,       // resting extension during rise/telegraph, in tiles
+    maxActive: 2,         // concurrent tentacles cap (perf + fairness)
+    spawnInterval: 2.2,   // seconds between spawn attempts (jittered ±25%)
+    spawnChancePerRim: 0.05, // per attempt, each in-range void-edge cell rolls this to grow one (~1 in 20)
+    holeCooldown: 4,      // seconds a given hole waits before re-spawning
+    budT: 0.35,           // bud: the small circle swells at the rim
+    riseT: 0.25,          // rise: stalk grows to restLen, still tracking the hero
+    telegraphT: 0.55,     // telegraph: AIM LOCKED — the readable dodge window
+    strikeT: 0.18,        // strike: fast lash to maxReach (safety cap on the geometry)
+    retractT: 0.4,        // retract: withdraw, then the hole cools down
+    strikeSpeed: 1600,    // px/s the tip extends during the strike
+    damage: 10,           // flat injury on a clean hit
+    // dragIntoHole (purple): grab + drag the member INTO the hole, where it's pulled under and KILLED.
+    grabHoldT: 0.35,      // s safety cap on the pull-in (it normally reaches the center first)
+    dragSpeed: 900,       // px/s the grabbed member is reeled toward the hole interior
+    pullInRadius: 6,      // px from the hole center at which the member is pulled under and dies
+    swallowVel: 4,        // per-frame inward velocity handed to voidFalling when a body sinks in
+    // knockAway (magenta): total px shove away from the hole (runScene.knockback splits it over frames).
+    knockbackMag: 240,
+    // rootInPlace (teal): seconds the struck member is held fast (heroMove + follower re-home honor it).
+    rootT: 0.6,
+    // A root/knockback that strands a member north of the crush line is fatal — the dark takes a
+    // held-or-flung member (vs. the forgiving clamp normal play gets). perilT is how long a
+    // knockback stays lethal-if-offscreen; a root uses its own rootT as the window.
+    perilT: 0.5,
+    tipHitPad: 4,         // px added to member radius for the tip-overlap test
+  },
 };
 
 // Suburb generator tuning (consumed by levelgen.js). Algorithm structure (BFS,
@@ -267,6 +302,21 @@ export const THEME = {
   charge: { fill: "#f5d76e" },                                                 // The Drop meter fill
   rangedTelegraph: { ring: "rgba(39,174,96,0.9)", line: "rgba(39,174,96,0.5)", ringPad: 5 },
   chargerTelegraph: { ring: "rgba(231,76,60,0.85)", line: "rgba(231,76,60,0.6)", lunge: "rgba(255,120,90,0.9)", ringPad: 6 },
+  // Reality-break tentacle (see voidTentacle.js). COLOR keys the action: only `drag` ships
+  // first; adding root/knock later = a new color here + a new TENTACLE_TYPES row. The shaft
+  // is tinted from the tentacle's own color; ring/line/glow are the shared purple cues.
+  voidTentacle: {
+    colors: {
+      drag: "#7a2fb0",  // deep purple — grab + pull into the hole
+      knock: "#b02f6a", // magenta     — injure + knockback away
+      root: "#2f80b0",  // teal        — injure + root in place
+    },
+    tipGlow: "rgba(190,120,255,0.55)", // glowing bulb halo
+    ring: "rgba(190,120,255,0.85)",    // telegraph pulse ring
+    aimLine: "rgba(190,120,255,0.5)",  // locked-aim dodge line
+    budR: 7, baseR: 6, tipR: 5,        // draw sizes (simple tapered glow — no segments)
+    pulseRate: 8,                       // glow/telegraph pulse (rad/s)
+  },
   hero: { hit: "#7fb3ff", normal: "#2d6cdf" },
   follower: { hit: "#ffffff" }, // i-frame flash; each follower's body color comes from BALANCE.follower.roster
   pickup: { fill: "#f1c40f", ring: "rgba(255,255,255,0.85)", glyph: "#3a2e00", glyphFont: "bold 13px system-ui, sans-serif" }, // powerup drop on the ground

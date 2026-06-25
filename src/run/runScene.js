@@ -6,6 +6,7 @@
 // coupling callbacks below via createX(env) injection.
 import { generate, isWalkable } from "./levelgen.js";
 import { createVoidPull } from "./voidPull.js";
+import { createVoidTentacles } from "./voidTentacle.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
 import { makeDirector, distanceFraction } from "./director.js";
@@ -268,12 +269,33 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     if (m === hero && hero.dead) loseRun(srcName);
   }
 
+  // Enemy damage from the void hazard. The void is not the player's weapon: a tentacle that
+  // injures or kills a monster grants NO reward — no kill credit, cash, loot, or charge (so it
+  // skips onEnemyDeath and never creditCharges). Mark a kill `looted` so nothing else pays out
+  // for it either; the body is then a plain corpse (or swallowed, for a drag).
+  function hurtEnemy(e, amount) {
+    if (e.fadeT > 0) return;
+    const dealt = applyDamage(e, amount);
+    if (dealt > 0) { combat.spawnHitNumber(e, dealt); sfx.play("hit"); }
+    if (e.dead) { e.looted = true; sfx.play("death"); }
+  }
+
   const { stepEnemy, stepConfused } = createEnemyAI({
     level, enemies, hero, followers, rng, combat,
     hurtMember, knockback, onEnemyDeath, ts: TS,
   });
   const followerTrain = createFollowerTrain({
     hero, followers, trail, gap, level, deadThisRun, heroTargets, combat, shift, separate,
+  });
+  // Reality breaks grow tentacles that telegraph + lash at nearby members. A dedicated
+  // "tentacle" sub-seed keeps the director's "spawns" stream unperturbed (existing seeds
+  // reproduce) while making the color-keyed action deterministic per seed. removeMember
+  // splices a swallowed enemy; dead followers are dropped by the existing reap.
+  const voidTentacles = createVoidTentacles({
+    level, ts: TS, heroTargets, enemies, balance: BALANCE, hurtMember, hurtEnemy, knockback,
+    voidFalling, corpseColor: THEME.corpse, hero,
+    removeMember: (m) => { const i = enemies.indexOf(m); if (i >= 0) enemies.splice(i, 1); },
+    rng: makeRng(subSeed(seed, "tentacle")),
   });
 
   function update(dt) {
@@ -305,6 +327,8 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     hero.sigCd = Math.max(0, hero.sigCd - dt);
     hero.iframes = Math.max(0, hero.iframes - dt);
     hero.fadeT = Math.max(0, hero.fadeT - dt);
+    hero.rootT = Math.max(0, (hero.rootT || 0) - dt); // a void tentacle's root holds the head fast
+    hero.voidPerilT = Math.max(0, (hero.voidPerilT || 0) - dt); // window where being off-screen = the dark takes it
     regenMana(hero, dt);
 
     cam.y = clamp(cam.y + SCROLL * dt, 0, mapH - VIEW_H);
@@ -313,7 +337,8 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     director.update(dt, hero, enemies, spawnEnemy);
 
     const intent = input.intent();
-    heroMove(intent.x * hero.derived.moveSpeed * bpm * rawDt, intent.y * hero.derived.moveSpeed * bpm * rawDt);
+    if (!(hero.rootT > 0)) // a rooted head can still aim/fire, but can't reposition
+      heroMove(intent.x * hero.derived.moveSpeed * bpm * rawDt, intent.y * hero.derived.moveSpeed * bpm * rawDt);
 
     followerTrain.sampleTrail(); // breadcrumb the head's path right after it moves
 
@@ -343,6 +368,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
 
     voidPull.vacuumCorpses(dt); // holes tug nearby corpses in, then swallow them
     voidPull.stepFall(dt);      // everything in the void drifts, shrinks, and is gone
+    voidTentacles.update(dt);   // holes grow tentacles that telegraph + lash at heroes
 
     // Follower train re-homes after enemy brains + knockback so it chases settled positions;
     // its soft-body shove against enemies/corpses runs after that pass below.
@@ -392,10 +418,12 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     for (let i = dustPuffs.length - 1; i >= 0; i--) if (dustPuffs[i].t >= dustPuffs[i].life || dustPuffs[i].y < cam.y) dustPuffs.splice(i, 1);
     followerTrain.reapDead(); // permadeath: drop dead followers + their shot-target slot
 
-    // Stay inside the moving window; being pinned against a wall at the crush line is fatal.
+    // Stay inside the moving window; being pinned against a wall at the crush line is fatal,
+    // and so is being caught there while a void tentacle holds (root) or has just flung
+    // (knockback) the head — it can't outrun the dark, so the dark takes it.
     if (hero.y < minY) {
       hero.y = minY;
-      if (boxBlocked(level, hero)) loseRun("left behind by the dark");
+      if (boxBlocked(level, hero) || hero.voidPerilT > 0) loseRun("left behind by the dark");
     }
     hero.y = clamp(hero.y, minY, cam.y + VIEW_H - MARGIN);
     cam.x = clamp(hero.x - VIEW_W / 2, 0, mapW - VIEW_W);
@@ -413,6 +441,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const { render } = createRunRenderer({
     ctx, input, level, cam, hero, weapon, followers, enemies, shop,
     pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, voidFalling,
+    voidTentacles,
     runState, bgId,
     getShake: () => shake, getPaused: () => paused, getVoidClock: () => voidClock, getHeldLine: () => heldLine,
     ts: TS, viewW: VIEW_W, viewH: VIEW_H,
