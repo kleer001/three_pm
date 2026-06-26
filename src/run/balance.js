@@ -225,6 +225,26 @@ export const BALANCE = {
   // accelerates toward the nearest one (accel px/s²), then is swallowed into the void-fall.
   // accel ≈ 2·(rangeTiles·tile)/t² for a ~t-second pull from the far edge.
   voidVacuum: { rangeTiles: 2, accel: 60 },
+  // Reality breaks are NOT placed at the start — they TEAR OPEN as the descent proceeds.
+  // Every cell that becomes void runs a two-beat lifecycle: WOBBLE (the ground shudders in
+  // place — the telegraph) for `beat` seconds, then FADE (the surface dissolves to reveal the
+  // churning void behind it) for another `beat`, then it's an ordinary hole (walkable→0).
+  // Triggers: (#1) gen craters reveal as they cross a band near the bottom of the viewport
+  // (fresh ground scrolling in); (#7) a body swallowed by a hole feeds it, and accumulated
+  // feeding EXPANDS the hole into a neighbor. Wobble reuses the art-test/wobble.html jitter:
+  // a per-cell hold-and-snap at `wobbleHz` (NOT per-frame — that reads as TV static).
+  voidReveal: {
+    beat: 0.6,              // seconds per phase (wobble, then fade) — the "beat"
+    wobbleHz: 7,            // hold-and-snap rate of the jitter (decoupled from 60fps)
+    wobbleFrames: 3,        // snaps held in the cycle before repeating
+    wobbleAmp: 1.5,         // px of jitter displacement (< the 1px tile over-draw margin doubled)
+    revealBandTiles: 1.5,   // band height (tiles) above the viewport bottom that triggers reveal
+    revealStagger: 0.4,     // ± fraction of a beat of seeded per-cell delay so a row doesn't pop in lockstep
+    expandRangeTiles: 2,    // search radius (tiles) from a swallow point to find the feeding hole
+    swallowPressurePerEat: 0.6, // pressure a single swallow adds to its feeding hole (one eat < threshold)
+    swallowPressureDecay: 0.2,  // pressure bled off per second (so one kill never runs away)
+    expandThreshold: 1,     // pressure at which a fed hole opens one neighbor (then subtract this) — ~2 eats at one edge
+  },
   // Holes grow a tentacle that telegraphs then lashes at a nearby hero. The aim is LOCKED
   // at telegraph start (sidestep to dodge, exactly like the charger). Proximity-gated +
   // capped for perf and fairness. The on-hit effect is keyed by the tentacle's COLOR

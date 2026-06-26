@@ -10,7 +10,7 @@
 //                     shoved box would OVERLAP one (i.e. the void, not a wall, is stopping it).
 import { TILE } from "./levelgen.js";
 
-export function createVoidPull({ level, ts, enemies, voidFalling, balance, corpseColor }) {
+export function createVoidPull({ level, ts, enemies, voidFalling, balance, corpseColor, onSwallow }) {
   const TS = ts;
   const tileVoid = (tx, ty) =>
     tx >= 0 && ty >= 0 && tx < level.w && ty < level.h && level.tiles[ty * level.w + tx] === TILE.RUBBLE;
@@ -47,6 +47,7 @@ export function createVoidPull({ level, ts, enemies, voidFalling, balance, corps
       const e = enemies[i];
       if (e.kb && e.kb.frames > 0 && boxOverlapsVoid(e.x + e.kb.vx, e.y + e.kb.vy, e.w, e.h)) {
         voidFalling.push({ x: e.x, y: e.y, r: e.r, color: e.def.color, vfx: e.kb.vx, vfy: e.kb.vy });
+        if (onSwallow) onSwallow(e.x, e.y); // a hole that eats grows (voidReveal #7)
         enemies.splice(i, 1);
       }
     }
@@ -67,6 +68,7 @@ export function createVoidPull({ level, ts, enemies, voidFalling, balance, corps
       e.x += e.vacx * dt; e.y += e.vacy * dt;
       if (boxOverlapsVoid(e.x, e.y, e.w, e.h)) {
         voidFalling.push({ x: e.x, y: e.y, r: e.r, color: corpseColor, vfx: e.vacx * dt, vfy: e.vacy * dt });
+        if (onSwallow) onSwallow(e.x, e.y); // a hole that eats grows (voidReveal #7)
         enemies.splice(i, 1);
       }
     }

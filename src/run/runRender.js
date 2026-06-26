@@ -7,12 +7,15 @@
 import { TILE } from "./levelgen.js";
 import { BALANCE, THEME } from "./balance.js";
 import { createVoidRenderer } from "./voidBackgrounds.js";
+import { VL } from "./voidReveal.js";
+import { jit } from "./wobble.js";
 import { disc, ring, bar, glyph, drawMember } from "./draw.js";
 
 const VOID_CORNER_FRAC = 0.45; // rounding radius for exposed void-hole corners (× ts)
 const GLOW_BLUR = 14;
 const GLOW_COLOR = "rgba(165,205,255,1)";
 const GLOW_GAIN = 1.5;
+const VOID_WOBBLE_TINT = "#0a0e16"; // dark crater tint the atlas path stamps over a wobbling cell
 
 // ctx.roundRect isn't safe across all targets the slice ships to, so build a closed
 // rounded-rect subpath from arcTo (per-corner radii; 0 = square corner).
@@ -66,12 +69,24 @@ export function createRunRenderer({
   pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, voidFalling,
   voidTentacles,
   runState, bgId, getShake, getPaused, getVoidClock, getHeldLine, ts, viewW, viewH,
+  getVoidLife = () => 0, getFadeProgress = () => 0, getVoidOrig = () => 0,
 }) {
   const TS = ts, VIEW_W = viewW, VIEW_H = viewH;
   const VOID_CORNER = TS * VOID_CORNER_FRAC;
   const mapH = level.h * TS;
   const TILE_COLOR = THEME.tile;
   const LOOT = BALANCE.loot;
+  const VR = BALANCE.voidReveal;
+
+  // How "void" a logic cell is for the reveal crossfade: 1 if it's an open hole (RUBBLE), the
+  // fade progress (0→1) while it's dissolving, else 0. Drives both the void mask alpha and the
+  // ground-on-top crossfade so a tearing cell reads as the surface giving way to the churn behind.
+  const cellReveal = (x, y) => {
+    if (x < 0 || y < 0 || x >= level.w || y >= level.h) return 0;
+    const i = y * level.w + x;
+    if (level.tiles[i] === TILE.RUBBLE) return 1;
+    return getVoidLife(i) === VL.FADE ? getFadeProgress(i) : 0;
+  };
 
   const voidRenderer = bgId ? createVoidRenderer(bgId, VIEW_W, VIEW_H) : null;
   const mkBuf = () => { const c = document.createElement("canvas"); c.width = VIEW_W; c.height = VIEW_H; return c; };
@@ -107,16 +122,20 @@ export function createRunRenderer({
 
   // The crater material's dual-grid silhouette (same shape drawTiles renders), drawn
   // into `dst` as a destination-in mask so the void exactly fills the crater holes.
+  // A crater-shaped cell is any OPEN hole OR one mid-FADE; the display tile's mask alpha is the max
+  // reveal of its 4 sampled cells (OPEN=1 dominates a shared edge, a lone FADE cell masks partially).
   function drawCraterMask(dst, dx0, dx1, dy0, dy1) {
     const A = tileAtlas, frames = A.mats.crater;
-    const isC = (x, y) => x >= 0 && y >= 0 && x < level.w && y < level.h && TILE_TO_MAT[level.tiles[y * level.w + x]] === "crater";
+    const isC = (x, y) => cellReveal(x, y) > 0;
     for (let y = dy0; y <= dy1; y++)
       for (let x = dx0; x <= dx1; x++) {
         const c = (isC(x, y) ? 1 : 0) | (isC(x + 1, y) ? 2 : 0) | (isC(x + 1, y + 1) ? 4 : 0) | (isC(x, y + 1) ? 8 : 0);
         if (!c) continue;
         const f = frames[c];
+        dst.globalAlpha = Math.max(cellReveal(x, y), cellReveal(x + 1, y), cellReveal(x + 1, y + 1), cellReveal(x, y + 1));
         dst.drawImage(A.sheet, f.x, f.y, f.w, f.h, Math.floor(x * TS + TS / 2 - cam.x), Math.floor(y * TS + TS / 2 - cam.y), TS + 1, TS + 1);
       }
+    dst.globalAlpha = 1;
   }
 
   // Simple tapered glow (per the spec — not a segmented rope): the shaft is a smooth
@@ -166,11 +185,28 @@ export function createRunRenderer({
     cam.x += shx; cam.y += shy;
     const x0 = Math.max(0, Math.floor(cam.x / TS)), x1 = Math.min(level.w - 1, Math.ceil((cam.x + VIEW_W) / TS));
     const y0 = Math.max(0, Math.floor(cam.y / TS)), y1 = Math.min(level.h - 1, Math.ceil((cam.y + VIEW_H) / TS));
-    if (tileAtlas) drawTiles(x0, x1, y0, y1);
-    else for (let ty = y0; ty <= y1; ty++)
+    // A cell about to tear (WOBBLE) shudders in place — the telegraph. The jitter is a slow
+    // hold-and-snap (wobbleHz, NOT per render frame) so it boils rather than reads as TV static.
+    const wf = Math.floor(getVoidClock() * VR.wobbleHz) % VR.wobbleFrames;
+    const wob = (i, k) => Math.round(jit(i, k, wf, VR.wobbleAmp));
+    if (tileAtlas) {
+      drawTiles(x0, x1, y0, y1);
+      // The dual grid can't be jittered per logic-cell without tearing shared seams, so stamp a
+      // jittered translucent crater-tint over each wobbling cell instead (seam-safe equivalent).
+      for (let ty = y0; ty <= y1; ty++)
+        for (let tx = x0; tx <= x1; tx++) {
+          const i = ty * level.w + tx;
+          if (getVoidLife(i) !== VL.WOBBLE) continue;
+          ctx.globalAlpha = 0.5;
+          ctx.fillStyle = VOID_WOBBLE_TINT;
+          ctx.fillRect(Math.floor(tx * TS - cam.x) + wob(i, 0), Math.floor(ty * TS - cam.y) + wob(i, 1), TS + 1, TS + 1);
+          ctx.globalAlpha = 1;
+        }
+    } else for (let ty = y0; ty <= y1; ty++)
       for (let tx = x0; tx <= x1; tx++) {
         const i = ty * level.w + tx;
-        const sx = Math.floor(tx * TS - cam.x), sy = Math.floor(ty * TS - cam.y);
+        const ox = getVoidLife(i) === VL.WOBBLE ? wob(i, 0) : 0, oy = getVoidLife(i) === VL.WOBBLE ? wob(i, 1) : 0;
+        const sx = Math.floor(tx * TS - cam.x) + ox, sy = Math.floor(ty * TS - cam.y) + oy;
         ctx.fillStyle = TILE_COLOR[level.tiles[i]];
         ctx.fillRect(sx, sy, TS + 1, TS + 1);
         if (!level.walkable[i]) {
@@ -200,6 +236,7 @@ export function createRunRenderer({
         vb.save();
         vb.globalCompositeOperation = "destination-in";
         vb.fillStyle = "#fff";
+        // Pass 1: OPEN holes, opaque, one autotiled-rounding path (existing behavior).
         vb.beginPath();
         for (let ty = y0; ty <= y1; ty++)
           for (let tx = x0; tx <= x1; tx++) {
@@ -211,6 +248,19 @@ export function createRunRenderer({
               (!dn && !rt) ? VOID_CORNER : 0, (!dn && !lf) ? VOID_CORNER : 0);
           }
         vb.fill();
+        // Pass 2: FADE cells, each at its own alpha so the void bleeds in as the surface dissolves.
+        // They're isolated (a cell tears on its own), so round all corners and fill one at a time.
+        for (let ty = y0; ty <= y1; ty++)
+          for (let tx = x0; tx <= x1; tx++) {
+            const i = ty * level.w + tx;
+            if (getVoidLife(i) !== VL.FADE) continue;
+            vb.globalAlpha = getFadeProgress(i);
+            vb.beginPath();
+            addRoundTile(vb, Math.floor(tx * TS - cam.x), Math.floor(ty * TS - cam.y), TS + 1, TS + 1,
+              VOID_CORNER, VOID_CORNER, VOID_CORNER, VOID_CORNER);
+            vb.fill();
+          }
+        vb.globalAlpha = 1;
         vb.restore();
       }
       // Pre-blur the rim once: blur the hole-shaped void into glowBuf, tint it blue, then
@@ -230,6 +280,19 @@ export function createRunRenderer({
       if (GLOW_GAIN > 1) { ctx.globalAlpha = GLOW_GAIN - 1; ctx.drawImage(glowBuf, 0, 0); }
       ctx.restore();
       ctx.drawImage(voidBuf, 0, 0);
+
+      // FADE crossfade: redraw each fading cell's original ground over the void at 1−progress, so the
+      // surface dissolves to reveal the churn behind. Last, so it sits over both glow and sharp void.
+      for (let ty = y0; ty <= y1; ty++)
+        for (let tx = x0; tx <= x1; tx++) {
+          const i = ty * level.w + tx;
+          if (getVoidLife(i) !== VL.FADE) continue;
+          const sx = Math.floor(tx * TS - cam.x), sy = Math.floor(ty * TS - cam.y);
+          ctx.globalAlpha = 1 - getFadeProgress(i);
+          if (tileAtlas) ctx.drawImage(tileAtlas.sheet, tileAtlas.ground.x, tileAtlas.ground.y, tileAtlas.ground.w, tileAtlas.ground.h, sx, sy, TS + 1, TS + 1);
+          else { ctx.fillStyle = TILE_COLOR[getVoidOrig(i)]; ctx.fillRect(sx, sy, TS + 1, TS + 1); }
+          ctx.globalAlpha = 1;
+        }
     }
 
     ctx.fillStyle = THEME.homeBand;
