@@ -25,11 +25,16 @@
 <body>
 <h1>Void sandbox</h1>
 <p class="lede">A fixed, non-scrolling level with a reality break in the middle. Drives the real
-<code>voidPull</code> + <code>collision</code> on a fixed <code>dt = 1/60</code>, so you can determine exactly what
-happens and when. <b>Click</b> a tile to drop the selected actor; the buttons shove/kill them. Any thrown error
-(with stack) shows below — that's the point.</p>
+<code>voidPull</code> + <code>voidReveal</code> + <code>collision</code> on a fixed <code>dt = 1/60</code>, so you can
+determine exactly what happens and when. Pick a <b>click mode</b>: drop an actor, or tear a chosen ground cell open
+(<b>WOBBLE</b> 0.6s → <b>FADE</b> 0.6s → open). Killing/knocking enemies near the hole feeds it — sustained eating
+<b>expands</b> the hole into a neighbor. Any thrown error (with stack) shows below.</p>
 
 <div class="bar">
+  <label>Click: <select id="mode">
+    <option value="drop">drop actor</option>
+    <option value="reveal">tear cell open</option>
+  </select></label>
   <label>Drop: <select id="actor">
     <option value="shambler">Shambler (r15)</option>
     <option value="brute">Brute (r18)</option>
@@ -49,17 +54,22 @@ happens and when. <b>Click</b> a tile to drop the selected actor; the buttons sh
 <canvas id="stage"></canvas>
 <div class="status" id="status"></div>
 <div class="legend">Live enemies are drawn in their body color; corpses are dark; bodies in the void shrink to nothing.
-The void tug reaches <span id="rangeTxt"></span>. <kbd>click</kbd> drop · <kbd>K</kbd> knock · <kbd>X</kbd> kill · <kbd>space</kbd> step</div>
+A cell mid-tear shudders (wobble) then crossfades to void (fade). The void tug reaches <span id="rangeTxt"></span>.
+<kbd>click</kbd> drop/tear · <kbd>K</kbd> knock · <kbd>X</kbd> kill · <kbd>space</kbd> step</div>
 <div id="err"></div>
 
 <script type="module">
 import { TILE } from "../src/run/levelgen.js";
 import { moveAndCollide } from "../src/run/collision.js";
 import { createVoidPull } from "../src/run/voidPull.js";
+import { createVoidReveal, VL } from "../src/run/voidReveal.js";
+import { jit } from "../src/run/wobble.js";
+import { makeRng } from "../src/core/rng.js";
 import { BALANCE, THEME } from "../src/run/balance.js";
 
 const TS = 48, COLS = 15, ROWS = 11, DT = 1 / 60;
 const W = COLS * TS, H = ROWS * TS;
+const K = BALANCE.voidReveal;
 const cv = document.getElementById("stage");
 cv.width = W; cv.height = H;
 const ctx = cv.getContext("2d");
@@ -67,7 +77,7 @@ document.getElementById("rangeTxt").textContent = `${BALANCE.voidVacuum.rangeTil
 
 // Fixed hand-authored level: open street with a 3x2 reality break in the middle and a short wall
 // stub (to prove walls still block while the void swallows). walkable mirrors levelgen's rule.
-let level, enemies, voidFalling, voidPull, frame, playing, raf;
+let level, enemies, voidFalling, voidPull, voidReveal, frame, playing, raf;
 function buildLevel() {
   const tiles = new Array(COLS * ROWS).fill(TILE.STREET);
   const set = (tx, ty, v) => { if (tx >= 0 && ty >= 0 && tx < COLS && ty < ROWS) tiles[ty * COLS + tx] = v; };
@@ -80,7 +90,11 @@ function reset() {
   level = buildLevel();
   enemies = [];
   voidFalling = [];
-  voidPull = createVoidPull({ level, ts: TS, enemies, voidFalling, balance: BALANCE, corpseColor: THEME.corpse });
+  // harvestRubble:false — keep the central hole OPEN so swallows can feed/expand it; reveal is
+  // exercised by hand via the "tear cell open" click mode (no scrolling camera in the sandbox).
+  voidReveal = createVoidReveal({ level, ts: TS, rng: makeRng(1234), balance: BALANCE });
+  voidPull = createVoidPull({ level, ts: TS, enemies, voidFalling, balance: BALANCE, corpseColor: THEME.corpse,
+    onSwallow: (x, y) => voidReveal.queueSwallow(x, y) });
   frame = 0; playing = false; setPlayLabel();
   hideErr(); render();
 }
@@ -90,6 +104,11 @@ function spawnAt(px, py) {
   const dead = document.getElementById("asCorpse").checked;
   enemies.push({ x: px, y: py, w: def.r * 2, h: def.r * 2, r: def.r, def, dead,
     kb: null, pauseT: 0, staggerT: 0 });
+  render();
+}
+function revealAt(px, py) {
+  const tx = Math.floor(px / TS), ty = Math.floor(py / TS);
+  voidReveal.schedule(ty * COLS + tx);
   render();
 }
 function knockAllToVoid() {
@@ -111,6 +130,7 @@ function step() {
     for (const e of enemies) { applyKb(e); if (e.pauseT > 0) e.pauseT--; else if (e.staggerT > 0) e.staggerT--; }
     voidPull.vacuumCorpses(DT);
     voidPull.stepFall(DT);
+    voidReveal.update(DT);
     frame++;
     render();
   } catch (e) {
@@ -125,23 +145,45 @@ function setPlayLabel() { document.getElementById("play").textContent = playing 
 
 // --- draw ---
 const disc = (x, y, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
+function drawVoid(x, y, a) {
+  ctx.globalAlpha = a;
+  ctx.fillStyle = "#070a10"; ctx.fillRect(x, y, TS, TS);
+  ctx.strokeStyle = "rgba(90,180,255,.7)"; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, TS - 2, TS - 2);
+  ctx.globalAlpha = 1;
+}
+const groundFill = (tx, ty) => (tx + ty) % 2 ? "#5e5e5e" : "#666";
 function render() {
+  const wf = Math.floor(frame * DT * K.wobbleHz) % K.wobbleFrames;
   for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
-    const t = level.tiles[ty * COLS + tx], x = tx * TS, y = ty * TS;
-    if (t === TILE.RUBBLE) { ctx.fillStyle = "#070a10"; ctx.fillRect(x, y, TS, TS); ctx.strokeStyle = "rgba(90,180,255,.7)"; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, TS - 2, TS - 2); }
-    else if (t === TILE.WALL) { ctx.fillStyle = "#2e2e2e"; ctx.fillRect(x, y, TS, TS); }
-    else { ctx.fillStyle = (tx + ty) % 2 ? "#5e5e5e" : "#666"; ctx.fillRect(x, y, TS, TS); }
+    const i = ty * COLS + tx, t = level.tiles[i], x = tx * TS, y = ty * TS, ph = voidReveal.getVoidLife(i);
+    if (t === TILE.RUBBLE) { drawVoid(x, y, 1); continue; }
+    if (t === TILE.WALL) { ctx.fillStyle = "#2e2e2e"; ctx.fillRect(x, y, TS, TS); continue; }
+    if (ph === VL.FADE) {                         // crossfade ground → churning void
+      const fp = voidReveal.getFadeProgress(i);
+      drawVoid(x, y, fp);
+      ctx.globalAlpha = 1 - fp; ctx.fillStyle = groundFill(tx, ty); ctx.fillRect(x, y, TS, TS); ctx.globalAlpha = 1;
+    } else if (ph === VL.WOBBLE) {                // the ground shudders in place (telegraph)
+      const dx = Math.round(jit(i, 0, wf, K.wobbleAmp)), dy = Math.round(jit(i, 1, wf, K.wobbleAmp));
+      ctx.fillStyle = groundFill(tx, ty); ctx.fillRect(x + dx, y + dy, TS, TS);
+      ctx.strokeStyle = "rgba(90,180,255,.45)"; ctx.lineWidth = 1; ctx.strokeRect(x + dx + 2, y + dy + 2, TS - 4, TS - 4);
+    } else {
+      ctx.fillStyle = groundFill(tx, ty); ctx.fillRect(x, y, TS, TS);
+    }
   }
   for (const e of enemies) { disc(e.x, e.y, e.r, e.dead ? THEME.corpse : e.def.color); if (!e.dead) { ctx.strokeStyle = "rgba(255,255,255,.25)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, 7); ctx.stroke(); } }
   for (const b of voidFalling) disc(b.x, b.y, b.r, b.color);
   document.getElementById("status").textContent =
-    `frame ${frame}   t=${(frame * DT).toFixed(2)}s   live=${enemies.filter((e) => !e.dead).length}   corpses=${enemies.filter((e) => e.dead).length}   inVoid=${voidFalling.length}`;
+    `frame ${frame}   t=${(frame * DT).toFixed(2)}s   live=${enemies.filter((e) => !e.dead).length}   corpses=${enemies.filter((e) => e.dead).length}   inVoid=${voidFalling.length}   tearing=${voidReveal.active.size}`;
 }
 function showErr(s) { const el = document.getElementById("err"); el.style.display = "block"; el.textContent = "⚠ threw:\n" + s; }
 function hideErr() { document.getElementById("err").style.display = "none"; }
 
 // --- wiring ---
-cv.addEventListener("click", (ev) => { const r = cv.getBoundingClientRect(); spawnAt((ev.clientX - r.left) * (W / r.width), (ev.clientY - r.top) * (H / r.height)); });
+cv.addEventListener("click", (ev) => {
+  const r = cv.getBoundingClientRect();
+  const px = (ev.clientX - r.left) * (W / r.width), py = (ev.clientY - r.top) * (H / r.height);
+  if (document.getElementById("mode").value === "reveal") revealAt(px, py); else spawnAt(px, py);
+});
 document.getElementById("knock").onclick = () => { knockAllToVoid(); render(); };
 document.getElementById("kill").onclick = killAll;
 document.getElementById("step").onclick = step;

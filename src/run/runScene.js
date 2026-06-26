@@ -6,6 +6,7 @@
 // coupling callbacks below via createX(env) injection.
 import { generate, isWalkable } from "./levelgen.js";
 import { createVoidPull } from "./voidPull.js";
+import { createVoidReveal } from "./voidReveal.js";
 import { createVoidTentacles } from "./voidTentacle.js";
 import { moveAndCollide, boxBlocked } from "./collision.js";
 import { makeRng, subSeed } from "../core/rng.js";
@@ -165,9 +166,19 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   const debris = [];      // spent slingshot pellets resting where they landed, visual only
   const dustPuffs = [];   // Dash's dust-trail puffs (slow + chip)
   const voidFalling = []; // bodies/balls sinking into a reality break: drifting, shrinking, soon gone
+  // Holes are NOT placed at the start — they TEAR OPEN as the descent proceeds (voidReveal):
+  // gen craters become latent walkable ground here and reveal (wobble → fade → open) as the
+  // viewport reaches them; a body swallowed by a hole feeds it, and accumulated feeding expands
+  // it into a neighbor. Its own sub-seed keeps the reveal stagger + bloom direction reproducible
+  // and independent of "gen"/"spawns"/"loot". Constructed before voidPull so swallows feed it.
+  const voidReveal = createVoidReveal({
+    level, ts: TS, rng: makeRng(subSeed(seed, "voidreveal")), balance: BALANCE,
+    cam, viewH: VIEW_H, harvestRubble: true,
+  });
   // Reality-break interactions (membership tests + the knock-in/vacuum/fall steppers), bound to
   // this run's live arrays. Extracted so the same logic drives the run, the tests, and the sandbox.
-  const voidPull = createVoidPull({ level, ts: TS, enemies, voidFalling, balance: BALANCE, corpseColor: THEME.corpse });
+  const voidPull = createVoidPull({ level, ts: TS, enemies, voidFalling, balance: BALANCE,
+    corpseColor: THEME.corpse, onSwallow: voidReveal.queueSwallow });
   const heroTargets = [hero, ...followers]; // player-faction targets enemy shots resolve against
   const { shift, separate, separateHero, heroMove } = createSoftBody({ level, hero, enemies });
   let outcome = null;
@@ -368,6 +379,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
 
     voidPull.vacuumCorpses(dt); // holes tug nearby corpses in, then swallow them
     voidPull.stepFall(dt);      // everything in the void drifts, shrinks, and is gone
+    voidReveal.update(dt);      // craters tear open as we descend; swallows feed + expand holes
     voidTentacles.update(dt);   // holes grow tentacles that telegraph + lash at heroes
 
     // Follower train re-homes after enemy brains + knockback so it chases settled positions;
@@ -444,6 +456,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     voidTentacles,
     runState, bgId,
     getShake: () => shake, getPaused: () => paused, getVoidClock: () => voidClock, getHeldLine: () => heldLine,
+    getVoidLife: voidReveal.getVoidLife, getFadeProgress: voidReveal.getFadeProgress, getVoidOrig: voidReveal.getVoidOrig,
     ts: TS, viewW: VIEW_W, viewH: VIEW_H,
   });
 

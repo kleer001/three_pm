@@ -11,6 +11,7 @@ import { PAYOUT, UPGRADES, computePayout, recordRun, bankCurrency, purchaseUpgra
 import { BALANCE, THEME } from "../src/run/balance.js";
 import { createPartyPreview } from "../src/run/partyPreview.js";
 import { createVoidPull } from "../src/run/voidPull.js";
+import { createVoidReveal, VL } from "../src/run/voidReveal.js";
 import { createVoidTentacles } from "../src/run/voidTentacle.js";
 
 const freshBlob = () => ({
@@ -409,6 +410,62 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   { const vfl = [{ x: 0, y: 0, r: 15, color: "#fff", vfx: 0, vfy: 0 }], vp = mkPull([], vfl);
     for (let f = 0; f < 300 && vfl.length; f++) vp.stepFall(1 / 60);
     ok(vfl.length === 0, "voidPull: a body in the void shrinks away and is removed"); }
+}
+
+// Void reveal/expand (voidReveal): the per-cell WOBBLE→FADE→OPEN lifecycle, descent-paced
+// reveal of harvested craters, and swallow-fed expansion — all browser-free, pinned so the
+// timing and the deterministic bloom don't regress.
+{
+  const TS = 48, DT = 1 / 60, beat = BALANCE.voidReveal.beat;
+  const flat = (w, h) => ({ w, h, tiles: new Uint8Array(w * h).fill(TILE.STREET), walkable: new Uint8Array(w * h).fill(1) });
+  const steps = (s) => Math.ceil(s / DT) + 2; // a hair past s seconds of fixed dt
+
+  // (a) lifecycle: a scheduled walkable cell wobbles one beat, fades one beat, then opens (a single
+  //     tile flip to RUBBLE/non-walkable). Fade progress runs 0→1 across the fade beat.
+  { const level = flat(8, 8), vr = createVoidReveal({ level, ts: TS, rng: makeRng(1), balance: BALANCE });
+    const i = 3 * 8 + 3;
+    ok(vr.schedule(i) && vr.getVoidLife(i) === VL.WOBBLE, "voidReveal: scheduling a cell begins WOBBLE");
+    ok(!vr.schedule(i), "voidReveal: re-scheduling an animating cell is a no-op");
+    for (let s = 0; s < steps(beat); s++) vr.update(DT);
+    ok(vr.getVoidLife(i) === VL.FADE, "voidReveal: after one beat the cell is FADE");
+    const fp = vr.getFadeProgress(i); ok(fp > 0 && fp <= 1, "voidReveal: fade progress is in (0,1]");
+    for (let s = 0; s < steps(beat); s++) vr.update(DT);
+    ok(level.tiles[i] === TILE.RUBBLE && level.walkable[i] === 0, "voidReveal: after two beats the cell OPENS (rubble, non-walkable)");
+    ok(vr.getVoidLife(i) === VL.NONE && vr.active.size === 0, "voidReveal: an opened cell clears its phase"); }
+
+  // (b) walls are never torn, even if scheduled.
+  { const level = flat(5, 5); const wi = 2 * 5 + 2; level.tiles[wi] = TILE.WALL; level.walkable[wi] = 0;
+    const vr = createVoidReveal({ level, ts: TS, rng: makeRng(1), balance: BALANCE });
+    ok(!vr.schedule(wi), "voidReveal: a wall cell can't be scheduled to tear"); }
+
+  // (c) harvest + descent reveal: gen craters are restored to walkable ground; only those below the
+  //     starting screen become latent, and they tear open once the viewport's bottom reaches them.
+  { const level = flat(4, 40), cam = { y: 0 }, viewH = 600;
+    const shallow = 2 * 4 + 1, deep = 30 * 4 + 1; // row 2 (on screen 1) vs row 30 (deep south)
+    for (const j of [shallow, deep]) { level.tiles[j] = TILE.RUBBLE; level.walkable[j] = 0; }
+    const vr = createVoidReveal({ level, ts: TS, rng: makeRng(2), balance: BALANCE, cam, viewH, harvestRubble: true });
+    ok(level.tiles[deep] !== TILE.RUBBLE && level.walkable[deep] === 1, "voidReveal: harvest restores a crater to walkable ground");
+    ok(vr.latent.has(deep) && !vr.latent.has(shallow), "voidReveal: only craters below the starting screen are latent");
+    vr.update(DT); ok(vr.getVoidLife(deep) === VL.NONE, "voidReveal: a deep crater stays hidden until the viewport reaches it");
+    cam.y = 30 * TS; vr.update(DT); ok(vr.getVoidLife(deep) === VL.WOBBLE, "voidReveal: the crater tears open once the viewport's bottom reaches it"); }
+
+  // (d) swallow-fed expansion: a single eat is below threshold (no bloom); sustained feeding blooms
+  //     a neighbor of the fed hole.
+  { const level = flat(6, 6), hole = 3 * 6 + 3; level.tiles[hole] = TILE.RUBBLE; level.walkable[hole] = 0;
+    const vr = createVoidReveal({ level, ts: TS, rng: makeRng(3), balance: BALANCE });
+    const hx = 3 * TS + TS / 2, hy = 3 * TS + TS / 2;
+    vr.queueSwallow(hx, hy); vr.update(1 / 600);
+    ok(vr.active.size === 0, "voidReveal: a single swallow is below threshold (no bloom)");
+    for (let k = 0; k < 3; k++) { vr.queueSwallow(hx, hy); vr.update(1 / 600); }
+    ok(vr.active.size >= 1, "voidReveal: sustained feeding blooms a neighbor of the fed hole"); }
+
+  // (e) determinism: same seed → the bloom opens the same neighbor cell.
+  { const bloom = (seed) => { const level = flat(6, 6), hole = 3 * 6 + 3; level.tiles[hole] = TILE.RUBBLE; level.walkable[hole] = 0;
+      const vr = createVoidReveal({ level, ts: TS, rng: makeRng(seed), balance: BALANCE });
+      const hx = 3 * TS + TS / 2, hy = 3 * TS + TS / 2;
+      for (let k = 0; k < 4; k++) { vr.queueSwallow(hx, hy); vr.update(1 / 600); }
+      return [...vr.active][0]; };
+    ok(bloom(5) === bloom(5), "voidReveal: same seed blooms the same neighbor"); }
 }
 
 // Void tentacles: rim detection, FSM transitions, the aim-lock dodge guarantee, strike-once,
