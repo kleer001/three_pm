@@ -5,13 +5,18 @@
 // getVoidClock is threaded — pure read, never a write.
 //
 // A cell runs two beats: WOBBLE (the ground shudders in place — the telegraph) → FADE (the
-// surface dissolves to reveal the churning void behind it) → OPEN. "Open" is a single tile flip
-// (tiles[i]=RUBBLE, walkable[i]=0); from there voidPull, collision, and the void render-mask all
-// treat it as an ordinary hole with no further wiring (they key off those two arrays).
+// surface dissolves to reveal the churning void behind it) → OPEN. "Open" sets tiles[i]=RUBBLE
+// and walkable[i]=0; from there voidPull and the void render-mask treat it as a visible hole.
+//
+// Reveal (#1) is purely COSMETIC: harvested gen craters keep their non-walkable hole from the
+// first frame (so the director never spawns into them and collision blocks them) and only paint
+// over as ground until the descent reveals their look — so walkable[i] is already 0 when a reveal
+// cell opens. Expand (#7) grows a hole into real walkable ground, which only becomes non-walkable
+// at OPEN (the WOBBLE→FADE beats are its step-off telegraph).
 //
 // Triggers:
 //  - reveal (#1): a latent gen crater whose (jittered) Y is reached by the bottom of the
-//    viewport opens — fresh ground scrolling in tears as you descend.
+//    viewport tears into view — its hidden hole scrolling in becomes visible as you descend.
 //  - expand (#7): a body swallowed by a hole (voidPull's two voidFalling.push sites, routed here
 //    via queueSwallow) feeds that hole; accumulated feeding past a threshold opens one neighbor.
 import { TILE } from "./levelgen.js";
@@ -34,9 +39,11 @@ export function createVoidReveal({ level, ts, rng, balance, cam, viewH, harvestR
 
   const inBounds = (tx, ty) => tx >= 0 && ty >= 0 && tx < w && ty < h;
 
-  // Harvest the generated craters into the latent set and restore them to walkable ground, so the
-  // map starts CLEAN and the holes appear only as the descent reveals them. Only cells below the
-  // initial viewport become latent — the starting screen stays a safe, hole-free clearing.
+  // Harvest the generated craters: paint each over with neighbouring ground so the map reads CLEAN,
+  // but leave below-screen craters NON-WALKABLE — they are real holes from the first frame (the
+  // director never spawns into them, collision blocks them), and the descent only reveals their
+  // look. Only those below the initial viewport become latent; craters on the starting screen are
+  // filled in as permanent walkable ground so the spawn clearing stays safe and hole-free.
   if (harvestRubble) {
     const initialBottom = (cam ? cam.y : 0) + (viewH || 0);
     const groundUnder = (i) => {
@@ -49,22 +56,21 @@ export function createVoidReveal({ level, ts, rng, balance, cam, viewH, harvestR
     };
     for (let i = 0; i < n; i++) {
       if (level.tiles[i] !== TILE.RUBBLE) continue;
-      const ground = groundUnder(i);
-      level.tiles[i] = ground;
-      level.walkable[i] = 1;
+      level.tiles[i] = groundUnder(i); // ground appearance until (if ever) revealed
       const ty = (i / w) | 0, cy = ty * TS + TS / 2;
-      if (cy > initialBottom) { // below the first screen → reveals later as we scroll to it
-        latent.add(i);
+      if (cy > initialBottom) { // below the first screen → a hidden hole, revealed as we scroll to it
+        latent.add(i); // walkable stays 0: the hole is functional from the start
         trigJit[i] = rng ? rng.next() * K.revealStagger * TS : 0;
+      } else {
+        level.walkable[i] = 1; // starting screen: fill in as permanent safe ground
       }
-      // cells on the starting screen are left as permanent ground (not latent)
     }
   }
 
   function schedule(i) {
     if (phase[i] !== VL.NONE) return false;        // already animating
     if (level.tiles[i] === TILE.RUBBLE) return false; // already an open hole
-    if (level.walkable[i] !== 1) return false;     // never tear a wall/structure
+    if (level.tiles[i] === TILE.WALL) return false;   // never tear a wall/structure
     orig[i] = level.tiles[i];                      // remember the ground we'll crossfade from
     phase[i] = VL.WOBBLE;
     timer[i] = K.beat;

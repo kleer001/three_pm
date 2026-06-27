@@ -438,13 +438,15 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     const vr = createVoidReveal({ level, ts: TS, rng: makeRng(1), balance: BALANCE });
     ok(!vr.schedule(wi), "voidReveal: a wall cell can't be scheduled to tear"); }
 
-  // (c) harvest + descent reveal: gen craters are restored to walkable ground; only those below the
-  //     starting screen become latent, and they tear open once the viewport's bottom reaches them.
+  // (c) harvest + descent reveal: below-screen gen craters keep their functional hole (non-walkable)
+  //     but are painted as ground so they look clean; only those become latent, and they tear into
+  //     view once the viewport's bottom reaches them. On-screen craters fill in as permanent ground.
   { const level = flat(4, 40), cam = { y: 0 }, viewH = 600;
     const shallow = 2 * 4 + 1, deep = 30 * 4 + 1; // row 2 (on screen 1) vs row 30 (deep south)
     for (const j of [shallow, deep]) { level.tiles[j] = TILE.RUBBLE; level.walkable[j] = 0; }
     const vr = createVoidReveal({ level, ts: TS, rng: makeRng(2), balance: BALANCE, cam, viewH, harvestRubble: true });
-    ok(level.tiles[deep] !== TILE.RUBBLE && level.walkable[deep] === 1, "voidReveal: harvest restores a crater to walkable ground");
+    ok(level.tiles[deep] !== TILE.RUBBLE && level.walkable[deep] === 0, "voidReveal: harvest hides a deep crater's look but keeps it a functional (non-walkable) hole");
+    ok(level.walkable[shallow] === 1, "voidReveal: an on-screen crater fills in as permanent safe ground");
     ok(vr.latent.has(deep) && !vr.latent.has(shallow), "voidReveal: only craters below the starting screen are latent");
     vr.update(DT); ok(vr.getVoidLife(deep) === VL.NONE, "voidReveal: a deep crater stays hidden until the viewport reaches it");
     cam.y = 30 * TS; vr.update(DT); ok(vr.getVoidLife(deep) === VL.WOBBLE, "voidReveal: the crater tears open once the viewport's bottom reaches it"); }
@@ -496,14 +498,17 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
     return { vt, hero, hits, ehits, kbs, voidFalling, loot, enemies, level };
   };
   const HX = 4 * TS + TS / 2, HY = 2 * TS + TS / 2; // one tile WEST of the hole
+  // Geometry tests that pin the bud to the lip use this — the shipped lipOffsetTiles can set the
+  // base back past the hole center (deep in the void), which the lip-relative asserts don't model.
+  const lip0 = { ...BALANCE, voidTentacle: { ...BALANCE.voidTentacle, lipOffsetTiles: 0 } };
 
   // (table) the color->action registry exists and its first row is the purple drag type.
   { const { vt } = mk(HX, HY);
     ok(vt.TENTACLE_TYPES.length >= 1 && typeof vt.TENTACLE_TYPES[0].onHit === "function", "tentacle: color->action table populated");
     ok(vt.TENTACLE_TYPES[0].color === THEME.voidTentacle.colors.drag, "tentacle: first type is the purple drag (color-keyed action)"); }
 
-  // (a) rim detection: the facing rim is the WEST face; its base sits on the hero side.
-  { const { vt, hero } = mk(HX, HY);
+  // (a) rim detection: the facing rim is the WEST face; its base sits on the hero side (lip pinned).
+  { const { vt, hero } = mk(HX, HY, [], lip0);
     const rim = vt.rimToward(hero);
     ok(rim && rim.tx === 5 && rim.ty === 2, "tentacle: finds the hole tile in range");
     ok(rim && rim.baseX < 5 * TS + TS / 2, "tentacle: rim base is on the hero-facing (west) side"); }
@@ -547,7 +552,7 @@ for (const [id, w] of Object.entries(BALANCE.weapons)) {
   // (e) strike-once + drag-into-hole (purple): the strike injures once, then the grab reels the
   //     member PAST the lip toward the hole interior and KILLS it there — dragged under and gone,
   //     never deposited back at the lip.
-  { const st = mk(HX, HY);
+  { const st = mk(HX, HY, [], lip0);
     const rim = st.vt.rimToward(st.hero);
     const t = st.vt._spawnAt(rim, "drag");
     for (let f = 0; f < 120 && t.state !== "strike"; f++) st.vt._step(t, DT);
