@@ -1,12 +1,13 @@
 // Void reveal/expand: the per-cell lifecycle that makes reality breaks TEAR OPEN over a run
 // instead of being baked at gen. Factored out of runScene's frame loop (like voidPull) so it
 // can be driven in isolation by art-test/void-sandbox.html and by tests. The sim owns the state;
-// the renderer reads it through getters (getVoidLife/getFadeProgress/getVoidOrig), mirroring how
+// the renderer reads it through getters (getVoidLife/getTearProgress/getVoidOrig), mirroring how
 // getVoidClock is threaded — pure read, never a write.
 //
-// A cell runs two beats: WOBBLE (the ground shudders in place — the telegraph) → FADE (the
-// surface dissolves to reveal the churning void behind it) → OPEN. "Open" sets tiles[i]=RUBBLE
-// and walkable[i]=0; from there voidPull and the void render-mask treat it as a visible hole.
+// A cell runs two beats: WOBBLE → FADE → OPEN. The renderer crumbles the surface into the churn
+// across both beats as one block dissolve (getTearProgress 0→1) — WOBBLE is the early telegraph
+// half, FADE completes it. "Open" sets tiles[i]=RUBBLE and walkable[i]=0; from there voidPull and
+// the void render-mask treat it as a visible hole.
 //
 // Reveal (#1) is purely COSMETIC: harvested gen craters keep their non-walkable hole from the
 // first frame (so the director never spawns into them and collision blocks them) and only paint
@@ -161,11 +162,16 @@ export function createVoidReveal({ level, ts, rng, balance, cam, viewH, harvestR
   // Read-only view for the renderer (threaded like getVoidClock).
   const getVoidLife = (i) => phase[i];
   const getFadeProgress = (i) => phase[i] === VL.FADE ? Math.max(0, Math.min(1, 1 - timer[i] / K.beat)) : 0;
+  // Combined tear progress 0→1 across the WOBBLE+FADE window — the renderer dissolves the cell over
+  // the whole transition, so WOBBLE supplies the first half and FADE the second (no telegraph beat).
+  const getTearProgress = (i) =>
+    phase[i] === VL.WOBBLE ? 0.5 * Math.max(0, Math.min(1, 1 - timer[i] / K.beat)) :
+    phase[i] === VL.FADE ? 0.5 + 0.5 * Math.max(0, Math.min(1, 1 - timer[i] / K.beat)) : 0;
   const getVoidOrig = (i) => orig[i];
 
   return {
     update, queueSwallow, schedule, open,
-    getVoidLife, getFadeProgress, getVoidOrig,
+    getVoidLife, getFadeProgress, getTearProgress, getVoidOrig,
     active, latent, // exposed for the sandbox/tests (read-only by convention)
   };
 }

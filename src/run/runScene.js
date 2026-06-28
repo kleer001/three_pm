@@ -34,7 +34,8 @@ const MARGIN = TS;
 const { hero: HERO, enemies: ENEMIES } = BALANCE;
 const { scroll: SCROLL, mapH: MAP_H } = BALANCE;
 
-export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
+export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {}) {
+  const god = !!opts.god; // secret invincible mode (?god/?bot): no party member dies, no run is lost
   const level = generate(seed, {
     w: 48, h: MAP_H, bearing: (3 * Math.PI) / 2, tileSize: TS,
     wallScaleX: BALANCE.wall.scaleX, wallScaleY: BALANCE.wall.scaleY, wallDensity: BALANCE.wall.density,
@@ -92,7 +93,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     x: level.start.x * TS + TS / 2, y: level.start.y * TS + TS / 2,
     w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
     id: head.id,
-    stats: { ...(head.stats || HERO.stats) }, faction: HERO.faction, color: head.color,
+    stats: { ...(head.stats || HERO.stats) }, faction: HERO.faction, color: head.color, invincible: god,
     iframes: 0, iframeDur: HERO.iframeDur, manaRegen: HERO.manaRegen, dead: false, cd: 0,
     sigCd: 0, signature: resolveSig(head.signatureId), charge: 0, damageTaken: 0, fadeT: BALANCE.spawnFade,
   };
@@ -108,7 +109,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     const f = {
       x: hero.x, y: hero.y, w: HERO.r * 2, h: HERO.r * 2, r: HERO.r,
       id: def.id,
-      stats: { ...(def.stats || HERO.stats) }, faction: "player", color: def.color,
+      stats: { ...(def.stats || HERO.stats) }, faction: "player", color: def.color, invincible: god,
       iframes: 0, iframeDur: FOLLOWER.iframeDur, manaRegen: FOLLOWER.manaRegen, dead: false, cd: 0,
       weapon: { id: def.weaponId, ...w, damage: { ...w.damage } },
       sigCd: 0, signature: resolveSig(def.signatureId), charge: 0, damageTaken: 0, fadeT: 0,
@@ -186,7 +187,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   let deathCause = null;
   const deadThisRun = new Set(); // ids that personally died this run; the campaign culls them
   // The one place a run ends as a loss — every lethal path routes here.
-  const loseRun = (cause) => { outcome = "lose"; deathCause = cause; deadThisRun.add(head.id); sfx.play("scream"); sfx.play("lose"); emitRunEnd(false); };
+  const loseRun = (cause) => { if (god) return; outcome = "lose"; deathCause = cause; deadThisRun.add(head.id); sfx.play("scream"); sfx.play("lose"); emitRunEnd(false); };
 
   // Build a live enemy from its def at a tile. Mutable state lives on the entity;
   // immutable config stays on `def` and is read through `e.def.*` (one source of truth).
@@ -266,7 +267,9 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     shake: addShake,
     onDeath: (t, attacker) =>
       t === hero ? loseRun(attacker.def ? attacker.def.name : null)
-                 : (t.def && !t.looted && onEnemyDeath(t)),
+                 // friendly fire kills count as deaths but pay the player nothing — an enemy's
+                 // shot is no more the player's weapon than the void is (see voidTentacle).
+                 : (t.def && !t.looted && attacker.faction !== "enemy" && onEnemyDeath(t)),
   });
   const nearestEnemy = () => combat.nearestEnemyTo(hero.x, hero.y);
 
@@ -296,7 +299,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     hurtMember, knockback, onEnemyDeath, ts: TS,
   });
   const followerTrain = createFollowerTrain({
-    hero, followers, trail, gap, level, deadThisRun, heroTargets, combat, shift, separate,
+    hero, followers, trail, gap, level, deadThisRun, heroTargets, combat, shift, separate, god,
   });
   // Reality breaks grow tentacles that telegraph + lash at nearby members. A dedicated
   // "tentacle" sub-seed keeps the director's "spawns" stream unperturbed (existing seeds
@@ -456,7 +459,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
     voidTentacles,
     runState, bgId,
     getShake: () => shake, getPaused: () => paused, getVoidClock: () => voidClock, getHeldLine: () => heldLine,
-    getVoidLife: voidReveal.getVoidLife, getFadeProgress: voidReveal.getFadeProgress, getVoidOrig: voidReveal.getVoidOrig,
+    getTearProgress: voidReveal.getTearProgress, getVoidOrig: voidReveal.getVoidOrig,
     ts: TS, viewW: VIEW_W, viewH: VIEW_H,
   });
 
@@ -465,6 +468,9 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId) {
   return {
     update, render, runState, nextSeed: seed + 1, bgId,
     get _probe() { return { hero, level, enemies, cam, followers }; }, // read-only handle for tests/gauntlet.mjs
+    // Debug-only (god/bot): force the run to end as a loss with the whole crew dead, so the
+    // playthrough harness can test the wipe → game-over path deterministically.
+    _forceLose() { if (!god) return; outcome = "lose"; deathCause = "debug"; deadThisRun.add(head.id); for (const f of followers) deadThisRun.add(f.id); },
     get finished() { return outcome !== null; },
     get result() {
       return {
