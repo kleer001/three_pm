@@ -12,7 +12,41 @@ import { disc, ring, bar, glyph, drawMember } from "./draw.js";
 const GLOW_BLUR = 6;
 const GLOW_COLOR = "rgba(165,205,255,1)";
 const GLOW_GAIN = 1.5;
-const BAYER4 = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]; // ordered dither for the void dissolve edge
+const BAYER4 = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]; // ordered dither base for the void dissolve
+
+// Per-level void-dissolve style (see balance.voidDissolve.styles). The run picks one, salted with a
+// per-run seed, so every descent's tear edge looks different but stays reproducible. The threshold
+// field decides, for each sub-cell, the reveal level at which it flips to void; the dissolve grows
+// as the cell's reveal (0→1) crosses more thresholds. Default = the crisp Bayer look.
+const DEFAULT_DISSOLVE_STYLE = { pattern: "bayer", size: 8, sizeVar: 0, shuffle: 0, boil: 0, nscale: 0.2, seed: 0 };
+function dhash(x, y, s) { let h = (x * 374761393 + y * 668265263 + (s | 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return (h ^ (h >>> 16)) >>> 0; }
+const dnf = (x, y, s) => dhash(x, y, s) / 4294967296;
+const dsstep = (a) => a * a * (3 - 2 * a);
+function dvnoise(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = dsstep(x - xi), yf = dsstep(y - yi);
+  const L = (a, b, f) => a + (b - a) * f, c = (dx, dy) => dnf(xi + dx, yi + dy, s);
+  return L(L(c(0, 0), c(1, 0), xf), L(c(0, 1), c(1, 1), xf), yf);
+}
+// reveal threshold in [0,1) for sub-cell (ix,iy) of cell (cx,cy) under style `st` at boil frame
+function dissolveThreshold(st, cx, cy, ix, iy, frame) {
+  switch (st.pattern) {
+    case "bayerCell": { const h = st.shuffle ? dhash(cx, cy + frame * 101, st.seed) : 0; const ox = h & 3, oy = (h >> 2) & 3, fl = (h >> 4) & 1, a = (iy + oy) & 3, b = (ix + ox) & 3; return (BAYER4[fl ? b : a][fl ? a : b] + 0.5) / 16; }
+    case "hash": return dnf(cx * 64 + ix, cy * 64 + iy + frame * 977, st.seed);
+    case "value": { const s = st.nscale; return dvnoise((cx * 16 + ix) * s + frame * 0.7, (cy * 16 + iy) * s, st.seed); }
+    case "worley": {
+      const s = st.nscale, gx = (cx * 16 + ix) * s, gy = (cy * 16 + iy) * s, fx = Math.floor(gx), fy = Math.floor(gy); let best = 9;
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) { const px2 = fx + ox + dnf(fx + ox, fy + oy + frame * 53, st.seed), py2 = fy + oy + dnf(fx + ox + 99, fy + oy, st.seed); const d = (px2 - gx) ** 2 + (py2 - gy) ** 2; if (d < best) best = d; }
+      return Math.min(1, Math.sqrt(best));
+    }
+    default: return (BAYER4[iy & 3][ix & 3] + 0.5) / 16; // "bayer"
+  }
+}
+// per-cell dither square size in px (base ± seeded jitter)
+function dissolveCellSize(st, cx, cy) {
+  if (!st.sizeVar) return st.size;
+  const j = (dnf(cx * 7 + 1, cy * 7 + 1, st.seed) * 2 - 1) * st.sizeVar;
+  return Math.max(2, Math.min(24, Math.round(st.size * (1 + j))));
+}
 
 // Per-type shaft wave (the `wave` on each voidTentacle TENTACLE_TYPE): maps (f along shaft 0..1,
 // time s, per-tentacle seed) to a perpendicular displacement in ~[-1.5,1.5], scaled by THEME
@@ -76,9 +110,9 @@ export function createRunRenderer({
   voidTentacles,
   runState, bgId, getShake, getPaused, getVoidClock, getHeldLine, ts, viewW, viewH,
   getTearProgress = () => 0, getVoidOrig = () => 0,
+  dissolveStyle = DEFAULT_DISSOLVE_STYLE,
 }) {
   const TS = ts, VIEW_W = viewW, VIEW_H = viewH;
-  const DISSOLVE_PX = Math.max(2, Math.floor(TS / 6)); // dither cell of the void dissolve edge
   const mapH = level.h * TS;
   const TILE_COLOR = THEME.tile;
   const LOOT = BALANCE.loot;
@@ -133,10 +167,13 @@ export function createRunRenderer({
   }
 
   // The void punches through the tile it replaces — it is NOT a dual-grid material. Each void cell
-  // fills its own square footprint into `dst` (a destination-in mask for the churn); a cell mid-FADE
-  // crumbles in via an ordered Bayer threshold against its reveal (0→1), so the surface erodes into
-  // the churn with a ragged, cell-aligned growing edge instead of a half-offset dual-grid silhouette.
+  // fills its own square footprint into `dst` (a destination-in mask for the churn); a cell mid-tear
+  // crumbles in via this run's dissolve style (balance.voidDissolve, picked per level) — its sub-cell
+  // threshold field vs the cell's reveal (0→1) — so the surface erodes with a ragged, cell-aligned
+  // edge whose pattern/size differs every descent.
   function drawDissolveMask(dst, dx0, dx1, dy0, dy1) {
+    const st = dissolveStyle;
+    const frame = st.boil > 0 ? Math.floor(getVoidClock() * st.boil) : 0;
     dst.fillStyle = "#fff";
     for (let ty = dy0; ty <= dy1; ty++)
       for (let tx = dx0; tx <= dx1; tx++) {
@@ -144,11 +181,11 @@ export function createRunRenderer({
         if (r <= 0) continue;
         const sx = Math.floor(tx * TS - cam.x), sy = Math.floor(ty * TS - cam.y);
         if (r >= 1) { dst.fillRect(sx, sy, TS + 1, TS + 1); continue; }
-        for (let py = 0; py < TS; py += DISSOLVE_PX)
-          for (let px = 0; px < TS; px += DISSOLVE_PX) {
-            const th = (BAYER4[((py / DISSOLVE_PX) | 0) & 3][((px / DISSOLVE_PX) | 0) & 3] + 0.5) / 16;
-            if (r > th) dst.fillRect(sx + px, sy + py, DISSOLVE_PX, DISSOLVE_PX);
-          }
+        const size = dissolveCellSize(st, tx, ty);
+        for (let py = 0; py < TS; py += size)
+          for (let px = 0; px < TS; px += size)
+            if (r > dissolveThreshold(st, tx, ty, (px / size) | 0, (py / size) | 0, frame))
+              dst.fillRect(sx + px, sy + py, size, size);
       }
   }
 

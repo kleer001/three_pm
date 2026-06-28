@@ -245,6 +245,26 @@ export const BALANCE = {
     swallowPressureDecay: 0.2,  // pressure bled off per second (so one kill never runs away)
     expandThreshold: 1,     // pressure at which a fed hole opens one neighbor (then subtract this) — ~2 eats at one edge
   },
+  // Per-level void-dissolve looks: each run picks ONE style (seeded from the run seed) and renders
+  // the tearing edge's sub-cell dither with it, so every descent's wipe differs. A style is:
+  //   pattern: bayer | bayerCell | hash | value | worley   (the sub-cell threshold field)
+  //   size:    dither square edge in px        sizeVar: ± per-cell size jitter (0..1)
+  //   shuffle: per-cell pattern offset (bayerCell)   boil: Hz the pattern reshuffles over time
+  //   nscale:  feature size for value/worley
+  // Authored + chosen in art-test/void-wipes.html; consumed by runRender drawDissolveMask.
+  voidDissolve: {
+    styles: [
+      { name: "crisp",         pattern: "bayer",     size: 8,  sizeVar: 0,   shuffle: 0, boil: 0, nscale: 0.2 },
+      { name: "fine",          pattern: "bayer",     size: 4,  sizeVar: 0,   shuffle: 0, boil: 0, nscale: 0.2 },
+      { name: "mixed",         pattern: "bayer",     size: 9,  sizeVar: 0.6, shuffle: 1, boil: 0, nscale: 0.2 },
+      { name: "grainy-fine",   pattern: "hash",      size: 5,  sizeVar: 0,   shuffle: 1, boil: 0, nscale: 0.2 },
+      { name: "grainy-coarse", pattern: "hash",      size: 11, sizeVar: 0.3, shuffle: 1, boil: 0, nscale: 0.2 },
+      { name: "big-melt",      pattern: "value",     size: 13, sizeVar: 0,   shuffle: 1, boil: 0, nscale: 0.12 },
+      { name: "cellular",      pattern: "worley",    size: 10, sizeVar: 0,   shuffle: 1, boil: 0, nscale: 0.25 },
+      { name: "cellular-fine", pattern: "worley",    size: 6,  sizeVar: 0.2, shuffle: 1, boil: 0, nscale: 0.45 },
+      { name: "boiling",       pattern: "bayerCell", size: 8,  sizeVar: 0,   shuffle: 1, boil: 4, nscale: 0.2 },
+    ],
+  },
   // Holes grow a tentacle that telegraphs then lashes at a nearby hero. The aim is LOCKED
   // at telegraph start (sidestep to dodge, exactly like the charger). Proximity-gated +
   // capped for perf and fairness. The on-hit effect is keyed by the tentacle's COLOR
@@ -252,26 +272,25 @@ export const BALANCE = {
   // drag-to-rim type ships first. Reach/rest are in TILES (× tileSize at construction).
   voidTentacle: {
     rangeTiles: 3,        // a hero within this many tiles of a hole can wake one
-    reachTiles: 1.6,      // strike reach from the rim, in tiles — ~just past one tile
+    reachTiles: 1.6,      // fallback reach when no target is found; reach is normally the target's own distance
     restTiles: 0.6,       // resting extension during rise/telegraph, in tiles
-    maxActive: 2,         // concurrent tentacles cap (perf + fairness)
+    lipOffsetTiles: 0.8,  // distance the bud sits back INTO the void from the half-tile lip, in tiles (0 = on the lip)
+    maxActive: 6,         // concurrent tentacles cap (perf + fairness)
     spawnInterval: 2.2,   // seconds between spawn attempts (jittered ±25%)
     spawnChancePerRim: 0.05, // per attempt, each in-range void-edge cell rolls this to grow one (~1 in 20)
     holeCooldown: 4,      // seconds a given hole waits before re-spawning
-    budT: 0.35,           // bud: the small circle swells at the rim
-    riseT: 0.25,          // rise: stalk grows to restLen, still tracking the hero
-    telegraphT: 0.55,     // telegraph: AIM LOCKED — the readable dodge window
-    strikeT: 0.18,        // strike: fast lash to maxReach (safety cap on the geometry)
-    retractT: 0.4,        // retract: withdraw, then the hole cools down
-    strikeSpeed: 1600,    // px/s the tip extends during the strike
+    budT: 0.6,            // bud: the small circle swells at the rim
+    riseT: 0.6,           // rise: stalk grows to restLen, still tracking the hero
+    telegraphT: 0.6,      // telegraph: AIM LOCKED — the readable dodge window
+    strikeT: 0.5,         // strike: the lash extends from restLen out to the locked reach over this long
+    retractT: 0.5,        // retract: withdraw, then the hole cools down
     damage: 10,           // flat injury on a clean hit
     // dragIntoHole (purple): grab + drag the member INTO the hole, where it's pulled under and KILLED.
-    grabHoldT: 0.35,      // s safety cap on the pull-in (it normally reaches the center first)
-    dragSpeed: 900,       // px/s the grabbed member is reeled toward the hole interior
+    grabHoldT: 0.5,       // s the grabbed member is reeled into the hole over (pulled under at the center)
     pullInRadius: 6,      // px from the hole center at which the member is pulled under and dies
     swallowVel: 4,        // per-frame inward velocity handed to voidFalling when a body sinks in
-    // knockAway (magenta): total px shove away from the hole (runScene.knockback splits it over frames).
-    knockbackMag: 240,
+    // knockAway (magenta): shove away from the hole, in tiles (runScene.knockback splits it over frames).
+    knockbackTiles: 2,
     // rootInPlace (teal): seconds the struck member is held fast (heroMove + follower re-home honor it).
     rootT: 0.6,
     // A root/knockback that strands a member north of the crush line is fatal — the dark takes a
@@ -334,8 +353,17 @@ export const THEME = {
     tipGlow: "rgba(190,120,255,0.55)", // glowing bulb halo
     ring: "rgba(190,120,255,0.85)",    // telegraph pulse ring
     aimLine: "rgba(190,120,255,0.5)",  // locked-aim dodge line
-    budR: 7, baseR: 6, tipR: 5,        // draw sizes (simple tapered glow — no segments)
+    budR: 7, baseR: 12, tipR: 5,       // draw sizes — thick base tapering to a thin tip
     pulseRate: 8,                       // glow/telegraph pulse (rad/s)
+    waveAmp: 8,                         // sideways shaft-wave amplitude, px (per-type style; see TENTACLE_TYPES)
+    bodyDim: 0.5,                       // shaft body drawn at half luminance; the glow stays full color
+    glowBlur: 14,                       // same-color glow-halo radius around the shaft, px
+    // Telegraph charge: a lighter, glowier band rides base→tip over the telegraph window (the
+    // "about to strike" tell). Intensity = exp(-|（f-pulsePos)/width|^falloff) along the shaft.
+    pulseWidth: 0.15,                   // how far the bright band spreads along the shaft (0..1)
+    pulseFalloff: 1,                    // band edge shape: low = soft, high = sharp-edged
+    pulseLighten: 0.45,                 // how much lighter (toward white) the band peak gets
+    pulseGlowBoost: 20,                 // extra glow-blur px at the band peak
   },
   hero: { hit: "#7fb3ff", normal: "#2d6cdf" },
   follower: { hit: "#ffffff" }, // i-frame flash; each follower's body color comes from BALANCE.follower.roster

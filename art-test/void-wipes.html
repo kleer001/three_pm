@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>void wipes — 12 dissolve styles</title>
+<style>
+  :root{--ink:#1a1a1a;--panel:#fff;--line:#d8d8d8;--accent:#2b6cb0;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:#fafafa;color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+  header{padding:16px 20px 4px;} h1{font-size:19px;margin:0 0 4px;}
+  p.sub{margin:0;color:#555;max-width:80ch;}
+  .controls{padding:10px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;}
+  button{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;}
+  label{display:flex;gap:7px;align-items:center;color:#444;}
+  .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:6px 20px 30px;max-width:1180px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.05);}
+  .card.pick{border-color:var(--accent);box-shadow:0 0 0 2px rgba(43,108,176,.25);}
+  .card h2{font-size:13px;margin:0;padding:8px 10px 2px;display:flex;justify-content:space-between;align-items:baseline;}
+  .card h2 .n{color:#999;font-variant-numeric:tabular-nums;}
+  canvas{display:block;width:100%;height:auto;background:#0a0a12;image-rendering:pixelated;}
+  .cfg{padding:4px 10px 8px;color:#777;font-size:11px;font-family:ui-monospace,Menlo,Consolas,monospace;}
+  .pickbtn{display:block;width:100%;border:none;border-top:1px solid var(--line);border-radius:0;padding:6px;background:#fff;font-size:12px;}
+  .card.pick .pickbtn{background:var(--accent);color:#fff;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Void wipes — 12 dissolve styles</h1>
+  <p class="sub">Each tile is a 2×6 patch of cells with a wipe sweeping left→right on a loop, so you
+  read its behaviour. Real perlin churn + glow + the sub-cell dither. Click the ones you like (or
+  jot the numbers) and tell me which 9 to keep — or what to tweak.</p>
+</header>
+
+<div class="controls">
+  <button id="pause">⏸ pause</button>
+  <label>speed <input id="speed" type="range" min="0.3" max="2" step="0.1" value="1"></label>
+  <label>background
+    <select id="bg"></select>
+  </label>
+  <span id="picks" style="color:#777;"></span>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script type="module">
+import { createVoidRenderer, VOID_BACKGROUNDS } from "../src/run/voidBackgrounds.js";
+
+const GW = 6, GH = 2, TS = 34;
+const W = GW*TS, H = GH*TS;            // 204 × 68 per preview
+const CRUMBLE = 0.4, STAGGER = 0.22;  // shared wipe timing (we're choosing the LOOK, not timing)
+const GMAX = 1 + CRUMBLE + STAGGER;
+
+// 12 styles spanning pattern / size / variation / boil / noise
+const STYLES = [
+  { name:'Crisp grid',     pattern:'bayer',     size:8,  sizeVar:0,   shuffle:0, boil:0, nscale:0.2 },
+  { name:'Crisp / cell',   pattern:'bayerCell', size:8,  sizeVar:0,   shuffle:1, boil:0, nscale:0.2 },
+  { name:'Fine grid',      pattern:'bayer',     size:4,  sizeVar:0,   shuffle:0, boil:0, nscale:0.2 },
+  { name:'Chunky grid',    pattern:'bayer',     size:16, sizeVar:0,   shuffle:1, boil:0, nscale:0.2 },
+  { name:'Mixed sizes',    pattern:'bayer',     size:9,  sizeVar:0.6, shuffle:1, boil:0, nscale:0.2 },
+  { name:'Grainy fine',    pattern:'hash',      size:5,  sizeVar:0,   shuffle:1, boil:0, nscale:0.2 },
+  { name:'Grainy coarse',  pattern:'hash',      size:11, sizeVar:0.3, shuffle:1, boil:0, nscale:0.2 },
+  { name:'Organic melt',   pattern:'value',     size:8,  sizeVar:0,   shuffle:1, boil:0, nscale:0.22 },
+  { name:'Big melt',       pattern:'value',     size:13, sizeVar:0,   shuffle:1, boil:0, nscale:0.12 },
+  { name:'Cellular',       pattern:'worley',    size:10, sizeVar:0,   shuffle:1, boil:0, nscale:0.25 },
+  { name:'Cellular fine',  pattern:'worley',    size:6,  sizeVar:0.2, shuffle:1, boil:0, nscale:0.45 },
+  { name:'Boiling',        pattern:'bayerCell', size:8,  sizeVar:0,   shuffle:1, boil:4, nscale:0.2 },
+];
+
+// ---- hashes / noise ----
+let SEED = 12345;
+function h2(x,y){ let h=(x*374761393 + y*668265263 + SEED*2147483647)|0; h=(h^(h>>>13))*1274126177|0; return ((h^(h>>>16))>>>0); }
+const hf=(x,y)=>h2(x,y)/4294967296;
+const sstep=a=>a*a*(3-2*a);
+function vnoise(x,y){ const xi=Math.floor(x),yi=Math.floor(y),xf=sstep(x-xi),yf=sstep(y-yi);
+  const L=(a,b,f)=>a+(b-a)*f,c=(dx,dy)=>hf(xi+dx,yi+dy);
+  return L(L(c(0,0),c(1,0),xf),L(c(0,1),c(1,1),xf),yf); }
+const BAYER=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+
+function threshold(S, cx,cy, px,py, size, frame){
+  const ix=(px/size)|0, iy=(py/size)|0;
+  switch(S.pattern){
+    case 'bayer': return (BAYER[iy&3][ix&3]+0.5)/16;
+    case 'bayerCell': { const h=S.shuffle?h2(cx,cy+frame*101):0; const ox=h&3,oy=(h>>2)&3,fl=(h>>4)&1,a=(iy+oy)&3,b=(ix+ox)&3; return (BAYER[fl?b:a][fl?a:b]+0.5)/16; }
+    case 'hash': return hf(cx*64+ix, cy*64+iy+frame*977);
+    case 'value': { const s=S.nscale; return vnoise((cx*16+ix)*s+frame*0.7,(cy*16+iy)*s); }
+    case 'worley': { const s=S.nscale,gx=(cx*16+ix)*s,gy=(cy*16+iy)*s,fx=Math.floor(gx),fy=Math.floor(gy); let best=9;
+      for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){ const px2=fx+ox+hf(fx+ox,fy+oy+frame*53),py2=fy+oy+hf(fx+ox+99,fy+oy); const d=(px2-gx)**2+(py2-gy)**2; if(d<best)best=d; } return Math.min(1,Math.sqrt(best)); }
+  }
+  return 0.5;
+}
+function cellSize(S,cx,cy){ if(S.sizeVar<=0)return S.size; const j=(hf(cx*7+1,cy*7+1)*2-1)*S.sizeVar; return Math.max(2,Math.min(24,Math.round(S.size*(1+j)))); }
+
+// reveal for a cell during a left→right wipe at global progress G
+function revealAt(cx,cy,G){ const base=cx/(GW-1); const jit=(hf(cx*5+3,cy*5+3)-0.5)*STAGGER; return Math.max(0,Math.min(1,(G-(base+jit))/CRUMBLE)); }
+
+// ---- shared churn (one perlin buffer for all previews) ----
+let bgId='perlin';
+let churn=createVoidRenderer(bgId,W,H);
+const mk=()=>{const c=document.createElement('canvas');c.width=W;c.height=H;return c;};
+const churnBuf=mk(), churnCtx=churnBuf.getContext('2d');
+const maskBuf=mk(), maskCtx=maskBuf.getContext('2d');
+const glowBuf=mk(), tmpBuf=mk();
+
+function drawLand(ctx){ for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){ ctx.fillStyle=((x+y)&1)?'#5f8742':'#578040'; ctx.fillRect(x*TS,y*TS,TS+1,TS+1); } }
+function buildMask(S,G,frame){
+  maskCtx.clearRect(0,0,W,H); maskCtx.fillStyle='#fff';
+  for(let cy=0;cy<GH;cy++)for(let cx=0;cx<GW;cx++){
+    const r=revealAt(cx,cy,G); if(r<=0)continue; const sx=cx*TS,sy=cy*TS;
+    if(r>=1){maskCtx.fillRect(sx,sy,TS+1,TS+1);continue;}
+    const size=cellSize(S,cx,cy);
+    for(let py=0;py<TS;py+=size)for(let px=0;px<TS;px+=size)
+      if(r>threshold(S,cx,cy,px,py,size,frame)) maskCtx.fillRect(sx+px,sy+py,size,size);
+  }
+}
+function render(ctx,S,G,t){
+  ctx.clearRect(0,0,W,H); ctx.imageSmoothingEnabled=false;
+  drawLand(ctx);
+  const frame=S.boil>0?Math.floor(t*S.boil):0;
+  buildMask(S,G,frame);
+  // glow rim
+  const gc=glowBuf.getContext('2d'); gc.clearRect(0,0,W,H);
+  gc.filter='blur(4px)'; gc.drawImage(maskBuf,0,0); gc.filter='none';
+  gc.globalCompositeOperation='source-in'; gc.fillStyle='rgba(165,205,255,1)'; gc.fillRect(0,0,W,H); gc.globalCompositeOperation='source-over';
+  ctx.globalAlpha=1; ctx.drawImage(glowBuf,0,0); ctx.globalAlpha=0.5; ctx.drawImage(glowBuf,0,0); ctx.globalAlpha=1;
+  // churn punched to mask
+  const tc=tmpBuf.getContext('2d'); tc.clearRect(0,0,W,H); tc.drawImage(churnBuf,0,0);
+  tc.globalCompositeOperation='destination-in'; tc.drawImage(maskBuf,0,0); tc.globalCompositeOperation='source-over';
+  ctx.drawImage(tmpBuf,0,0);
+}
+
+// ---- build cards ----
+const grid=document.getElementById('grid'); const cards=[]; const picks=new Set();
+STYLES.forEach((S,i)=>{
+  const card=document.createElement('div'); card.className='card';
+  card.innerHTML=`<h2>${S.name} <span class="n">#${i+1}</span></h2>
+    <canvas width="${W}" height="${H}"></canvas>
+    <div class="cfg">${S.pattern} · size ${S.size}${S.sizeVar?` ·var ${S.sizeVar}`:''}${S.boil?` ·boil ${S.boil}`:''}${S.pattern==='value'||S.pattern==='worley'?` ·n ${S.nscale}`:''}</div>
+    <button class="pickbtn">pick</button>`;
+  grid.appendChild(card);
+  const ctx=card.querySelector('canvas').getContext('2d');
+  cards.push({S,ctx,card});
+  card.querySelector('.pickbtn').onclick=()=>{ if(picks.has(i)){picks.delete(i);card.classList.remove('pick');} else {picks.add(i);card.classList.add('pick');} updatePicks(); };
+});
+function updatePicks(){ const arr=[...picks].sort((a,b)=>a-b).map(i=>'#'+(i+1)); document.getElementById('picks').textContent = arr.length?`picked (${arr.length}): ${arr.join(', ')}`:''; console.log('PICKS:', arr.join(', ')); }
+
+const bgSel=document.getElementById('bg');
+for(const b of VOID_BACKGROUNDS){const o=document.createElement('option');o.value=b.id;o.textContent=b.name;if(b.id==='perlin')o.selected=true;bgSel.appendChild(o);}
+bgSel.onchange=()=>{ bgId=bgSel.value; churn=createVoidRenderer(bgId,W,H); };
+let paused=false,speed=1;
+document.getElementById('pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'▶ play':'⏸ pause';};
+document.getElementById('speed').oninput=e=>speed=+e.target.value;
+
+// ---- loop ----
+let t=0,last=performance.now();
+const PERIOD=3.2; // seconds per wipe cycle
+function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000)*speed; last=now; if(!paused)t+=dt;
+  churnCtx.clearRect(0,0,W,H); churn.draw(churnCtx,t,0);          // one shared churn draw
+  const G=((t % PERIOD)/PERIOD)*GMAX;                            // synced wipe across all previews
+  for(const c of cards) render(c.ctx,c.S,G,t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

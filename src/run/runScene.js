@@ -176,6 +176,12 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
     level, ts: TS, rng: makeRng(subSeed(seed, "voidreveal")), balance: BALANCE,
     cam, viewH: VIEW_H, harvestRubble: true,
   });
+  // One void-dissolve look per run, picked + salted from a dedicated sub-seed so the same run seed
+  // always tears the same way (reproducible for tests/sandbox) but each run differs.
+  const dissolveStyle = (() => {
+    const r = makeRng(subSeed(seed, "voiddissolve"));
+    return { ...r.pick(BALANCE.voidDissolve.styles), seed: r.int(0x7fffffff) };
+  })();
   // Reality-break interactions (membership tests + the knock-in/vacuum/fall steppers), bound to
   // this run's live arrays. Extracted so the same logic drives the run, the tests, and the sandbox.
   const voidPull = createVoidPull({ level, ts: TS, enemies, voidFalling, balance: BALANCE,
@@ -460,6 +466,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
     runState, bgId,
     getShake: () => shake, getPaused: () => paused, getVoidClock: () => voidClock, getHeldLine: () => heldLine,
     getTearProgress: voidReveal.getTearProgress, getVoidOrig: voidReveal.getVoidOrig,
+    dissolveStyle,
     ts: TS, viewW: VIEW_W, viewH: VIEW_H,
   });
 
