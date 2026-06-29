@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<!-- Temp preview: every powerup drawn as the real ground pickup (disc+ring+emoji),
+     using the actual game draw helpers/theme. Throwaway — delete after sign-off. -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>powerup emoji preview</title>
+<style>
+  body { margin:0; background:#7a8a5c; color:#1a1a1a; font:13px system-ui,sans-serif; padding:1.2rem; }
+  h1 { color:#fff; font-size:1.1rem; margin:0 0 1rem; }
+  .grid { display:grid; grid-template-columns:repeat(5,1fr); gap:.8rem 1rem; max-width:760px; }
+  .cell { background:rgba(255,255,255,0.08); border-radius:10px; padding:.6rem; text-align:center; }
+  .cell canvas { display:block; margin:0 auto .35rem; }
+  .nm { color:#fff; font-weight:600; }
+  .bl { color:#dfe6cf; font-size:.72rem; }
+</style>
+</head>
+<body>
+<h1>Powerup pickups — emoji at game scale (r=13, 18px)</h1>
+<div class="grid" id="grid"></div>
+<script type="module">
+const bust = "?cb=" + Date.now();
+const { POWERUPS } = await import("../src/run/powerups.js" + bust);
+const { disc, ring, glyph } = await import("../src/run/draw.js" + bust);
+const { THEME } = await import("../src/run/balance.js" + bust);
+const grid = document.getElementById("grid");
+const r = 13;
+for (const [id, p] of Object.entries(POWERUPS)) {
+  const cell = document.createElement("div"); cell.className = "cell";
+  const cv = document.createElement("canvas"); cv.width = 48; cv.height = 48;
+  const ctx = cv.getContext("2d");
+  const cx = 24, cy = 24;
+  disc(ctx, cx, cy, r, THEME.pickup.fill);
+  ring(ctx, cx, cy, r, THEME.pickup.ring);
+  ctx.textBaseline = "middle";
+  glyph(ctx, p.emoji, cx, cy, THEME.pickup.glyph, THEME.pickup.emojiFont);
+  ctx.textBaseline = "alphabetic";
+  cell.appendChild(cv);
+  cell.insertAdjacentHTML("beforeend", `<div class="nm">${p.emoji} ${p.name}</div><div class="bl">${p.blurb}</div>`);
+  grid.appendChild(cell);
+}
+</script>
+</body>
+</html>

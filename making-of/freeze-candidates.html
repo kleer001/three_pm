@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<!-- Temp audition page: icy / crystallizing pool samples as freeze-event candidates.
+     Throwaway — delete when the freeze sound is picked. Served over HTTP from the repo. -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3pm — freeze candidates (icy / crystalline)</title>
+<style>
+  :root { --ink:#1a1a1a; --paper:#fafafa; --panel:#fff; --line:#e4e4e4; --accent:#2563c4; --muted:#888; --frost:#eaf2fb; }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--ink); background:var(--paper);
+         font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:1.5rem 1rem 4rem; }
+  .wrap { max-width:760px; margin:0 auto; }
+  h1 { font-size:1.4rem; margin:0 0 .2rem; }
+  h1 span { color:var(--accent); }
+  .sub { color:var(--muted); margin:0 0 1.4rem; }
+  h2 { font-size:.82rem; text-transform:uppercase; letter-spacing:.06em; color:var(--accent);
+       margin:1.6rem 0 .6rem; border-bottom:1px solid var(--line); padding-bottom:.3rem; }
+  .row { display:flex; align-items:center; gap:.9rem; padding:.55rem .7rem; margin-bottom:.5rem;
+         background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .row:hover { border-color:var(--accent); background:var(--frost); }
+  .meta { flex:1; min-width:0; }
+  .label { font-weight:600; }
+  .file { font-family:ui-monospace,Menlo,monospace; font-size:.78rem; color:var(--muted);
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  audio { height:34px; }
+  .note { color:var(--muted); font-size:.85rem; margin-top:.2rem; }
+  .copy { border:1px solid var(--line); background:#fff; border-radius:6px; padding:.3rem .5rem;
+          font-size:.74rem; cursor:pointer; color:var(--muted); white-space:nowrap; }
+  .copy:hover { border-color:var(--accent); color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>freeze candidates — <span>icy / crystalline</span></h1>
+  <p class="sub">19 samples from the pool that read as cold, glassy, or crystallizing. Audition,
+     then set the keeper(s) as layers in the SFX editor (the dropdown lists every sample by this filename).</p>
+
+  <h2>Crystallizing &amp; shimmer sweeps</h2>
+  <div id="crystal"></div>
+  <h2>Icy tinks — dings &amp; clinks</h2>
+  <div id="tink"></div>
+  <h2>Wintry bells</h2>
+  <div id="bells"></div>
+  <h2>Glassy shatter</h2>
+  <div id="shatter"></div>
+</div>
+
+<script>
+const POOL = "../art-test/sfx-preview/pool/"; // moved to making-of/; pool lives under art-test/ (gitignored local clips)
+const GROUPS = {
+  crystal: [
+    ["Crystal effect", "win__christal01_110_eff_2.wav", "bright crystalline sustain — the obvious 'freeze' core"],
+    ["Chimes", "win__chimes_01_2.wav", "soft struck chimes"],
+    ["Chimes, rising", "win__chimes_rising_01_2.wav", "upward sweep — reads as ice forming"],
+    ["Glissando 1", "win__glissando01_2.wav", "shimmery harp/synth sweep"],
+    ["Glissando 2", "win__glissando02_2.wav", ""],
+    ["Glissando 3", "win__glissando03_2.wav", ""],
+    ["Glissando 4", "win__glissando04_2.wav", ""],
+    ["Glissando 5", "win__glissando05_2.wav", ""],
+  ],
+  tink: [
+    ["Ceramic clink", "ceramicclink_01_2.wav", "hard glassy tink"],
+    ["Hit ding", "hitding_01_2.wav", "short metallic ding"],
+    ["Ding", "sfx_ding_2.wav", "clean bell ding"],
+    ["Ding + woosh", "dingwoosh_01_2.wav", "tink with an airy tail — good for a freeze hit"],
+    ["Ding + woosh (alt)", "win__dingwoosh_01_2.wav", "brighter variant"],
+    ["Ding flip", "win__dingflip_2.wav", "ding with a pitch flip"],
+  ],
+  bells: [
+    ["Jingle bells 1", "win__jinglebel1_2.wav", "sleigh bells — wintry texture"],
+    ["Jingle bells 2", "win__jinglebel2_2.wav", ""],
+    ["Air bass + jingle", "win__airbassandjingle_01_2.wav", "bells over an airy bass swell"],
+  ],
+  shatter: [
+    ["Glass break", "breakglassandaugh_01_2.wav", "shatter — already curated on freeze"],
+    ["Slice shudder", "sliceshudder_2.wav", "icy slice with a shudder tail"],
+  ],
+};
+
+function copy(text, btn){
+  navigator.clipboard.writeText(text).then(()=>{ const o=btn.textContent; btn.textContent="copied!"; setTimeout(()=>btn.textContent=o, 900); });
+}
+for(const [id, items] of Object.entries(GROUPS)){
+  const host=document.getElementById(id);
+  for(const [label, file, note] of items){
+    const row=document.createElement("div"); row.className="row";
+    row.innerHTML=`<div class="meta">
+        <div class="label">${label}</div>
+        <div class="file" title="${file}">${file}</div>
+        ${note?`<div class="note">${note}</div>`:""}
+      </div>
+      <audio controls preload="none" src="${POOL}${file}"></audio>
+      <button class="copy">copy name</button>`;
+    row.querySelector(".copy").addEventListener("click", e=>copy(file, e.target));
+    host.appendChild(row);
+  }
+}
+</script>
+</body>
+</html>
