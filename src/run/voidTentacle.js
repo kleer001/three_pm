@@ -45,21 +45,25 @@ function dragIntoHole(member, ten, api) {
 function knockAway(member, ten, api) {
   api.hurt(member, api.K.damage, "void tentacle");
   if (member.dead) { if (!api.isEnemy(member)) api.swallow(member, ten); return; } // monster → normal looted corpse
-  api.knockback(member, member.x - ten.baseX, member.y - ten.baseY, api.K.knockbackMag); // shoved off the hole
+  api.knockback(member, member.x - ten.baseX, member.y - ten.baseY, api.K.knockbackTiles * api.ts); // shoved 2 tiles off the hole
   if (!api.isEnemy(member)) member.voidPerilT = Math.max(member.voidPerilT || 0, api.K.perilT); // flung into the dark = fatal
 }
 function rootInPlace(member, ten, api) {
   api.hurt(member, api.K.damage, "void tentacle");
   if (member.dead) { if (!api.isEnemy(member)) api.swallow(member, ten); return; }
+  ten.rooting = member; // the shaft stays stuck to the held member for rootT (the "stick" state) before retracting
   if (api.isEnemy(member)) { api.pin(member); return; } // monster pinned via the freeze pause
   member.rootT = Math.max(member.rootT || 0, api.K.rootT); // held fast for a beat (heroMove/follower re-home honor it)
   member.voidPerilT = Math.max(member.voidPerilT || 0, api.K.rootT); // held at the crush line → no escaping the dark
 }
 
+// `wave` names the shaft motion each renderer draws — the color/threat read at a glance: the
+// slow purple drag CURLS, the magenta knock WHIPS, the teal root SNAKES. `weight` is the spawn
+// share: knock 3 : root 2 : drag 1 — the lethal grab is the rarest.
 export const TENTACLE_TYPES = [
-  { id: "drag", color: THEME.voidTentacle.colors.drag, onHit: dragIntoHole },
-  { id: "knock", color: THEME.voidTentacle.colors.knock, onHit: knockAway },
-  { id: "root", color: THEME.voidTentacle.colors.root, onHit: rootInPlace },
+  { id: "drag", color: THEME.voidTentacle.colors.drag, wave: "curl", weight: 1, onHit: dragIntoHole },
+  { id: "knock", color: THEME.voidTentacle.colors.knock, wave: "whip", weight: 3, onHit: knockAway },
+  { id: "root", color: THEME.voidTentacle.colors.root, wave: "snake", weight: 2, onHit: rootInPlace },
 ];
 
 export function createVoidTentacles({
@@ -131,12 +135,13 @@ export function createVoidTentacles({
   function rimForTile(tx, ty, member) {
     const hcx = tx * TS + TS / 2, hcy = ty * TS + TS / 2;
     const tdx = member.x - hcx, tdy = member.y - hcy, dm = Math.hypot(tdx, tdy) || 1;
+    const lip = TS / 2 - (K.lipOffsetTiles || 0) * TS; // bud sits at the lip, set back into the void by the knob
     let best = null, bestScore = -Infinity;
     for (const [dx, dy] of NEIGHBORS) {
       if (!isWalkable(level, tx + dx, ty + dy)) continue;
       const dot = (dx * tdx + dy * tdy) / dm;
       if (dot <= 0) continue; // only the side facing the member
-      const bx = hcx + dx * TS / 2, by = hcy + dy * TS / 2;
+      const bx = hcx + dx * lip, by = hcy + dy * lip;
       const score = dot - 0.002 * Math.hypot(member.x - bx, member.y - by);
       if (score > bestScore) { bestScore = score; best = { tx, ty, baseX: bx, baseY: by, holeCX: hcx, holeCY: hcy, score }; }
     }
@@ -225,13 +230,21 @@ export function createVoidTentacles({
       }
       case "rise": {
         t.timer -= dt;
-        const tgt = nearestTarget(t.baseX, t.baseY); // still tracking: lean toward the hero
+        const tgt = nearestTarget(t.baseX, t.baseY); // still tracking: lean toward the target
         if (tgt) {
           const m = Math.hypot(tgt.x - t.baseX, tgt.y - t.baseY) || 1;
           t.aimX = (tgt.x - t.baseX) / m; t.aimY = (tgt.y - t.baseY) / m;
         }
         t.len = t.restLen * clamp(1 - t.timer / K.riseT, 0, 1);
-        if (t.timer <= 0) { t.state = "telegraph"; t.timer = K.telegraphT; } // aim now LOCKED
+        if (t.timer <= 0) {
+          // Lock the reach to the target's distance so the lash extends exactly far enough to
+          // catch it and no farther — computed from the creature's location, not a fixed knob.
+          // Captured here with the aim, so a sidestep after this whiffs. Falls back to reachTiles
+          // only if the target vanished mid-rise.
+          const reach = tgt ? Math.hypot(tgt.x - t.baseX, tgt.y - t.baseY) + tgt.r : K.reachTiles * TS;
+          t.maxReach = Math.max(t.restLen, reach);
+          t.state = "telegraph"; t.timer = K.telegraphT; // aim now LOCKED
+        }
         break;
       }
       case "telegraph": {
@@ -242,16 +255,30 @@ export function createVoidTentacles({
       }
       case "strike": {
         t.timer -= dt;
-        // Test at the CURRENT tip before advancing, so a member sitting inside the resting
-        // reach (closer than restLen) is still caught — the lash doesn't step over it.
+        // Time-driven lash: extend from the resting length out to the locked reach over strikeT,
+        // so the strike always takes the same beat no matter how far the target is. Hit-test the
+        // current tip each frame (it starts at restLen) so a member already inside reach is
+        // caught — the lash never steps over it.
+        t.len = t.restLen + (t.maxReach - t.restLen) * clamp(1 - t.timer / K.strikeT, 0, 1);
         if (!t.hit) {
           const tipX = t.baseX + t.aimX * t.len, tipY = t.baseY + t.aimY * t.len;
           const m = hitTest(tipX, tipY, t.tipR);
           if (m) { t.hit = true; t.type.onHit(m, t, api); }
         }
-        if (t.grabbed) { t.state = "grab"; t.timer = K.grabHoldT; break; }
-        if (t.len >= t.maxReach || t.timer <= 0) { beginRetract(t); break; }
-        t.len = Math.min(t.maxReach, t.len + K.strikeSpeed * dt);
+        if (t.grabbed) { t.state = "grab"; t.timer = K.grabHoldT; t.grabFromX = t.grabbed.x; t.grabFromY = t.grabbed.y; break; }
+        if (t.rooting) { t.state = "stick"; t.timer = K.rootT; break; } // root: cling to the held member for rootT
+        if (t.timer <= 0) beginRetract(t);
+        break;
+      }
+      case "stick": {
+        t.timer -= dt;
+        const m = t.rooting;
+        if (!m || m.dead) { t.rooting = null; beginRetract(t); break; }
+        // Cling to the rooted member: keep the shaft reaching exactly to it (re-aimed each frame
+        // in case it's nudged), so the tentacle is visibly stuck for rootT, then lets go + retracts.
+        const dx = m.x - t.baseX, dy = m.y - t.baseY, d = Math.hypot(dx, dy) || 1;
+        t.aimX = dx / d; t.aimY = dy / d; t.len = d;
+        if (t.timer <= 0) { t.rooting = null; beginRetract(t); }
         break;
       }
       case "grab": {
@@ -261,13 +288,14 @@ export function createVoidTentacles({
           if (m && m.dead) swallow(m, t); // already dead → into the void
           t.grabbed = null; beginRetract(t); break;
         }
-        // Reel the member toward the hole INTERIOR (we ignore that it's non-walkable — this
-        // is a death animation). When it reaches the center (or the safety cap fires) it's
-        // pulled under and KILLED — dragged into the void and gone, never deposited back.
-        const dx = t.holeCX - m.x, dy = t.holeCY - m.y, d = Math.hypot(dx, dy);
-        const stepLen = Math.min(d, K.dragSpeed * dt);
-        if (d > 1e-3) { m.x += (dx / d) * stepLen; m.y += (dy / d) * stepLen; }
+        // Reel the member from where it was caught toward the hole INTERIOR over grabHoldT (we
+        // ignore that it's non-walkable — this is a death animation). When it reaches the center
+        // (or the timer ends) it's pulled under and KILLED — dragged into the void and gone.
+        const f = clamp(1 - t.timer / K.grabHoldT, 0, 1);
+        m.x = t.grabFromX + (t.holeCX - t.grabFromX) * f;
+        m.y = t.grabFromY + (t.holeCY - t.grabFromY) * f;
         t.len = Math.hypot(m.x - t.baseX, m.y - t.baseY); // shaft visibly holds the victim
+        const d = Math.hypot(t.holeCX - m.x, t.holeCY - m.y);
         if (d <= K.pullInRadius || t.timer <= 0) {
           pullKill(m, t);
           t.grabbed = null; beginRetract(t);
@@ -285,17 +313,23 @@ export function createVoidTentacles({
     }
   }
 
-  // Force-spawn at a rim (tests/sandbox); typeId picks a specific color, else seeded.
+  // Weighted spawn roll over TENTACLE_TYPES.weight (knock 3 : root 2 : drag 1).
+  function pickType() {
+    let r = rng.next() * TENTACLE_TYPES.reduce((s, t) => s + t.weight, 0);
+    for (const t of TENTACLE_TYPES) if ((r -= t.weight) < 0) return t;
+    return TENTACLE_TYPES[TENTACLE_TYPES.length - 1];
+  }
+
+  // Force-spawn at a rim (tests/sandbox); typeId picks a specific color, else weighted-seeded.
   function _spawnAt(rim, typeId) {
-    const type = typeId ? TENTACLE_TYPES.find((x) => x.id === typeId)
-                        : TENTACLE_TYPES[rng.int(TENTACLE_TYPES.length)];
+    const type = typeId ? TENTACLE_TYPES.find((x) => x.id === typeId) : pickType();
     const t = {
       type, color: type.color,
       baseX: rim.baseX, baseY: rim.baseY, holeCX: rim.holeCX, holeCY: rim.holeCY,
       aimX: 0, aimY: 0, len: 0,
       maxReach: K.reachTiles * TS, restLen: K.restTiles * TS,
       holeKey: rim.ty * level.w + rim.tx,
-      state: "bud", timer: K.budT, hit: false, grabbed: null,
+      state: "bud", timer: K.budT, hit: false, grabbed: null, rooting: null,
       budT: 0, tipR: THEME.voidTentacle.tipR, seed: rng.next() * Math.PI * 2,
       retractFrom: 0, done: false,
     };
