@@ -23,36 +23,33 @@ import { recomputeDerived, STAT_KEYS } from "./combat.js";
 // never enter applyHeld.
 export const POWERUPS = {
   // Common — clean 1:1 stat swaps.
-  pre_workout:  { name: "Pre-Workout",  blurb: "+2 strength, −2 speed",        rarity: "common", stat: { strength: 2, speed: -2 } },
-  thick_hide:   { name: "Thick Hide",   blurb: "+2 toughness, −2 speed",       rarity: "common", stat: { constitution: 2, speed: -2 } },
-  honor_roll:   { name: "Honor Roll",   blurb: "+2 magic, −2 strength",        rarity: "common", stat: { magic: 2, strength: -2 } },
-  track_star:   { name: "Track Star",   blurb: "+2 speed, −2 toughness",       rarity: "common", stat: { speed: 2, constitution: -2 } },
-  cliff_notes:  { name: "Cliff Notes",  blurb: "+2 magic, −2 toughness",       rarity: "common", stat: { magic: 2, constitution: -2 } },
-  glass_jaw:    { name: "Glass Jaw",    blurb: "+2 strength, −2 toughness",    rarity: "common", stat: { strength: 2, constitution: -2 } },
-  sugar_rush:   { name: "Sugar Rush",   blurb: "+2 speed, −2 magic",           rarity: "common", stat: { speed: 2, magic: -2 } },
-
+  pre_workout:  { name: "Pre-Workout",  blurb: "+2 strength, −2 speed",        rarity: "common", stat: { strength: 2, speed: -2 } , emoji: "💪" },
+  thick_hide:   { name: "Thick Hide",   blurb: "+2 toughness, −2 speed",       rarity: "common", stat: { constitution: 2, speed: -2 } , emoji: "🪨" },
+  honor_roll:   { name: "Honor Roll",   blurb: "+2 magic, −2 strength",        rarity: "common", stat: { magic: 2, strength: -2 } , emoji: "📚" },
+  track_star:   { name: "Track Star",   blurb: "+2 speed, −2 toughness",       rarity: "common", stat: { speed: 2, constitution: -2 } , emoji: "👟" },
+  cliff_notes:  { name: "Cliff Notes",  blurb: "+2 magic, −2 toughness",       rarity: "common", stat: { magic: 2, constitution: -2 } , emoji: "📓" },
+  glass_jaw:    { name: "Glass Jaw",    blurb: "+2 strength, −2 toughness",    rarity: "common", stat: { strength: 2, constitution: -2 } , emoji: "🥃" },
+  sugar_rush:   { name: "Sugar Rush",   blurb: "+2 speed, −2 magic",           rarity: "common", stat: { speed: 2, magic: -2 } , emoji: "🧁" },
   // Uncommon — bigger swings + weapon-feel curses.
-  hair_trigger: { name: "Hair Trigger", blurb: "much faster, −6 damage",       rarity: "uncommon", weapon: { damage: { base: -6 }, mult: { cd: 0.60 } } },
-  heavy_hands:  { name: "Heavy Hands",  blurb: "+9 damage & knockback, slow",  rarity: "uncommon", weapon: { damage: { base: 9 }, knockback: 1, mult: { cd: 1.40 } } },
-  split_shot:   { name: "Split Shot",   blurb: "+1 projectile, −5 each",       rarity: "uncommon", weapon: { count: 1, damage: { base: -5 } } },
-  mana_battery: { name: "Mana Battery", blurb: "+3 magic, −3 speed",           rarity: "uncommon", stat: { magic: 3, speed: -3 } },
-  berserker:    { name: "Berserker",    blurb: "+3 strength, −3 toughness",    rarity: "uncommon", stat: { strength: 3, constitution: -3 } },
-  lead_boots:   { name: "Lead Boots",   blurb: "+3 toughness, −3 speed",       rarity: "uncommon", stat: { constitution: 3, speed: -3 } },
-
+  hair_trigger: { name: "Hair Trigger", blurb: "much faster, −6 damage",       rarity: "uncommon", weapon: { damage: { base: -6 }, mult: { cd: 0.60 } } , emoji: "⚡" },
+  heavy_hands:  { name: "Heavy Hands",  blurb: "+9 damage & knockback, slow",  rarity: "uncommon", weapon: { damage: { base: 9 }, knockback: 1, mult: { cd: 1.40 } } , emoji: "🔨" },
+  split_shot:   { name: "Split Shot",   blurb: "+1 projectile, −5 each",       rarity: "uncommon", weapon: { count: 1, damage: { base: -5 } } , emoji: "🔱" },
+  mana_battery: { name: "Mana Battery", blurb: "+3 magic, −3 speed",           rarity: "uncommon", stat: { magic: 3, speed: -3 } , emoji: "🔋" },
+  berserker:    { name: "Berserker",    blurb: "+3 strength, −3 toughness",    rarity: "uncommon", stat: { strength: 3, constitution: -3 } , emoji: "🪓" },
+  lead_boots:   { name: "Lead Boots",   blurb: "+3 toughness, −3 speed",       rarity: "uncommon", stat: { constitution: 3, speed: -3 } , emoji: "🥾" },
   // Rare — sharp, build-defining gambles.
-  needle_tip:   { name: "Needle Tip",   blurb: "pierces, no knockback, slower", rarity: "rare", weapon: { pierce: true, damage: { base: -5 }, mult: { cd: 1.20, knockback: 0 } } },
-  cold_snap:    { name: "Cold Snap",    blurb: "hits freeze, much slower",      rarity: "rare", weapon: { freeze: true, mult: { cd: 1.45 } } },
-  hand_cannon:  { name: "Hand Cannon",  blurb: "huge damage, short & slow",     rarity: "rare", weapon: { damage: { base: 14, pctMax: 0.12 }, range: -150, mult: { cd: 1.40 } } },
-  redline:      { name: "Redline",      blurb: "+4 speed, −4 toughness",        rarity: "rare", stat: { speed: 4, constitution: -4 } },
-  zealotry:     { name: "Zealotry",     blurb: "+4 magic, −4 toughness",        rarity: "rare", stat: { magic: 4, constitution: -4 } },
-
+  needle_tip:   { name: "Needle Tip",   blurb: "pierces, no knockback, slower", rarity: "rare", weapon: { pierce: true, damage: { base: -5 }, mult: { cd: 1.20, knockback: 0 } } , emoji: "🪡" },
+  cold_snap:    { name: "Cold Snap",    blurb: "hits freeze, much slower",      rarity: "rare", weapon: { freeze: true, mult: { cd: 1.45 } } , emoji: "🧊" },
+  hand_cannon:  { name: "Hand Cannon",  blurb: "huge damage, short & slow",     rarity: "rare", weapon: { damage: { base: 14, pctMax: 0.12 }, range: -150, mult: { cd: 1.40 } } , emoji: "💥" },
+  redline:      { name: "Redline",      blurb: "+4 speed, −4 toughness",        rarity: "rare", stat: { speed: 4, constitution: -4 } , emoji: "🚥" },
+  zealotry:     { name: "Zealotry",     blurb: "+4 magic, −4 toughness",        rarity: "rare", stat: { magic: 4, constitution: -4 } , emoji: "🙏" },
   // Timed buffs (docs/19) — a live, expiring effect the run applies directly (see
   // runScene `acquire`/`activeBuffs`), so they never enter applyHeld. `effect` picks
   // the channel: "speed" multiplies the head's move speed, "time" scales the whole
   // sim (bullet-time, the head stays fast). Each carries its own gamble: BPM Boost
   // leaves a hard slow tail when it ends; Slow Jam costs a heavy chunk of HP up front.
-  bpm_boost:    { name: "BPM Boost", blurb: "speed burst, then a crash", rarity: "uncommon", kind: "buff", effect: "speed", mult: 1.7, duration: 6, tailMult: 0.5, tailDuration: 6 },
-  slow_jam:     { name: "Slow Jam",  blurb: "bullet-time, costs HP",     rarity: "rare",     kind: "buff", effect: "time",  mult: 0.5, duration: 5, hpCostFrac: 0.35 },
+  bpm_boost:    { name: "BPM Boost", blurb: "speed burst, then a crash", rarity: "uncommon", kind: "buff", effect: "speed", mult: 1.7, duration: 6, tailMult: 0.5, tailDuration: 6 , emoji: "⏩" },
+  slow_jam:     { name: "Slow Jam",  blurb: "bullet-time, costs HP",     rarity: "rare",     kind: "buff", effect: "time",  mult: 0.5, duration: 5, hpCostFrac: 0.35 , emoji: "🐌" },
 };
 
 // Synergies (spec-07 `synergies.json`): a combo gated on a held-set. `requires` ids

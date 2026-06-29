@@ -8,6 +8,7 @@ import { TILE } from "./levelgen.js";
 import { BALANCE, THEME } from "./balance.js";
 import { createVoidRenderer } from "./voidBackgrounds.js";
 import { disc, ring, bar, glyph, drawMember } from "./draw.js";
+import { POWERUPS } from "./powerups.js";
 
 const GLOW_BLUR = 6;
 const GLOW_COLOR = "rgba(165,205,255,1)";
@@ -202,11 +203,6 @@ export function createRunRenderer({
         ctx.globalAlpha = 0.4 + 0.4 * pulse;
         ring(ctx, bx, by, T.budR + 4 + pulse * 4, T.ring);
         ctx.globalAlpha = 1;
-        ctx.strokeStyle = T.aimLine;
-        ctx.beginPath();
-        ctx.moveTo(bx, by);
-        ctx.lineTo(bx + t.aimX * t.maxReach, by + t.aimY * t.maxReach);
-        ctx.stroke();
       }
       // The bud IS the whole taper collapsed at the rim under one growing scale (budT) — no
       // separate circle, no pop. As the shaft extends (len grows) the discs unfurl and the wave
@@ -352,8 +348,16 @@ export function createRunRenderer({
       if (p.dead) continue;
       const px = p.x - cam.x, py = p.y - cam.y + Math.sin(p.t * LOOT.pickupBobRate) * LOOT.pickupBob;
       disc(ctx, px, py, p.r, THEME.pickup.fill);
+      ctx.lineWidth = 1;
       ring(ctx, px, py, p.r, THEME.pickup.ring);
-      glyph(ctx, "+", px, py + 4, THEME.pickup.glyph, THEME.pickup.glyphFont);
+      const emoji = POWERUPS[p.defId]?.emoji;
+      if (emoji) {
+        ctx.textBaseline = "middle";              // emojis center on the baseline, not the +4 fudge
+        glyph(ctx, emoji, px, py, THEME.pickup.glyph, THEME.pickup.emojiFont);
+        ctx.textBaseline = "alphabetic";
+      } else {
+        glyph(ctx, "+", px, py + 4, THEME.pickup.glyph, THEME.pickup.glyphFont);
+      }
     }
 
     // Piercing shots draw as a beam from launch origin to the live tip (a sin envelope

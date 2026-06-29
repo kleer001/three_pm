@@ -352,7 +352,6 @@ export const THEME = {
     },
     tipGlow: "rgba(190,120,255,0.55)", // glowing bulb halo
     ring: "rgba(190,120,255,0.85)",    // telegraph pulse ring
-    aimLine: "rgba(190,120,255,0.5)",  // locked-aim dodge line
     budR: 7, baseR: 12, tipR: 5,       // draw sizes — thick base tapering to a thin tip
     pulseRate: 8,                       // glow/telegraph pulse (rad/s)
     waveAmp: 8,                         // sideways shaft-wave amplitude, px (per-type style; see TENTACLE_TYPES)
@@ -367,7 +366,7 @@ export const THEME = {
   },
   hero: { hit: "#7fb3ff", normal: "#2d6cdf" },
   follower: { hit: "#ffffff" }, // i-frame flash; each follower's body color comes from BALANCE.follower.roster
-  pickup: { fill: "#f1c40f", ring: "rgba(255,255,255,0.85)", glyph: "#3a2e00", glyphFont: "bold 13px system-ui, sans-serif" }, // powerup drop on the ground
+  pickup: { fill: "rgba(153, 183, 213, 0.27)", ring: "rgba(121, 255, 255, 0.45)", glyph: "#3a2e00", glyphFont: "bold 13px system-ui, sans-serif", emojiFont: "18px system-ui, sans-serif" }, // powerup drop on the ground
   shop: { fill: "#1f6f4a", ring: "#3ddc97", roof: "#13452f", glyph: "#eafff5", glyphFont: "bold 16px system-ui, sans-serif", // shop marker
     label: "rgba(0,0,0,0.7)", labelText: "#fff", labelFont: "13px system-ui, sans-serif", afford: "#3ddc97", broke: "#e57373" },
   bar: { back: "rgba(0,0,0,0.5)", hp: "#e74c3c", mana: "#3498db", tapped: "rgba(52,152,219,0.25)", w: 26, h: 3, gap: 2 },
