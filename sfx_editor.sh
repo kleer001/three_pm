@@ -8,7 +8,9 @@ cd "$(dirname "$0")"
 PORT="${1:-8123}"
 URL="http://localhost:$PORT/art-test/sfx-editor.html"
 
-python3 -m http.server "$PORT" &
+# ThreadingHTTPServer (not the stock single-threaded `http.server`): the latter
+# wedges once a browser holds a connection, leaving the page blank on reload.
+python3 -c "import sys,http.server; http.server.ThreadingHTTPServer(('',int(sys.argv[1])),http.server.SimpleHTTPRequestHandler).serve_forever()" "$PORT" &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null' EXIT
 
