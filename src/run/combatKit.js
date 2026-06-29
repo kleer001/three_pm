@@ -238,6 +238,10 @@ export function createCombat(env) {
 
   function stepProjectiles(dt) {
     const vf = BALANCE.voidFall;
+    // Enemy shots collide with heroes AND other enemies (friendly fire) — a shot can't pass
+    // through any body, dead or alive, on its way to a hero. Player shots hit enemies. Built
+    // once per frame: a death flags `.dead` (the body still blocks), it never splices the array.
+    const enemyShotTargets = env.heroTargets.concat(enemies);
     for (const p of projectiles) {
       if (p.dead) continue;
       if (p.planted) { p.fuse -= dt; if (p.fuse <= 0) { detonate(p); p.dead = true; } continue; }
@@ -258,7 +262,8 @@ export function createCombat(env) {
         dropDebris(p); p.dead = true; continue;
       }
       const pad = p.faction === "enemy" ? BALANCE.enemyShotHitPad : 0;
-      for (const t of (p.faction === "player" ? enemies : env.heroTargets)) {
+      for (const t of (p.faction === "player" ? enemies : enemyShotTargets)) {
+        if (t === p.attacker) continue; // never the enemy that fired it
         if (t.pending || t.fadeT > 0) continue; // not-yet-joined or still fading in: intangible
         if (dist(p.x, p.y, t.x, t.y) >= p.shotR + t.r + pad) continue;
         if (t.dead) { // a corpse is a solid body — it stops a plain shot so it can't hit a live enemy behind; bombs/fuses/beams pass as before
