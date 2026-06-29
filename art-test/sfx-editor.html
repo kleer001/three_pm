@@ -40,6 +40,7 @@
   .layer { border:1px solid var(--line); border-radius:8px; padding:.55rem .6rem; margin-bottom:.55rem; background:#fff; cursor:pointer; }
   .layer.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
   .layer .lname { font-size:.82rem; display:flex; align-items:center; gap:.35rem; justify-content:space-between; }
+  .layer .lname .lsel { flex:1; min-width:0; font-size:.78rem; padding:.2rem .3rem; border:1px solid var(--line); border-radius:6px; background:#fff; }
   .layer .lname .x { color:var(--muted); border:none; background:none; font-size:1rem; line-height:1; padding:0 .1rem; }
   .layer .lname .x:hover { color:var(--accent); }
   .ctl { display:flex; align-items:center; gap:.4rem; margin-top:.45rem; font-size:.76rem; color:#555; }
@@ -143,6 +144,7 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 
 // ---- state ----
 let manifest = {};          // event -> {group, desc, samples:[{file,label}]}
+let allSamples = [];        // every pool sample {file:"pool/x.wav", label} for the layer pulldown
 let slots = [];             // recipes
 let slotIdx = 0, selLayer = 0;
 
@@ -281,12 +283,13 @@ function buildLayerList(){
   const R=recipe(); if(!R){ host.innerHTML='<div class="hint">Load picks to begin.</div>'; return; }
   R.layers.forEach((l,i)=>{
     const el=document.createElement("div"); el.className="layer"+(i===selLayer?" sel":"");
-    const nm=l.sourceFile.replace("pool/","");
-    el.innerHTML=`<div class="lname"><span class="mono">${nm}</span><button class="x" title="remove">×</button></div>
+    const opts=allSamples.map(s=>`<option value="${s.file}"${s.file===l.sourceFile?" selected":""}>${s.label}</option>`).join("");
+    el.innerHTML=`<div class="lname"><select class="lsel mono" title="swap sample">${opts}</select><button class="x" title="remove">×</button></div>
       <div class="ctl"><span>offset</span><input type="range" min="0" max="100" value="${Math.round(l.offset01*100)}">
         <span class="mono">${Math.round(l.offset01*100)}%</span></div>
       <div class="ctl"><label class="toggle"><input type="checkbox" ${l.reverse?"checked":""}> reverse</label></div>`;
-    el.addEventListener("click",e=>{ if(e.target.closest("input,button"))return; selLayer=i; refresh(); });
+    el.addEventListener("click",e=>{ if(e.target.closest("input,button,select"))return; selLayer=i; refresh(); });
+    el.querySelector(".lsel").addEventListener("change",e=>{ l.sourceFile=e.target.value; selLayer=i; refresh(); });
     el.querySelector(".x").addEventListener("click",()=>{ if(R.layers.length>1){ R.layers.splice(i,1); selLayer=0; refresh(); }});
     const rng=el.querySelector('input[type=range]');
     rng.addEventListener("input",()=>{ l.offset01=rng.value/100; rng.nextElementSibling.textContent=rng.value+"%"; drawWave(); });
@@ -366,8 +369,18 @@ $("recipeInput").addEventListener("change",async e=>{
 
 // ---- boot: load manifest for labels, then the working picks file (falling back to a demo) ----
 (async function boot(){
-  manifest = Object.fromEntries((await fetch("sfx-preview/manifest.json").then(r=>r.json()))
-                                .map(ev=>[ev.name, ev]));
+  const gameplay = await fetch("sfx-preview/manifest.json").then(r=>r.json());
+  manifest = Object.fromEntries(gameplay.map(ev=>[ev.name, ev]));
+  // The full pool spans two manifests with different shapes: gameplay events
+  // (file:"pool/x.wav") and the win/death pool (file:"sfx-preview/pool/x.wav", slug).
+  // Flatten both into one deduped list so every sample is pickable per layer.
+  const winDeath = await fetch("sfx-preview/win-death-manifest.json").then(r=>r.json());
+  const seen=new Set();
+  for(const ev of gameplay) for(const s of ev.samples)
+    if(!seen.has(s.file)){ seen.add(s.file); allSamples.push({file:s.file, label:s.label||s.file.replace("pool/","")}); }
+  for(const r of winDeath){ const file=r.file.replace(/^sfx-preview\//,"");
+    if(!seen.has(file)){ seen.add(file); allSamples.push({file, label:r.slug||file.replace("pool/","")}); } }
+  allSamples.sort((a,b)=>a.label.localeCompare(b.label));
   let picks = await fetch("sfx-picks.json").then(r=>r.ok?r.json():null).catch(()=>null);
   if(!picks){ // no working file → demo from the first sample of a few punchy events
     picks={}; for(const e of ["hit","shoot","explode","scream"].filter(e=>manifest[e])) picks[e]=[manifest[e].samples[0].file];
