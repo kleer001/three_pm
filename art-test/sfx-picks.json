@@ -5,7 +5,7 @@
   "field": ["bassshortrumble_01_2.wav", "sfx_electroground_2.wav"],
   "explode": ["sfx_explode_2.wav", "sfx_bang1_2.wav"],
   "hit": ["slap_01_2.wav", "bitchslap_2.wav", "punchsand_2.wav"],
-  "freeze": ["ceramicclink_01_2.wav", "hitding_01_2.wav"],
+  "freeze": ["win__glissando02_2.wav", "win__airbassandjingle_01_2.wav", "sfx_ding_2.wav", "dingwoosh_01_2.wav"],
   "death": ["death__basshitandsquish_02_2.wav", "death__stick_dropp_03_2.wav"],
   "enemyShoot": ["sfx_electroground_2.wav", "angrybuzz_01_2.wav"],
   "hurt": ["sfx_scouthurt_2.wav", "sfx_heavyhurt_2.wav", "hitandgasp_01_2.wav"],

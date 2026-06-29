@@ -51,7 +51,16 @@ const SFX = {
 // the synth recipe; if a file is absent (404) or won't decode, the recipe stands in — the
 // game never depends on a file existing. Any event in SFX can be sample-backed here.
 const SAMPLES = {
-  scream:   ["assets/sfx/scream_1.wav", "assets/sfx/scream_2.wav", "assets/sfx/scream_3.wav", "assets/sfx/scream_4.wav"],
+  shoot:      "assets/sfx/shoot.wav",
+  swing:      "assets/sfx/swing.wav",
+  hit:        "assets/sfx/hit.wav",
+  freeze:     "assets/sfx/freeze.wav",
+  nova:       "assets/sfx/nova.wav",
+  field:      "assets/sfx/field.wav",
+  enemyShoot: "assets/sfx/enemyShoot.wav",
+  explode:    "assets/sfx/explode.wav",
+  hurt:       "assets/sfx/hurt.wav",
+  scream:     "assets/sfx/scream.wav",
   uiMove:   "assets/sfx/ui_move.wav",
   uiSelect: "assets/sfx/ui_select.wav",
   uiBack:   "assets/sfx/ui_back.wav",
