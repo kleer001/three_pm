@@ -70,6 +70,9 @@
   .lanecard .preset { font-size:.7rem; padding:.08rem .2rem; border:1px solid var(--line); border-radius:5px; background:#fff; color:#555; }
   .lanecard .reset { border:1px solid var(--line); background:#fff; border-radius:5px; font-size:.82rem; line-height:1; padding:.12rem .34rem; color:#666; }
   .lanecard .reset:hover { border-color:var(--ink); color:var(--ink); }
+  .lanecard .biasrow { display:flex; align-items:center; gap:.4rem; margin-top:.25rem; }
+  .lanecard .biaslbl { font-size:.66rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .lanecard .bias { flex:1; height:1rem; }
 
   .knobs { display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; }
   .knob { font-size:.74rem; color:#555; } .knob input { width:100%; accent-color:var(--lane); }
@@ -214,6 +217,21 @@ function makeLane(host, cfg, kf, onChange){
     const x=clamp01((e.clientX-r.left)/r.width), y=clamp01(1-(e.clientY-r.top)/r.height);
     const i=kf.findIndex(p=>Math.hypot(p.t01-x,p.v01-y)<0.07);
     if(i>0 && i<kf.length-1){ kf.splice(i,1); draw(); onChange&&onChange(); } });
+  // Offset: shift every keyframe up/down by the same amount, leaving the shape intact.
+  // Snapshots the curve at drag-start so a drag is non-lossy (clamp only limits the result),
+  // then springs back to center on release so it reads as a repeatable nudge.
+  const biasRow=document.createElement("div"); biasRow.className="biasrow";
+  biasRow.innerHTML=`<span class="biaslbl">offset</span>`+
+    `<input type="range" class="bias" min="-1" max="1" step="0.01" value="0" title="shift the whole curve up / down">`;
+  wrap.appendChild(biasRow);
+  const slider=biasRow.querySelector(".bias"); let biasBase=null;
+  slider.addEventListener("input",()=>{
+    if(biasBase===null) biasBase=kf.map(p=>p.v01);
+    const off=+slider.value;
+    kf.forEach((p,i)=>{ p.v01=clamp01(snapY(biasBase[i]+off)); });
+    readEl.textContent=(off>=0?"+":"")+Math.round(off*100)+"%"; draw(); onChange&&onChange();
+  });
+  slider.addEventListener("change",()=>{ slider.value=0; biasBase=null; readEl.textContent=cfg.read; });
   draw(); return draw;
 }
 
