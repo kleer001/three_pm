@@ -27,6 +27,9 @@
   .btn.accent { background:var(--accent); color:#fff; border-color:var(--accent); }
   .btn.sm { padding:.25rem .5rem; font-size:.8rem; }
   .stepper { display:flex; align-items:center; gap:.5rem; }
+  .rstat { font-size:.74rem; padding:.18rem .5rem; border-radius:999px; margin-left:.4rem; white-space:nowrap; }
+  .rstat.saved { color:var(--good); background:#eaf6ee; }
+  .rstat.unsaved { color:var(--muted); background:#f2f2f2; }
   .slotsel { font-weight:600; font-size:.86rem; padding:.3rem .5rem; border:1px solid var(--line);
              border-radius:6px; background:#fff; color:var(--ink); max-width:280px; }
   .pill { background:var(--line2); border-radius:999px; padding:.15rem .55rem; font-size:.78rem; color:#555; }
@@ -86,6 +89,7 @@
   <div class="stepper">
     <span class="pill" id="slotCount">– / –</span>
     <select class="slotsel" id="slotSelect" title="jump to slot"><option>no slots</option></select>
+    <span id="recipeStatus" class="rstat" style="display:none"></span>
   </div>
   <span class="grow"></span>
   <label class="toggle"><input type="checkbox" id="normalize" checked> normalize</label>
@@ -145,6 +149,7 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 // ---- state ----
 let manifest = {};          // event -> {group, desc, samples:[{file,label}]}
 let allSamples = [];        // every pool sample {file:"pool/x.wav", label} for the layer pulldown
+const savedRecipes = new Set();  // events that already have a docs/sound-fx/<event>.recipe.json on disk
 let slots = [];             // recipes
 let slotIdx = 0, selLayer = 0;
 
@@ -315,15 +320,28 @@ async function loadWaveAndDraw(){
   $("waveName").textContent=L.sourceFile.replace("pool/","");
   waveData=await decodeMono(L.sourceFile); drawWave();
 }
+// Read the docs/sound-fx/ listing once; each <event>.recipe.json there means that
+// foley already has a committed recipe. (One request, parsed from the dir index, so
+// missing recipes don't spam the console with 404s.)
+async function refreshSavedRecipes(){
+  savedRecipes.clear();
+  const html=await fetch("../docs/sound-fx/").then(r=>r.ok?r.text():"").catch(()=>"");
+  for(const m of html.matchAll(/href="([^"]+?)\.recipe\.json"/g))
+    savedRecipes.add(decodeURIComponent(m[1].split("/").pop()));
+}
 function refreshSlotHeader(){
   $("slotCount").textContent = slots.length? `${slotIdx+1} / ${slots.length}` : "– / –";
   const sel=$("slotSelect");
   sel.innerHTML = slots.length
-    ? slots.map((s,i)=>`<option value="${i}">${s.event} · ${manifest[s.event]?manifest[s.event].group:""}</option>`).join("")
+    ? slots.map((s,i)=>`<option value="${i}">${savedRecipes.has(s.event)?"✓ ":""}${s.event} · ${manifest[s.event]?manifest[s.event].group:""}</option>`).join("")
     : "<option>no slots</option>";
   sel.value = String(slotIdx);
   const R=recipe();
-  if(!R){ $("saveHint").textContent=""; return; }
+  const rs=$("recipeStatus");
+  if(!R){ $("saveHint").textContent=""; rs.style.display="none"; return; }
+  const onDisk=savedRecipes.has(R.event);
+  rs.style.display=""; rs.className="rstat "+(onDisk?"saved":"unsaved");
+  rs.textContent=onDisk?`✓ ${R.event}.recipe.json on disk — saving overwrites` : "no recipe saved yet";
   $("saveHint").innerHTML = `saves <span class="mono">${R.event}.wav</span> + <span class="mono">${R.event}.recipe.json</span>`;
   $("normalize").checked = R.master.normalize;
   $("masterGain").value = Math.round(R.master.gain*100);
@@ -385,7 +403,9 @@ $("recipeInput").addEventListener("change",async e=>{
   if(!picks){ // no working file → demo from the first sample of a few punchy events
     picks={}; for(const e of ["hit","shoot","explode","scream"].filter(e=>manifest[e])) picks[e]=[manifest[e].samples[0].file];
   }
-  slots=slotsFromPicks(picks); refresh();
+  slots=slotsFromPicks(picks);
+  await refreshSavedRecipes();
+  refresh();
 })();
 </script>
 </body>
