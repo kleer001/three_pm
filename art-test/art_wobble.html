@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<!--
+  Art sandbox: the Baba-Is-You "boiling line" wobble in game-world context.
+  Wandering vector blobs (outline jitter) drift over the battlefield's generated
+  ground, rendered from the real tile atlas. Imports nothing from src/.
+
+  The wobble trick: a small set of held variants swapped on a SLOW clock that's
+  decoupled from the 60fps render. Jitter is seeded by (entityId, vertex,
+  wobbleFrame) so each shape is frozen between snaps — that hold-and-snap is
+  what reads as "hand drawn" instead of TV static.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>three_pm — wobble battlefield</title>
+  <style>
+    body { margin: 0; padding: 24px; background: #fafafa; color: #1a1a1a;
+           font: 14px/1.4 system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    p.sub { margin: 0 0 20px; color: #555; }
+    .wrap { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+    #field { border: 1px solid #ccc; image-rendering: pixelated; display: block; background: #111; }
+    .panel { min-width: 240px; }
+    .row { margin: 10px 0; }
+    label { display: block; margin-bottom: 3px; color: #555; }
+    output { color: #1a1a1a; font-weight: 600; }
+    input[type=range] { width: 100%; }
+    .hint { color: #667; line-height: 1.5; max-width: 320px; }
+    kbd { background: #eee; border: 1px solid #ccc; border-radius: 3px;
+          padding: 1px 5px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>three_pm — wobble battlefield</h1>
+  <p class="sub">Vector blobs with outline jitter wander over the real tile-atlas ground.
+    <kbd>R</kbd> reshuffle ground · <kbd>Space</kbd> pause
+    · <a href="index.html">sprite sandbox →</a></p>
+
+  <div class="wrap">
+    <canvas id="field" width="768" height="512"></canvas>
+    <div class="panel">
+      <div class="row">
+        <label>mode</label>
+        <select id="mode">
+          <option value="offset">whole-shape offset (cheapest)</option>
+          <option value="outline" selected>outline jitter (truest Baba feel)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>wobble Hz — snaps per second <output id="hzv"></output></label>
+        <input id="hz" type="range" min="1" max="24" step="1" value="7" />
+      </div>
+      <div class="row">
+        <label>held frames <output id="framesv"></output></label>
+        <input id="frames" type="range" min="2" max="6" step="1" value="3" />
+      </div>
+      <div class="row">
+        <label>amplitude (px) <output id="ampv"></output></label>
+        <input id="amp" type="range" min="0" max="6" step="0.5" value="1.5" />
+      </div>
+      <div class="row">
+        <label><input id="snap" type="checkbox" checked /> pixel-snap</label>
+        <label><input id="perEntity" type="checkbox" checked /> per-entity seed (off = lockstep)</label>
+        <label><input id="wobbleTiles" type="checkbox" /> wobble tile grid too</label>
+      </div>
+      <p class="hint">
+        Try <b>Hz 60</b> + <b>per-entity off</b> for the "TV static" failure mode,
+        then drop to <b>Hz 7</b> and turn <b>per-entity on</b> to get the boil.
+        Live wobble frame: <output id="wfv">0</output>
+      </p>
+    </div>
+  </div>
+
+  <script type="module">
+    const DESC_URL = "../assets/sprites.json";
+    const SHEET_URL = "../assets/sprites.png";
+    const TS = 48;
+
+    const desc = await fetch(DESC_URL).then((r) => r.json());
+    const sheet = await new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = () => rej(new Error("sprites.png failed to load"));
+      img.src = SHEET_URL;
+    });
+
+    const field = document.getElementById("field");
+    const ctx = field.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    const COLS = Math.ceil(field.width / TS);
+    const ROWS = Math.ceil(field.height / TS);
+    const T = { STREET: 0, SIDEWALK: 1, YARD: 2, ALLEY: 3, FLOOR: 4, WALL: 5, RUBBLE: 6 };
+
+    const blitTile = (id, dx, dy) => {
+      const f = desc.frames[id];
+      ctx.drawImage(sheet, f.x, f.y, f.w, f.h, dx, dy, f.w, f.h);
+    };
+
+    // --- Generated ground (same toy neighborhood as the sprite sandbox) ---
+    let ground = [];
+    function shuffleGround() {
+      ground = new Array(COLS * ROWS).fill(T.YARD);
+      const set = (x, y, t) => { if (x >= 0 && x < COLS && y >= 0 && y < ROWS) ground[y * COLS + x] = t; };
+      const midX = (COLS >> 1), midY = (ROWS >> 1);
+      for (let y = 0; y < ROWS; y++) { set(midX, y, T.STREET); set(midX - 1, y, T.SIDEWALK); set(midX + 1, y, T.SIDEWALK); }
+      for (let x = 0; x < COLS; x++) { set(x, midY, T.STREET); set(x, midY - 1, T.SIDEWALK); set(x, midY + 1, T.SIDEWALK); }
+      const house = (ox, oy, w, h) => {
+        for (let y = oy; y < oy + h; y++)
+          for (let x = ox; x < ox + w; x++)
+            set(x, y, (x === ox || x === ox + w - 1 || y === oy || y === oy + h - 1) ? T.WALL : T.FLOOR);
+      };
+      house(1, 1, 4, 3);
+      house(COLS - 5, ROWS - 4, 4, 3);
+      for (let i = 0; i < 10; i++) set(2 + ((i * 7) % (COLS - 4)), 2 + ((i * 5) % (ROWS - 4)), T.RUBBLE);
+      for (let x = 1; x < 5; x++) set(x, ROWS - 6, T.ALLEY);
+    }
+    shuffleGround();
+
+    // --- Wandering blobs: flat-color discs/rings that breathe (the wobble) ---
+    // Palette echoes the game THEME so this previews the real aesthetic.
+    const KINDS = [
+      { color: "#2d6cdf", r: 28, ring: false }, // hero
+      { color: "#d35400", r: 24, ring: true },  // melee
+      { color: "#8e44ad", r: 22, ring: false }, // ranged
+      { color: "#27ae60", r: 20, ring: true },  // wanderer
+    ];
+    const blobs = [];
+    let nextId = 1;
+    for (const k of KINDS)
+      for (let i = 0; i < 3; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 25 + Math.random() * 45;
+        blobs.push({ id: nextId++, ...k,
+          x: Math.random() * field.width, y: Math.random() * field.height,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp });
+      }
+
+    // --- Wobble machinery (lifted from the wobble prototype) ---
+    const ui = id => document.getElementById(id);
+    const cfg = {};
+    function readUi() {
+      cfg.mode = ui("mode").value;
+      cfg.hz = +ui("hz").value;
+      cfg.frames = +ui("frames").value;
+      cfg.amp = +ui("amp").value;
+      cfg.snap = ui("snap").checked;
+      cfg.perEntity = ui("perEntity").checked;
+      cfg.wobbleTiles = ui("wobbleTiles").checked;
+      ui("hzv").textContent = cfg.hz;
+      ui("framesv").textContent = cfg.frames;
+      ui("ampv").textContent = cfg.amp;
+    }
+    ["mode","hz","frames","amp","snap","perEntity","wobbleTiles"].forEach(id =>
+      ui(id).addEventListener("input", readUi));
+    readUi();
+
+    // Deterministic jitter in [-amp, amp], STABLE within a held frame.
+    // Reseeds only when wobbleFrame (wf) changes -> hold-and-snap, not vibration.
+    function jit(id, k, wf) {
+      const seed = (cfg.perEntity ? id * 73 : 0) + k * 131 + wf * 977;
+      const h = Math.sin(seed) * 43758.5453;
+      return ((h - Math.floor(h)) - 0.5) * 2 * cfg.amp;
+    }
+    const px = v => (cfg.snap ? Math.round(v) : v);
+
+    // A disc/ring drawn as an N-gon whose vertices breathe in and out by jit().
+    function blob(e, wf) {
+      if (cfg.mode === "offset") {
+        const dx = px(jit(e.id, 0, wf)), dy = px(jit(e.id, 1, wf));
+        ctx.beginPath();
+        ctx.arc(e.x + dx, e.y + dy, e.r, 0, Math.PI * 2);
+      } else {
+        const N = 14;
+        ctx.beginPath();
+        for (let i = 0; i <= N; i++) {
+          const a = (i / N) * Math.PI * 2;
+          const rr = e.r + jit(e.id, i % N, wf);
+          const x = px(e.x + Math.cos(a) * rr);
+          const y = px(e.y + Math.sin(a) * rr);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+      }
+      if (e.ring) { ctx.lineWidth = 3; ctx.strokeStyle = e.color; ctx.stroke(); }
+      else { ctx.fillStyle = e.color; ctx.fill(); }
+    }
+
+    function drawGround(wf) {
+      for (let y = 0; y < ROWS; y++)
+        for (let x = 0; x < COLS; x++) {
+          let dx = x * TS, dy = y * TS;
+          if (cfg.wobbleTiles) { dx += jit(x * 31 + y, 0, wf); dy += jit(x * 31 + y, 1, wf); }
+          blitTile(desc.tiles[String(ground[y * COLS + x])], px(dx), px(dy));
+        }
+    }
+
+    // --- Loop ---
+    let paused = false;
+    addEventListener("keydown", (e) => {
+      if (e.code === "KeyR") shuffleGround();
+      if (e.code === "Space") { e.preventDefault(); paused = !paused; }
+    });
+
+    let last = performance.now(), t0 = last;
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const wf = Math.floor((now - t0) / 1000 * cfg.hz) % cfg.frames; // slow decoupled clock
+      ui("wfv").textContent = wf;
+
+      if (!paused) {
+        for (const b of blobs) {
+          b.x += b.vx * dt; b.y += b.vy * dt;
+          if (b.x < 24 || b.x > field.width - 24) b.vx *= -1;
+          if (b.y < 24 || b.y > field.height - 24) b.vy *= -1;
+          b.x = Math.max(24, Math.min(field.width - 24, b.x));
+          b.y = Math.max(24, Math.min(field.height - 24, b.y));
+        }
+      }
+
+      ctx.clearRect(0, 0, field.width, field.height);
+      drawGround(wf);
+      for (const b of [...blobs].sort((p, q) => p.y - q.y)) blob(b, wf);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

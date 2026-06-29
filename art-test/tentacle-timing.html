@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3pm — void tentacle timing</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 16px; font: 13px/1.5 system-ui, sans-serif; color: #1a1a1a; background: #fafafa; }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+  button, select { font: 13px system-ui, sans-serif; padding: 5px 10px; border: 1px solid #bbb; border-radius: 5px;
+    background: #fff; color: #1a1a1a; cursor: pointer; }
+  button:hover { border-color: #888; }
+  button.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .sep { width: 1px; height: 22px; background: #ccc; margin: 0 4px; }
+  #stage { border: 1px solid #ccc; border-radius: 6px; display: block; image-rendering: pixelated; cursor: crosshair; background: #11151c; }
+  .status { margin-top: 8px; font: 12px ui-monospace, monospace; color: #333; }
+  .knobs { display: grid; grid-template-columns: auto 200px 60px minmax(220px, 1fr); gap: 5px 12px;
+    align-items: center; margin-top: 12px; max-width: 760px; }
+  .knobs h2 { grid-column: 1 / -1; font-size: 13px; margin: 10px 0 2px; color: #444; }
+  .knobs label { font: 12px ui-monospace, monospace; color: #333; white-space: nowrap; }
+  .knobs output { font: 12px ui-monospace, monospace; color: #1a1a1a; text-align: right; }
+  .exp { font-size: 12px; color: #666; }
+  #saved { font-size: 12px; color: #1d7a4c; }
+  input[type=range] { width: 200px; }
+  #err { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: #fdecea; color: #8a1c12;
+    border: 1px solid #f3b6ae; white-space: pre-wrap; font: 12px ui-monospace, monospace; display: none; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <label>Type: <select id="type">
+    <option value="drag">drag (purple — grab + swallow)</option>
+    <option value="knock">knock (magenta — shove away)</option>
+    <option value="root">root (teal — pin in place)</option>
+  </select></label>
+  <span class="sep"></span>
+  <button id="play" class="primary">▶ Play</button>
+  <button id="step">Step 1 frame</button>
+  <button id="reset">Reset</button>
+  <span class="sep"></span>
+  <button id="save">Save → /tmp</button>
+  <span class="exp" id="saved"></span>
+</div>
+<p class="exp" style="margin:0 0 8px;max-width:760px;">Wave is the type's character: <b>drag</b> curls,
+<b>knock</b> whips, <b>root</b> snakes — switch <b>Type</b> to see each.</p>
+
+<canvas id="stage"></canvas>
+<div class="status" id="status"></div>
+<div class="knobs" id="knobs"></div>
+<div id="err"></div>
+
+<script type="module">
+import { TILE } from "../src/run/levelgen.js";
+import { createVoidTentacles } from "../src/run/voidTentacle.js";
+import { BALANCE, THEME } from "../src/run/balance.js";
+import { disc, ring } from "../src/run/draw.js";
+import { makeRng } from "../src/core/rng.js";
+
+const TS = 48, COLS = 15, ROWS = 11, DT = 1 / 60;
+const W = COLS * TS, H = ROWS * TS;
+const cv = document.getElementById("stage");
+cv.width = W; cv.height = H;
+const ctx = cv.getContext("2d");
+const K = BALANCE.voidTentacle;
+
+// The single hole and the spot the test enemy drops to (just west of the lip).
+const HOLE_TX = 7, HOLE_TY = 5;
+const HOLE_CX = HOLE_TX * TS + TS / 2, HOLE_CY = HOLE_TY * TS + TS / 2;
+const DROP_X = HOLE_CX - 1.3 * TS, DROP_Y = HOLE_CY;
+const ENEMY_DEF = BALANCE.enemies.shambler; // any def — we only read r + color
+
+// --- visual character (baked into the game; this mirrors runRender + THEME.voidTentacle) ---
+const SHAFT_N = 14; // discs sampling the shaft — denser so a waved curve stays smooth
+
+// Per-type shaft wave, keyed by each TENTACLE_TYPE's `wave`: drag CURLS, knock WHIPS, root SNAKES.
+// Each maps (f along shaft 0..1, time s, per-tentacle seed) to a perpendicular displacement in
+// ~[-1.5,1.5], scaled by THEME waveAmp. The root is pinned separately.
+const WAVES = {
+  snake: (f, t, s) => Math.sin(f * Math.PI * 2 - t * 6 + s),       // one sine travelling up
+  whip:  (f, t, s) => f * Math.sin(f * 4 - t * 9 + s) * 1.4,       // amplitude grows → tip lashes
+  curl:  (f, t, s) => f * f * Math.sin(t * 3 + s) * 1.6,           // tip curls slowly to one side
+};
+
+// Dim a #rrggbb toward black by dimK, then lighten toward white by lightAmt (the telegraph band).
+function shade(hex, dimK, lightAmt) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16 & 255) * dimK, g = (n >> 8 & 255) * dimK, b = (n & 255) * dimK;
+  r += (255 - r) * lightAmt; g += (255 - g) * lightAmt; b += (255 - b) * lightAmt;
+  return `rgb(${r | 0}, ${g | 0}, ${b | 0})`;
+}
+// Telegraph band intensity at shaft fraction f for a band centred at p (0..1), or 0 if p is null.
+function pulseAt(f, p, width, falloff) {
+  return p == null ? 0 : Math.exp(-Math.pow(Math.abs((f - p) / width), falloff));
+}
+
+// Phase-duration knobs (ms). bud/rise/telegraph/strike/retract/grab are all time-driven in the
+// FSM now, so each slider writes its seconds straight into BALANCE.
+const DURS = [
+  ["budT", "bud", "circle swells at the rim before rising"],
+  ["riseT", "rise", "stalk grows out, still tracking the target"],
+  ["telegraphT", "telegraph", "aim LOCKED — the readable dodge window"],
+  ["strikeT", "strike", "the lash extends out to the target"],
+  ["retractT", "retract", "withdraw back down into the hole"],
+  ["grabHoldT", "grab / drag", "reel a caught target into the hole"],
+];
+const snap100 = (ms) => Math.max(100, Math.min(4000, Math.round(ms / 100) * 100));
+
+// Distance dials (tiles). Reach is no longer a knob — the tentacle computes it from the
+// target's location at the aim-lock.
+const DISTS = [
+  ["restTiles", "rest (tiles)", 0.1, 2, 0.05, "resting length during rise + telegraph"],
+  ["lipOffsetTiles", "void inset (tiles)", 0, 1, 0.05, "how far the bud sits back into the void"],
+];
+
+let level, enemies, hero, heroTargets, voidFalling, voidTentacles, frame, voidClock, playing, raf;
+
+function buildLevel() {
+  const tiles = new Array(COLS * ROWS).fill(TILE.STREET);
+  tiles[HOLE_TY * COLS + HOLE_TX] = TILE.RUBBLE; // one-tile reality break
+  const walkable = tiles.map((t) => (t === TILE.WALL || t === TILE.RUBBLE) ? 0 : 1);
+  return { w: COLS, h: ROWS, tileSize: TS, tiles, walkable };
+}
+
+function dropEnemy(x, y) {
+  enemies.length = 0;
+  enemies.push({ x, y, r: ENEMY_DEF.r, faction: "enemy", hp: 100, dead: false,
+    def: ENEMY_DEF, color: ENEMY_DEF.color, iframes: 0, fadeT: 0,
+    frozenT: 0, rootT: 0, voidPerilT: 0 });
+}
+
+function reset() {
+  level = buildLevel();
+  enemies = [];
+  voidFalling = [];
+  hero = { x: -1, y: -1 };       // sentinel: never a target, only guards swallow()/pullKill
+  heroTargets = [];              // no party anchor — the tentacle aims at the lone enemy
+  voidTentacles = createVoidTentacles({
+    level, ts: TS, heroTargets, enemies, balance: BALANCE,
+    hurtMember: (m, a) => { m.hp = (m.hp ?? 1) - a; if (m.hp <= 0) m.dead = true; },
+    hurtEnemy: (e, a) => { e.hp = (e.hp ?? 1) - a; if (e.hp <= 0) e.dead = true; },
+    knockback: (t, dx, dy, mag) => { const d = Math.hypot(dx, dy) || 1; const K = BALANCE.knockback; const frames = Math.round((K.min + K.max) / 2); t.kb = { vx: (dx / d) * mag / frames, vy: (dy / d) * mag / frames, frames }; }, // slide over frames like runScene.knockback
+    voidFalling, corpseColor: THEME.corpse, hero,
+    removeMember: (m) => { const i = enemies.indexOf(m); if (i >= 0) enemies.splice(i, 1); },
+    rng: makeRng(1337),
+  });
+  dropEnemy(DROP_X, DROP_Y);
+  frame = 0; voidClock = 0; playing = false; setPlayLabel();
+  hideErr(); render();
+}
+
+// Make sure a tentacle is live and aimed at a fresh target. Returns false if no rim is reachable.
+function ensureTentacle() {
+  if (voidTentacles.tentacles.length > 0) return true;
+  if (!enemies[0] || enemies[0].dead) dropEnemy(DROP_X, DROP_Y);
+  const rim = voidTentacles.rimToward(enemies[0]);
+  if (!rim) { showErr("no rim toward the enemy — drop it nearer the hole"); return false; }
+  voidTentacles._spawnAt(rim, document.getElementById("type").value);
+  hideErr();
+  return true;
+}
+
+// One fixed-dt tick (skips the random trySpawn so timing is deterministic). When the live
+// tentacle finishes its cycle it's gone for good — no auto-respawn — and play auto-pauses so
+// the field sits empty until the next Play. Press Play again for a fresh one.
+function stepOnce() {
+  try {
+    const had = voidTentacles.tentacles.length > 0;
+    voidClock += DT;
+    for (const t of voidTentacles.tentacles) voidTentacles._step(t, DT);
+    for (const e of enemies) if (e.kb && e.kb.frames > 0) { e.x += e.kb.vx; e.y += e.kb.vy; e.kb.frames--; } // ride out a knock shove
+    for (let i = voidTentacles.tentacles.length - 1; i >= 0; i--)
+      if (voidTentacles.tentacles[i].done) voidTentacles.tentacles.splice(i, 1);
+    frame++;
+    if (playing && had && voidTentacles.tentacles.length === 0) { playing = false; setPlayLabel(); cancelAnimationFrame(raf); }
+    render();
+  } catch (e) {
+    playing = false; setPlayLabel();
+    showErr((e && e.stack) ? e.stack : String(e));
+  }
+}
+
+function loop() { if (!playing) return; stepOnce(); raf = requestAnimationFrame(loop); }
+function togglePlay() {
+  if (!playing) { if (!ensureTentacle()) return; playing = true; setPlayLabel(); loop(); }
+  else { playing = false; setPlayLabel(); cancelAnimationFrame(raf); }
+}
+function setPlayLabel() { document.getElementById("play").textContent = playing ? "⏸ Pause" : "▶ Play"; }
+
+// --- draw (tentacle layer mirrors runRender.drawTentacles; cam is fixed at origin) ---
+function drawTentacles() {
+  const T = THEME.voidTentacle, vc = voidClock;
+  for (const t of voidTentacles.tentacles) {
+    const bx = t.baseX, by = t.baseY, body = t.color;
+    const wave = WAVES[t.type.wave] || WAVES.snake;
+    if (t.state === "telegraph") {
+      const pulse = 0.5 + 0.5 * Math.sin(vc * T.pulseRate);
+      ctx.globalAlpha = 0.4 + 0.4 * pulse;
+      ring(ctx, bx, by, T.budR + 4 + pulse * 4, T.ring);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = T.aimLine; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + t.aimX * t.maxReach, by + t.aimY * t.maxReach); ctx.stroke();
+    }
+    // The bud IS the whole taper collapsed at the rim under one growing scale (budT) — no separate
+    // circle, no pop. As the shaft extends (len grows) the discs unfurl and the wave fades in;
+    // retract reverses both. budT runs 0→1 on bud and 1→0 on retract.
+    const scale = (t.state === "bud" || t.state === "retract") ? t.budT : 1;
+    const spread = Math.min(1, t.len / t.restLen); // length + wave appear only as the shaft extends
+    // Telegraph charge band: rides base→tip over the telegraph window (lighter + glowier).
+    const pc = t.state === "telegraph" ? Math.min(1, Math.max(0, 1 - t.timer / K.telegraphT)) : null;
+    const tipX = bx + t.aimX * t.len, tipY = by + t.aimY * t.len;
+    const perpX = -t.aimY, perpY = t.aimX;        // unit normal to the aim — the wave pushes along it
+    const pts = [];
+    for (let i = 0; i <= SHAFT_N; i++) {
+      const f = i / SHAFT_N;
+      const off = T.waveAmp * wave(f, vc, t.seed) * Math.min(1, f * 4) * spread; // pin the root, let the rest wave
+      pts.push({ x: bx + (tipX - bx) * f + perpX * off, y: by + (tipY - by) * f + perpY * off,
+                 r: (T.baseR * (1 - f) + t.tipR * f) * scale, pulse: pulseAt(f, pc, T.pulseWidth, T.pulseFalloff) });
+    }
+    const a = t.state === "retract" ? 0.7 : 1;
+    // glow pass (brighter where the charge band rides), then the dimmed/lightened body on top
+    ctx.save(); ctx.shadowColor = body; ctx.globalAlpha = a;
+    for (const p of pts) { ctx.shadowBlur = T.glowBlur + p.pulse * T.pulseGlowBoost; disc(ctx, p.x, p.y, p.r, body); }
+    ctx.restore();
+    ctx.globalAlpha = a;
+    for (const p of pts) disc(ctx, p.x, p.y, p.r, shade(body, T.bodyDim, p.pulse * T.pulseLighten));
+    ctx.globalAlpha = 1;
+    // glowing bulb at the waved tip
+    const tip = pts[pts.length - 1], glow = 0.6 + 0.4 * Math.sin(vc * T.pulseRate + t.seed);
+    ctx.globalAlpha = glow; disc(ctx, tip.x, tip.y, tip.r + 3, T.tipGlow); ctx.globalAlpha = 1;
+    disc(ctx, tip.x, tip.y, tip.r, shade(body, T.bodyDim, tip.pulse * T.pulseLighten));
+  }
+}
+
+function render() {
+  for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
+    const t = level.tiles[ty * COLS + tx], x = tx * TS, y = ty * TS;
+    if (t === TILE.RUBBLE) { ctx.fillStyle = "#070a10"; ctx.fillRect(x, y, TS, TS); ctx.strokeStyle = "rgba(90,180,255,.7)"; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, TS - 2, TS - 2); }
+    else { ctx.fillStyle = (tx + ty) % 2 ? "#5e5e5e" : "#666"; ctx.fillRect(x, y, TS, TS); }
+  }
+  for (const b of voidFalling) disc(ctx, b.x, b.y, b.r, b.color);
+  for (const e of enemies) {
+    disc(ctx, e.x, e.y, e.r, e.dead ? THEME.corpse : e.color);
+    if (!e.dead) { ctx.strokeStyle = "rgba(255,255,255,.25)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, 7); ctx.stroke(); }
+  }
+  drawTentacles();
+  const t0 = voidTentacles.tentacles[0];
+  const live = t0 ? `${t0.state}  timer=${t0.timer.toFixed(3)}s  len=${t0.len.toFixed(0)}/${t0.maxReach.toFixed(0)}` : "—";
+  document.getElementById("status").textContent =
+    `frame ${frame}   t=${(frame * DT).toFixed(2)}s   tentacle: ${live}   enemy: ${enemies[0] ? (enemies[0].dead ? "dead" : "alive") : "gone"}`;
+}
+
+function showErr(s) { const el = document.getElementById("err"); el.style.display = "block"; el.textContent = "⚠ " + s; }
+function hideErr() { document.getElementById("err").style.display = "none"; }
+
+// Post the tuned voidTentacle values to the dev server, which writes them to /tmp for the
+// session to read back. Needs art-test/tune-server.py (plain http.server can't take a POST).
+async function save() {
+  const T = THEME.voidTentacle;
+  const payload = { rootT: K.rootT, waveAmp: T.waveAmp,
+    pulseWidth: T.pulseWidth, pulseFalloff: T.pulseFalloff, pulseLighten: T.pulseLighten, pulseGlowBoost: T.pulseGlowBoost };
+  for (const [key] of DURS) payload[key] = K[key];
+  for (const [key] of DISTS) payload[key] = K[key];
+  try {
+    const r = await fetch("/save-tuning", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload, null, 2) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    document.getElementById("saved").textContent = "saved → /tmp/tentacle-tuning.json";
+    hideErr();
+  } catch (e) { showErr("save failed: " + e.message + " — serve via art-test/tune-server.py"); }
+}
+
+// --- build the slider panel: label | slider | value | explanation ---
+function addRow(box, labelText, input, fmt, expText) {
+  const lab = document.createElement("label"); lab.textContent = labelText;
+  const out = document.createElement("output"); out.textContent = fmt();
+  const exp = document.createElement("span"); exp.className = "exp"; exp.textContent = expText;
+  box.append(lab, input, out, exp);
+  input.addEventListener("input", () => { out.textContent = fmt(); });
+}
+function buildKnobs() {
+  const box = document.getElementById("knobs");
+  const hT = document.createElement("h2"); hT.textContent = "phase durations (ms)"; box.append(hT);
+  for (const [key, label, exp] of DURS) {
+    const inp = document.createElement("input");
+    inp.type = "range"; inp.min = 100; inp.max = 4000; inp.step = 100; inp.value = snap100(K[key] * 1000);
+    K[key] = +inp.value / 1000; // commit the snapped start value so display == behavior
+    addRow(box, label, inp, () => `${inp.value} ms`, exp);
+    inp.addEventListener("input", () => { K[key] = +inp.value / 1000; });
+  }
+  const hD = document.createElement("h2"); hD.textContent = "distances (tiles)"; box.append(hD);
+  for (const [key, label, min, max, st, exp] of DISTS) {
+    const inp = document.createElement("input");
+    inp.type = "range"; inp.min = min; inp.max = max; inp.step = st; inp.value = K[key];
+    addRow(box, label, inp, () => (+inp.value).toFixed(2), exp);
+    inp.addEventListener("input", () => { K[key] = +inp.value; });
+  }
+  const hR = document.createElement("h2"); hR.textContent = "root (teal)"; box.append(hR);
+  const rootInp = document.createElement("input");
+  rootInp.type = "range"; rootInp.min = 100; rootInp.max = 4000; rootInp.step = 100; rootInp.value = snap100(K.rootT * 1000);
+  K.rootT = +rootInp.value / 1000;
+  addRow(box, "stick time", rootInp, () => `${rootInp.value} ms`, "(a) how long root holds the member fast — retract above is (b) the go-back-to-void time");
+  rootInp.addEventListener("input", () => { K.rootT = +rootInp.value / 1000; });
+
+  const hW = document.createElement("h2"); hW.textContent = "wave"; box.append(hW);
+  const T = THEME.voidTentacle;
+  const amp = document.createElement("input");
+  amp.type = "range"; amp.min = 0; amp.max = 20; amp.step = 1; amp.value = T.waveAmp;
+  addRow(box, "wave amp (px)", amp, () => `${amp.value} px`, "sideways sway amplitude, all types (0 = straight)");
+  amp.addEventListener("input", () => { T.waveAmp = +amp.value; });
+
+  const hP = document.createElement("h2"); hP.textContent = "telegraph pulse"; box.append(hP);
+  const pulseKnobs = [
+    ["pulseWidth", "pulse width", 0.05, 1, 0.05, v => v.toFixed(2), "how far the bright band spreads up the shaft"],
+    ["pulseFalloff", "pulse falloff", 0.5, 6, 0.5, v => v.toFixed(1), "edge shape: low = soft, high = sharp-edged band"],
+    ["pulseLighten", "lighten amount", 0, 1, 0.05, v => v.toFixed(2), "how much lighter (toward white) the band gets"],
+    ["pulseGlowBoost", "glow boost (px)", 0, 40, 2, v => v + " px", "extra glow blur at the band peak"],
+  ];
+  for (const [key, label, min, max, st, fmt, exp] of pulseKnobs) {
+    const inp = document.createElement("input");
+    inp.type = "range"; inp.min = min; inp.max = max; inp.step = st; inp.value = T[key];
+    addRow(box, label, inp, () => fmt(+inp.value), exp);
+    inp.addEventListener("input", () => { T[key] = +inp.value; });
+  }
+}
+
+// --- wiring ---
+cv.addEventListener("click", (ev) => { const r = cv.getBoundingClientRect(); dropEnemy((ev.clientX - r.left) * (W / r.width), (ev.clientY - r.top) * (H / r.height)); render(); });
+document.getElementById("play").onclick = togglePlay;
+document.getElementById("step").onclick = () => { ensureTentacle(); stepOnce(); };
+document.getElementById("reset").onclick = reset;
+document.getElementById("save").onclick = save;
+addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); ensureTentacle(); stepOnce(); } });
+
+buildKnobs();
+reset();
+</script>
+</body>
+</html>
