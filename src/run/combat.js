@@ -39,7 +39,7 @@ export function weaponDamage(d, attacker, maxHp, curHp) {
 // hit. Knockback is applied by the caller (it needs the level for collision).
 // Returns the HP actually removed (0 if i-framed) so callers can surface the hit.
 export function applyDamage(target, amount) {
-  if (target.iframes > 0) return 0;
+  if (target.invincible || target.iframes > 0) return 0; // god mode flags player targets invincible
   const dealt = amount * (1 - (target.derived.dmgResist || 0));
   target.hp -= dealt;
   if (target.iframeDur) target.iframes = target.iframeDur;

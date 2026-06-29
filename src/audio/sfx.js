@@ -109,9 +109,11 @@ function arm() {
   ensure();
   if (ctx && ctx.state === "suspended") ctx.resume();
 }
-addEventListener("keydown", (e) => { if (e.code === "KeyM") toggleMute(); else arm(); });
-addEventListener("pointerdown", arm);
-addEventListener("touchstart", arm, { passive: true });
+if (typeof addEventListener !== "undefined") { // browser-only; the module imports clean under Node (tests/gauntlet.mjs)
+  addEventListener("keydown", (e) => { if (e.code === "KeyM") toggleMute(); else arm(); });
+  addEventListener("pointerdown", arm);
+  addEventListener("touchstart", arm, { passive: true });
+}
 
 // A gain node with a fast attack + exponential decay to `dur` — the shared envelope. Use
 // a tiny floor (exponentialRamp can't reach 0) then hard-stop the source at `dur`.

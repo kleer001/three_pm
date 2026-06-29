@@ -9,7 +9,7 @@ import { boxBlocked } from "./collision.js";
 import { BALANCE } from "./balance.js";
 import { dist } from "../core/geom.js";
 
-export function createFollowerTrain({ hero, followers, trail, gap, level, deadThisRun, heroTargets, combat, shift, separate }) {
+export function createFollowerTrain({ hero, followers, trail, gap, level, deadThisRun, heroTargets, combat, shift, separate, god }) {
   // Point on the breadcrumb trail `back` world-units behind the head, interpolated
   // along the polyline. Null only before the trail has any points.
   function trailPointBack(back) {
@@ -77,8 +77,9 @@ export function createFollowerTrain({ hero, followers, trail, gap, level, deadTh
       }
       // Riding the advancing edge is fine, but being pinned against a wall there is fatal —
       // that's "left behind". So is being caught there while a void tentacle holds (root) or
-      // has just flung (knockback) the follower: it can't outrun the dark.
-      if (f.y < minY) { f.y = minY; if (boxBlocked(level, f) || f.voidPerilT > 0) { f.dead = true; continue; } }
+      // has just flung (knockback) the follower: it can't outrun the dark. god mode rides the
+      // line through both — autopilot followers don't permadie.
+      if (f.y < minY) { f.y = minY; if ((boxBlocked(level, f) || f.voidPerilT > 0) && !god) { f.dead = true; continue; } }
       const near = combat.nearestEnemyTo(f.x, f.y);
       combat.fireSignature(f, near); // followers contribute only their passive signature, no weapon
     }
