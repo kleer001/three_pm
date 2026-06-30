@@ -1,5 +1,5 @@
 {
-  "event": "shoot",
+  "event": "pickup",
   "sampleRate": 48000,
   "master": {
     "normalize": true,
@@ -7,16 +7,16 @@
   },
   "layers": [
     {
-      "sourceFile": "pool/sfx_medicgun1_2.wav",
+      "sourceFile": "pool/unbreakelectric_2.wav",
       "reverse": false,
       "crop": {
-        "start01": 0,
+        "start01": 0.8832701918078628,
         "end01": 1
       },
       "offset01": 0,
       "echo": {
-        "time": 0.09,
-        "feedback": 0,
+        "time": 0.139,
+        "feedback": 0.24,
         "mix": 0,
         "tailCap01": 1
       },
@@ -114,11 +114,11 @@
       }
     },
     {
-      "sourceFile": "pool/arrow_swish_03.wav",
+      "sourceFile": "pool/crazybeep_01_2.wav",
       "reverse": false,
       "crop": {
-        "start01": 0.20629156510455254,
-        "end01": 0.341262219119987
+        "start01": 0,
+        "end01": 0.29981454520906337
       },
       "offset01": 0,
       "echo": {
@@ -141,11 +141,11 @@
         "gain": [
           {
             "t01": 0,
-            "v01": 1
+            "v01": 0.4
           },
           {
             "t01": 1,
-            "v01": 1
+            "v01": 0
           }
         ],
         "bits": [

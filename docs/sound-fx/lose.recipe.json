@@ -1,5 +1,5 @@
 {
-  "event": "shoot",
+  "event": "lose",
   "sampleRate": 48000,
   "master": {
     "normalize": true,
@@ -7,34 +7,34 @@
   },
   "layers": [
     {
-      "sourceFile": "pool/sfx_medicgun1_2.wav",
+      "sourceFile": "pool/deathrolling_2.wav",
       "reverse": false,
       "crop": {
         "start01": 0,
-        "end01": 1
+        "end01": 0.2275467942885472
       },
       "offset01": 0,
       "echo": {
-        "time": 0.09,
-        "feedback": 0,
-        "mix": 0,
+        "time": 0.222,
+        "feedback": 0.57,
+        "mix": 0.59,
         "tailCap01": 1
       },
       "envelopes": {
         "pitch": [
           {
             "t01": 0,
-            "v01": 0.5
+            "v01": 0.125
           },
           {
             "t01": 1,
-            "v01": 0.5
+            "v01": 0.125
           }
         ],
         "gain": [
           {
             "t01": 0,
-            "v01": 1
+            "v01": 0
           },
           {
             "t01": 1,
@@ -94,11 +94,11 @@
         "stretch": [
           {
             "t01": 0,
-            "v01": 0.5
+            "v01": 0.6799999999999999
           },
           {
             "t01": 1,
-            "v01": 0.5
+            "v01": 0.6799999999999999
           }
         ],
         "ringmod": [
@@ -114,11 +114,11 @@
       }
     },
     {
-      "sourceFile": "pool/arrow_swish_03.wav",
+      "sourceFile": "pool/sfx_spydie_2.wav",
       "reverse": false,
       "crop": {
-        "start01": 0.20629156510455254,
-        "end01": 0.341262219119987
+        "start01": 0,
+        "end01": 1
       },
       "offset01": 0,
       "echo": {

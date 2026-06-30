@@ -7,7 +7,7 @@
   },
   "layers": [
     {
-      "sourceFile": "pool/sfx_explode_2.wav",
+      "sourceFile": "pool/sfx_bang1_2.wav",
       "reverse": false,
       "crop": {
         "start01": 0,
@@ -34,11 +34,11 @@
         "gain": [
           {
             "t01": 0,
-            "v01": 1
+            "v01": 0.7
           },
           {
             "t01": 1,
-            "v01": 1
+            "v01": 0.7
           }
         ],
         "bits": [
@@ -114,17 +114,17 @@
       }
     },
     {
-      "sourceFile": "pool/sfx_bang1_2.wav",
-      "reverse": true,
+      "sourceFile": "pool/lightning_strike.wav",
+      "reverse": false,
       "crop": {
-        "start01": 0,
+        "start01": 0.1085175533157757,
         "end01": 1
       },
       "offset01": 0,
       "echo": {
-        "time": 0.052,
-        "feedback": 0.2,
-        "mix": 0.27,
+        "time": 0.09,
+        "feedback": 0,
+        "mix": 0,
         "tailCap01": 1
       },
       "envelopes": {
@@ -141,11 +141,11 @@
         "gain": [
           {
             "t01": 0,
-            "v01": 1
+            "v01": 0.47
           },
           {
             "t01": 1,
-            "v01": 1
+            "v01": 0.47
           }
         ],
         "bits": [

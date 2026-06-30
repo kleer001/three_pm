@@ -61,11 +61,13 @@ const SAMPLES = {
   explode:    "assets/sfx/explode.wav",
   hurt:       "assets/sfx/hurt.wav",
   scream:     "assets/sfx/scream.wav",
-  uiMove:   "assets/sfx/ui_move.wav",
-  uiSelect: "assets/sfx/ui_select.wav",
-  uiBack:   "assets/sfx/ui_back.wav",
-  win:      "assets/sfx/win.wav",
-  death:    "assets/sfx/death.wav",
+  pickup:     "assets/sfx/pickup.wav",
+  lose:       "assets/sfx/lose.wav",
+  uiMove:     "assets/sfx/uiMove.wav",
+  uiSelect:   "assets/sfx/uiSelect.wav",
+  uiBack:     "assets/sfx/uiBack.wav",
+  win:        "assets/sfx/win.wav",
+  death:      "assets/sfx/death.wav",
 };
 const buffers = {}; // event → array of decoded AudioBuffers, present once ≥1 file loads OK
 
