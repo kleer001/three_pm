@@ -1,0 +1,273 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>3pm — screen shake</title>
+<!--
+  Sandbox for the game's family of impact screen-shakes. Two mechanisms, both reality-based:
+
+   1. TRAUMA + NOISE (Squirrel Eiserloh, GDC 2016 "Juicing Your Cameras With Math"): a hit adds
+      trauma (0..1) that decays; per-frame amount = trauma^exponent (perceptual), and the offsets
+      come from SMOOTHED noise sampled over time — separate streams for x, y, rotation — never raw
+      per-frame random. Good for omnidirectional rumble (explosions, nova, dread).
+   2. DIRECTIONAL KICK: a damped-spring recoil. A hit shoves the camera along the impact direction;
+      a spring (stiffness/damping) pulls it home with optional overshoot. Good for "you took a hit"
+      and heavy slams, where the shove should read as coming from somewhere.
+
+  A "kind" is one recipe combining both (set a component's amount to 0 to disable it). Six ship:
+  tap, pulse, boom, kick, slam, rumble. Audition each, tweak, then Save — which POSTs the WHOLE map
+  to /save/screen-shake (-> /tmp/screen-shake.json) via tune-server.py. Each kind then maps onto a
+  run camera call: addShake/addKick(kind, dir) at the matching impact site.
+  Self-contained standalone: imports nothing; recordable on its own.
+-->
+<style>
+  :root { --ink:#1a1a1a; --panel:#f4f2ec; --line:#d8d4c8; --accent:#b34700; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px/1.4 system-ui,sans-serif; color:var(--ink); background:#fafafa;
+         display:flex; gap:16px; padding:16px; align-items:flex-start; }
+  canvas { background:#2e2e2e; border-radius:8px; display:block; box-shadow:0 2px 10px rgba(0,0,0,.2); }
+  .stage { display:flex; flex-direction:column; gap:8px; }
+  .hint { color:#666; font-size:12px; max-width:600px; }
+  .panel { width:340px; background:var(--panel); border:1px solid var(--line); border-radius:8px;
+           padding:14px; max-height:94vh; overflow:auto; }
+  h2 { font-size:13px; margin:0 0 8px; text-transform:uppercase; letter-spacing:.05em; color:#555; }
+  .kinds { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:6px; }
+  button { font:inherit; padding:6px 10px; border:1px solid var(--line); background:#fff;
+           border-radius:6px; cursor:pointer; }
+  button:hover { border-color:#999; }
+  button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .kindDesc { color:#777; font-size:12px; margin:0 0 12px; min-height:16px; }
+  .row { display:grid; grid-template-columns:104px 1fr 50px; align-items:center; gap:8px; margin:5px 0; }
+  .row label { color:#444; }
+  .row output { text-align:right; font-variant-numeric:tabular-nums; color:#222; }
+  input[type=range] { width:100%; }
+  fieldset { border:1px solid var(--line); border-radius:6px; margin:10px 0; padding:6px 10px; }
+  legend { padding:0 4px; color:#777; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  .meters { display:grid; grid-template-columns:auto 1fr; gap:4px 8px; align-items:center; margin:4px 0 6px; }
+  .meters span { font-size:11px; color:#666; }
+  .meter { height:9px; background:#e6e2d8; border-radius:5px; overflow:hidden; }
+  .meter > div { height:100%; width:0%; }
+  .actions { display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap; }
+  pre { background:#fff; border:1px solid var(--line); border-radius:6px; padding:8px; font-size:11px;
+        white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; }
+  .save-ok { color:#2f8f4e; font-size:12px; }
+</style>
+<body>
+<div class="stage">
+  <canvas id="c" width="600" height="460"></canvas>
+  <div class="hint">Pick a kind, then <b>Hit</b> / Space to audition it (random impact direction).
+    Click the canvas to hit from that spot (the kick shoves away from where you clicked).
+    Auto-fire holds a sustained barrage — useful for rumble. Only the world shakes; the HUD stays put.</div>
+</div>
+
+<div class="panel">
+  <h2>Kind</h2>
+  <div class="kinds" id="kinds"></div>
+  <p class="kindDesc" id="kindDesc"></p>
+
+  <div class="meters">
+    <span>trauma</span><div class="meter"><div id="traumaBar" style="background:var(--accent)"></div></div>
+    <span>kick</span><div class="meter"><div id="kickBar" style="background:#2563c4"></div></div>
+  </div>
+
+  <fieldset>
+    <legend>Trauma + noise (omnidirectional)</legend>
+    <div id="noiseSliders"></div>
+  </fieldset>
+  <fieldset>
+    <legend>Directional kick (spring recoil)</legend>
+    <div id="kickSliders"></div>
+  </fieldset>
+
+  <div class="actions">
+    <button id="autofire">Auto-fire</button>
+    <button id="hit">Hit</button>
+    <button id="save">Save all</button>
+    <span id="saveMsg" class="save-ok"></span>
+  </div>
+
+  <h2 style="margin-top:12px">All recipes</h2>
+  <pre id="json"></pre>
+</div>
+
+<script>
+const TILE = ["#5a5a5a","#9a9a9a","#6f9a55","#4a4a4a","#caa37a","#2e2e2e","#7c6a55"];
+const TAU = Math.PI * 2, DEG = Math.PI / 180;
+const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+
+// ---- smoothed 1D value noise (one independent stream per `seed`) ----------------------------
+function hash(n) {
+  n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
+  n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
+  n = n ^ (n >>> 16);
+  return (n >>> 0) / 4294967295 * 2 - 1;
+}
+function noise(seed, x) {
+  const s = Math.imul(seed, 0x9e3779b1) | 0;
+  const xi = Math.floor(x), xf = x - xi, u = xf * xf * (3 - 2 * xf);
+  const a = hash((xi | 0) + s), b = hash((xi + 1 | 0) + s);
+  return a + (b - a) * u;
+}
+
+// ---- the six kinds (defaults; tweak then Save writes them all) ------------------------------
+// trauma/exponent/maxOffset/maxAngle/frequency/recovery = noise; kickMag/stiffness/damping = kick
+const KINDS = ["tap", "pulse", "boom", "kick", "slam", "rumble"];
+const DESC = {
+  tap:    "projectile hit — near-subliminal, very frequent",
+  pulse:  "nova / The Drop — snappy radial release",
+  boom:   "bomb blast — big, low, slow to settle",
+  kick:   "you take a hit — sharp recoil away from the source",
+  slam:   "charger lunge / crush line — heavy shove + rumble",
+  rumble: "void tentacle — low, sustained dread",
+};
+// Defaults mirror the shipped BALANCE.shake (magnitudes calibrated 2× for the live scrolling scene;
+// the static preview here will read a touch hot relative to play).
+const RECIPES = {
+  tap:    { trauma:0.35, exponent:2,   maxOffset:16, maxAngle:0.6, frequency:30, recovery:3.0, kickMag:0,  stiffness:200, damping:16 },
+  pulse:  { trauma:0.40, exponent:1.5, maxOffset:18, maxAngle:4.0, frequency:24, recovery:1.0, kickMag:0,  stiffness:200, damping:16 },
+  boom:   { trauma:0.70, exponent:2,   maxOffset:34, maxAngle:6.2, frequency:16, recovery:0.9, kickMag:0,  stiffness:200, damping:16 },
+  kick:   { trauma:0.15, exponent:2,   maxOffset:10, maxAngle:1.0, frequency:28, recovery:2.5, kickMag:16, stiffness:220, damping:14 },
+  slam:   { trauma:0.50, exponent:2,   maxOffset:32, maxAngle:6.0, frequency:28, recovery:1.0, kickMag:36, stiffness:130, damping:12 },
+  rumble: { trauma:0.35, exponent:2.5, maxOffset:32, maxAngle:4.0, frequency:7,  recovery:0.5, kickMag:0,  stiffness:200, damping:16 },
+};
+
+const NOISE_SLIDERS = [
+  ["trauma",    "Trauma / hit", 0.05, 1,   0.05, v => v.toFixed(2)],
+  ["exponent",  "Exponent",     1,    3,   0.1,  v => v.toFixed(1)],
+  ["maxOffset", "Max offset px",0,    50,  1,    v => v.toFixed(0)],
+  ["maxAngle",  "Max angle°",   0,    8,   0.1,  v => v.toFixed(1)],
+  ["frequency", "Frequency Hz", 4,    40,  1,    v => v.toFixed(0)],
+  ["recovery",  "Recovery /s",  0.3,  4,   0.1,  v => v.toFixed(1)],
+];
+const KICK_SLIDERS = [
+  ["kickMag",   "Kick px",   0,   40,  1,  v => v.toFixed(0)],
+  ["stiffness", "Stiffness", 40,  400, 5,  v => v.toFixed(0)],
+  ["damping",   "Damping",   2,   40,  1,  v => v.toFixed(0)],
+];
+
+// ---- live shake state ----------------------------------------------------------------------
+let active = "boom";
+let trauma = 0, clock = 0;
+let kx = 0, ky = 0, kvx = 0, kvy = 0;   // kick offset + velocity (damped spring)
+
+function hit(dir) {
+  const r = RECIPES[active];
+  if (r.trauma > 0) trauma = clamp(trauma + r.trauma, 0, 1);
+  if (r.kickMag > 0) { kx += dir.x * r.kickMag; ky += dir.y * r.kickMag; } // instant recoil, spring brings it home
+}
+
+function shakeOffset() {
+  const r = RECIPES[active];
+  const s = Math.pow(trauma, r.exponent), f = clock * r.frequency;
+  return {
+    dx: r.maxOffset * s * noise(1, f) + kx,
+    dy: r.maxOffset * s * noise(2, f) + ky,
+    angle: r.maxAngle * DEG * s * noise(3, f),
+  };
+}
+
+function stepShake(dt) {
+  const r = RECIPES[active];
+  trauma = Math.max(0, trauma - r.recovery * dt);
+  // damped spring pulling the kick offset back to 0 (semi-implicit Euler; stable at these stiffnesses)
+  const ax = -r.stiffness * kx - r.damping * kvx, ay = -r.stiffness * ky - r.damping * kvy;
+  kvx += ax * dt; kvy += ay * dt; kx += kvx * dt; ky += kvy * dt;
+}
+
+// ---- scene (game-faithful: dark ground + buildings + hero + enemy) --------------------------
+const c = document.getElementById("c"), ctx = c.getContext("2d");
+const OVER = 120;
+const bg = document.createElement("canvas"); bg.width = c.width + OVER * 2; bg.height = c.height + OVER * 2;
+(() => { const g = bg.getContext("2d"), TS = 20;
+  for (let y = 0; y < bg.height; y += TS) for (let x = 0; x < bg.width; x += TS) {
+    g.fillStyle = TILE[(Math.random() * TILE.length) | 0]; g.globalAlpha = 0.5; g.fillRect(x, y, TS, TS);
+  }
+  g.globalAlpha = 0.9;
+  for (const b of [[90,80,120,90],[360,60,150,110],[120,300,110,120],[400,320,140,100]]) {
+    g.fillStyle = "#3a342c"; g.fillRect(b[0]+OVER, b[1]+OVER, b[2], b[3]);
+    g.fillStyle = "#4a4036"; g.fillRect(b[0]+OVER, b[1]+OVER, b[2], 10);
+  }
+  g.globalAlpha = 1;
+})();
+function disc(x, y, r, color) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
+
+function draw() {
+  const { dx, dy, angle } = shakeOffset();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.save();
+  ctx.translate(c.width / 2 + dx, c.height / 2 + dy);
+  ctx.rotate(angle);
+  ctx.translate(-c.width / 2, -c.height / 2);
+  ctx.drawImage(bg, -OVER, -OVER);
+  disc(300, 250, 14, "#f5c518"); disc(300, 250, 5, "#1a1a1a"); // hero
+  disc(360, 210, 16, "#c0392b");                                // enemy
+  ctx.restore();
+  ctx.fillStyle = "rgba(20,20,20,0.8)"; ctx.fillRect(8, 8, 158, 22);
+  ctx.fillStyle = "#cfe8ff"; ctx.font = "12px system-ui"; ctx.textBaseline = "middle";
+  ctx.fillText("HP 50/50   home 80%", 14, 20);
+}
+
+// ---- loop ----------------------------------------------------------------------------------
+const randDir = () => { const a = Math.random() * TAU; return { x: Math.cos(a), y: Math.sin(a) }; };
+let last = performance.now(), autofire = false, fireTimer = 0;
+function frame(now) {
+  let dt = (now - last) / 1000; last = now; if (dt > 0.05) dt = 0.05;
+  clock += dt;
+  if (autofire) { fireTimer -= dt; if (fireTimer <= 0) { hit(randDir()); fireTimer = 0.5; } }
+  draw(); stepShake(dt);
+  document.getElementById("traumaBar").style.width = (trauma * 100) + "%";
+  document.getElementById("kickBar").style.width = Math.min(100, Math.hypot(kx, ky) / 40 * 100) + "%";
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---- UI ------------------------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+function buildSliders(host, specs) {
+  host.innerHTML = "";
+  host._rows = specs.map(([key, label, min, max, st, fmt]) => {
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `<label>${label}</label><input type="range" min="${min}" max="${max}" step="${st}"><output></output>`;
+    const inp = row.querySelector("input"), out = row.querySelector("output");
+    inp.addEventListener("input", () => { RECIPES[active][key] = +inp.value; out.textContent = fmt(+inp.value); updateJson(); });
+    host.appendChild(row);
+    return () => { inp.value = RECIPES[active][key]; out.textContent = fmt(+inp.value); };
+  });
+}
+function syncSliders() { [$("noiseSliders"), $("kickSliders")].forEach(h => h._rows.forEach(s => s())); }
+function updateJson() { $("json").textContent = JSON.stringify(RECIPES, null, 1); }
+
+function selectKind(k) {
+  active = k; trauma = 0; kx = ky = kvx = kvy = 0;
+  $("kindDesc").textContent = DESC[k];
+  $("kinds").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.kind === k));
+  syncSliders();
+}
+for (const k of KINDS) {
+  const b = document.createElement("button"); b.textContent = k; b.dataset.kind = k;
+  b.addEventListener("click", () => selectKind(k));
+  $("kinds").appendChild(b);
+}
+
+buildSliders($("noiseSliders"), NOISE_SLIDERS);
+buildSliders($("kickSliders"), KICK_SLIDERS);
+
+$("autofire").addEventListener("click", () => { autofire = !autofire; $("autofire").classList.toggle("on", autofire); });
+$("hit").addEventListener("click", () => hit(randDir()));
+c.addEventListener("click", e => {
+  const r = c.getBoundingClientRect();
+  const vx = (c.width / 2) - (e.clientX - r.left), vy = (c.height / 2) - (e.clientY - r.top);
+  const m = Math.hypot(vx, vy) || 1; hit({ x: vx / m, y: vy / m }); // shove away from the click point
+});
+addEventListener("keydown", e => { if (e.code === "Space") { e.preventDefault(); hit(randDir()); } });
+
+$("save").addEventListener("click", async () => {
+  try {
+    const r = await fetch("/save/screen-shake", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(RECIPES, null, 2) });
+    $("saveMsg").textContent = r.ok ? "saved all → /tmp/screen-shake.json" : "save failed (run tune-server.py)";
+  } catch { $("saveMsg").textContent = "save failed (run tune-server.py)"; }
+});
+
+selectKind(active); updateJson();
+</script>
+</body>
+</html>

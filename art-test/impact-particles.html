@@ -1,0 +1,310 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>3pm — impact particles</title>
+<!--
+  Sandbox for the projectile-hit particle burst (enemy / hero impacts). The canvas mimics the
+  run scene: real THEME ground + a target dummy with a projectile flying in, so the burst is
+  judged in context. Presets fill the sliders; sliders fine-tune. Save POSTs the recipe to
+  /save/impact-particles (-> /tmp/impact-particles.json) via tune-server.py, ready to port into
+  combatKit.js's applyHit. Self-contained: imports nothing from src/, writes nothing into it.
+-->
+<style>
+  :root { --ink:#1a1a1a; --panel:#f4f2ec; --line:#d8d4c8; --accent:#b34700; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px/1.4 system-ui,sans-serif; color:var(--ink); background:#fafafa;
+         display:flex; gap:16px; padding:16px; align-items:flex-start; }
+  canvas { background:#2e2e2e; border-radius:8px; display:block; cursor:crosshair;
+           box-shadow:0 2px 10px rgba(0,0,0,.2); }
+  .stage { display:flex; flex-direction:column; gap:8px; }
+  .hint { color:#666; font-size:12px; }
+  .panel { width:330px; background:var(--panel); border:1px solid var(--line); border-radius:8px;
+           padding:14px; max-height:92vh; overflow:auto; }
+  h2 { font-size:13px; margin:0 0 8px; text-transform:uppercase; letter-spacing:.05em; color:#555; }
+  .presets, .segmented { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  button { font:inherit; padding:6px 10px; border:1px solid var(--line); background:#fff;
+           border-radius:6px; cursor:pointer; }
+  button:hover { border-color:#999; }
+  button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .row { display:grid; grid-template-columns:96px 1fr 46px; align-items:center; gap:8px; margin:5px 0; }
+  .row label { color:#444; }
+  .row output { text-align:right; font-variant-numeric:tabular-nums; color:#222; }
+  input[type=range] { width:100%; }
+  fieldset { border:1px solid var(--line); border-radius:6px; margin:10px 0; padding:8px 10px; }
+  legend { padding:0 4px; color:#777; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  .actions { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  pre { background:#fff; border:1px solid var(--line); border-radius:6px; padding:8px; font-size:11px;
+        max-height:150px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+  .save-ok { color:#2f8f4e; font-size:12px; }
+</style>
+<body>
+<div class="stage">
+  <canvas id="c" width="600" height="460"></canvas>
+  <div class="hint">Click the canvas to fire an impact at that point. Space = fire at the dummy.</div>
+</div>
+
+<div class="panel">
+  <h2>Variation</h2>
+  <div class="presets" id="presets"></div>
+
+  <h2>Hit target</h2>
+  <div class="segmented" id="targetSeg">
+    <button data-target="enemy" class="on">Enemy</button>
+    <button data-target="hero">Hero</button>
+  </div>
+
+  <div id="sliders"></div>
+
+  <fieldset>
+    <legend>Ring flash</legend>
+    <div class="segmented" id="ringSeg">
+      <button data-ring="on">On</button>
+      <button data-ring="off" class="on">Off</button>
+    </div>
+    <div id="ringSliders"></div>
+  </fieldset>
+
+  <h2>Color source</h2>
+  <div class="segmented" id="colorSeg"></div>
+
+  <div class="actions">
+    <button id="autofire" class="on">Auto-fire</button>
+    <button id="fire">Fire once</button>
+    <button id="save">Save recipe</button>
+    <span id="saveMsg" class="save-ok"></span>
+  </div>
+
+  <h2 style="margin-top:12px">Recipe</h2>
+  <pre id="json"></pre>
+</div>
+
+<script>
+// ---- game palette (mirrors src/run/balance.js THEME; kept inline so the sandbox is standalone)
+const TILE = ["#5a5a5a","#9a9a9a","#6f9a55","#4a4a4a","#caa37a","#2e2e2e","#7c6a55"];
+const COLORS = {
+  enemy: "#c0392b",        // brute-red, representative enemy body
+  hero:  "#f5c518",        // Marvin yellow
+  shotPlayer: "#d8d4c8",   // pellet
+  shotEnemy:  "#145a32",   // enemy shot green
+  white: "#ffffff",
+  warm:  "#ff9a3c",
+};
+const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// ---- tunable recipe (what Save writes; what applyHit will eventually read) -------------------
+const cfg = {
+  preset: "sparks",
+  count: 9, speed: 170, speedJit: 0.5, spreadDeg: 80,
+  size: 1.9, sizeJit: 0.4, endScale: 0.0,
+  life: 0.32, lifeJit: 0.3, gravity: 220, drag: 4.5, fadePow: 2.0,
+  colorMode: "white",
+  ring: { on: false, r0: 3, r1: 20, life: 0.18, width: 2.0 },
+};
+
+// slider specs: key, label, min, max, step, value-formatter
+const SLIDERS = [
+  ["count",    "Count",        1,   30,  1,   v => v.toFixed(0)],
+  ["speed",    "Speed",        10,  400, 5,   v => v.toFixed(0)],
+  ["speedJit", "Speed jitter", 0,   1,   0.05,v => v.toFixed(2)],
+  ["spreadDeg","Spread°",      5,   360, 5,   v => v.toFixed(0)],
+  ["size",     "Size",         0.5, 6,   0.1, v => v.toFixed(1)],
+  ["sizeJit",  "Size jitter",  0,   1,   0.05,v => v.toFixed(2)],
+  ["endScale", "End scale",    0,   1.6, 0.05,v => v.toFixed(2)],
+  ["life",     "Life (s)",     0.1, 1.2, 0.02,v => v.toFixed(2)],
+  ["lifeJit",  "Life jitter",  0,   1,   0.05,v => v.toFixed(2)],
+  ["gravity",  "Gravity",      0,   600, 10,  v => v.toFixed(0)],
+  ["drag",     "Drag",         0,   12,  0.5, v => v.toFixed(1)],
+  ["fadePow",  "Fade power",   0.5, 4,   0.1, v => v.toFixed(1)],
+];
+const RING_SLIDERS = [
+  ["r0",    "Start r",  0,  20, 1,   v => v.toFixed(0)],
+  ["r1",    "End r",    4,  60, 1,   v => v.toFixed(0)],
+  ["life",  "Life (s)", 0.05, 0.5, 0.01, v => v.toFixed(2)],
+  ["width", "Width",    0.5, 5, 0.5, v => v.toFixed(1)],
+];
+
+// presets only set the fields they care about; the rest keep current values
+const PRESETS = {
+  sparks:   { count:11, speed:200, speedJit:0.5, spreadDeg:75,  size:1.7, sizeJit:0.4, endScale:0.0, life:0.30, lifeJit:0.3, gravity:240, drag:4,   fadePow:2.2, colorMode:"white",  ring:{on:false} },
+  dust:     { count:6,  speed:55,  speedJit:0.6, spreadDeg:360, size:4.0, sizeJit:0.3, endScale:1.3, life:0.50, lifeJit:0.2, gravity:0,   drag:8,   fadePow:1.0, colorMode:"target", ring:{on:false} },
+  ring_pop: { count:5,  speed:120, speedJit:0.5, spreadDeg:360, size:1.8, sizeJit:0.4, endScale:0.0, life:0.28, lifeJit:0.3, gravity:80,  drag:5,   fadePow:1.6, colorMode:"shot",   ring:{on:true, r0:3, r1:24, life:0.18, width:2} },
+  confetti: { count:13, speed:170, speedJit:0.6, spreadDeg:360, size:2.4, sizeJit:0.4, endScale:1.0, life:0.62, lifeJit:0.4, gravity:320, drag:2,   fadePow:1.0, colorMode:"confetti", ring:{on:false} },
+  minimal:  { count:4,  speed:95,  speedJit:0.5, spreadDeg:120, size:1.6, sizeJit:0.3, endScale:0.0, life:0.22, lifeJit:0.3, gravity:140, drag:5,   fadePow:2.0, colorMode:"white",  ring:{on:false} },
+};
+const COLOR_MODES = ["target", "shot", "white", "warm", "confetti"];
+
+// ---- particle sim --------------------------------------------------------------------------
+const parts = [];   // {x,y,vx,vy,r,t,life,end,color}
+const rings = [];   // {x,y,t,life,r0,r1,width,color}
+let targetKind = "enemy";
+
+function resolveColor(mode) {
+  if (mode === "target") return targetKind === "enemy" ? COLORS.enemy : COLORS.hero;
+  if (mode === "shot")   return targetKind === "enemy" ? COLORS.shotPlayer : COLORS.shotEnemy;
+  if (mode === "confetti") return `hsl(${(Math.random()*360)|0} 85% 60%)`;
+  return COLORS[mode] || COLORS.white;
+}
+
+// the burst: this block is the slice intended to live in applyHit(x, y, dirAngle)
+function burst(x, y, dir) {
+  const half = (cfg.spreadDeg * Math.PI / 180) / 2;
+  for (let i = 0; i < cfg.count; i++) {
+    const a = (cfg.spreadDeg >= 359) ? rand(0, TAU) : dir + rand(-half, half);
+    const sp = cfg.speed * (1 + rand(-cfg.speedJit, cfg.speedJit));
+    const r  = cfg.size  * (1 + rand(-cfg.sizeJit, cfg.sizeJit));
+    parts.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, r, end: cfg.endScale,
+                 t: 0, life: cfg.life * (1 + rand(-cfg.lifeJit, cfg.lifeJit)),
+                 color: resolveColor(cfg.colorMode) });
+  }
+  if (cfg.ring.on) rings.push({ x, y, t:0, life:cfg.ring.life, r0:cfg.ring.r0, r1:cfg.ring.r1,
+                                width:cfg.ring.width, color: resolveColor(cfg.colorMode === "confetti" ? "white" : cfg.colorMode) });
+}
+
+function step(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.t += dt;
+    if (p.t >= p.life) { parts.splice(i, 1); continue; }
+    const decay = Math.exp(-cfg.drag * dt);
+    p.vx *= decay; p.vy = p.vy * decay + cfg.gravity * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+  }
+  for (let i = rings.length - 1; i >= 0; i--) { rings[i].t += dt; if (rings[i].t >= rings[i].life) rings.splice(i, 1); }
+}
+
+// ---- demo projectile so the burst is seen mid-combat ---------------------------------------
+const TARGET = { x: 380, y: 230, r: 16 };
+const shots = []; // {x,y,vx,vy}
+function fireShot() {
+  const ang = rand(0, TAU), d = 260;
+  const sx = TARGET.x + Math.cos(ang) * d, sy = TARGET.y + Math.sin(ang) * d;
+  const toward = Math.atan2(TARGET.y - sy, TARGET.x - sx), sp = 520;
+  shots.push({ x: sx, y: sy, vx: Math.cos(toward)*sp, vy: Math.sin(toward)*sp });
+}
+function stepShots(dt) {
+  for (let i = shots.length - 1; i >= 0; i--) {
+    const s = shots[i]; s.x += s.vx*dt; s.y += s.vy*dt;
+    const dx = s.x-TARGET.x, dy = s.y-TARGET.y;
+    if (dx*dx+dy*dy <= (TARGET.r+4)*(TARGET.r+4)) {
+      burst(s.x, s.y, Math.atan2(s.vy, s.vx)); shots.splice(i, 1); continue;
+    }
+    if (s.x<-20||s.x>620||s.y<-20||s.y>480) shots.splice(i, 1);
+  }
+}
+
+// ---- render --------------------------------------------------------------------------------
+const c = document.getElementById("c"), ctx = c.getContext("2d");
+// static ground texture, painted once into an offscreen so the scene reads like the game
+const bg = document.createElement("canvas"); bg.width = c.width; bg.height = c.height;
+(() => { const g = bg.getContext("2d"), TS = 20;
+  for (let y = 0; y < bg.height; y += TS) for (let x = 0; x < bg.width; x += TS) {
+    g.fillStyle = TILE[(Math.random()*TILE.length)|0]; g.globalAlpha = 0.5; g.fillRect(x, y, TS, TS);
+  }
+  g.globalAlpha = 1;
+})();
+
+function disc(x, y, r, color) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
+
+function draw() {
+  ctx.globalAlpha = 1; ctx.drawImage(bg, 0, 0);
+  ctx.fillStyle = "rgba(46,46,46,0.55)"; ctx.fillRect(0, 0, c.width, c.height); // darken like the run scene
+  // target dummy
+  disc(TARGET.x, TARGET.y, TARGET.r, targetKind === "enemy" ? COLORS.enemy : COLORS.hero);
+  // shots
+  for (const s of shots) disc(s.x, s.y, 4, targetKind === "enemy" ? COLORS.shotPlayer : COLORS.shotEnemy);
+  // rings (under particles)
+  for (const r of rings) {
+    const k = r.t / r.life; ctx.globalAlpha = Math.pow(1 - k, 1.4);
+    ctx.strokeStyle = r.color; ctx.lineWidth = r.width;
+    ctx.beginPath(); ctx.arc(r.x, r.y, lerp(r.r0, r.r1, k), 0, TAU); ctx.stroke();
+  }
+  // particles
+  for (const p of parts) {
+    const k = p.t / p.life;
+    ctx.globalAlpha = Math.pow(1 - k, cfg.fadePow);
+    disc(p.x, p.y, Math.max(0.1, p.r * lerp(1, p.end, k)), p.color);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---- loop ----------------------------------------------------------------------------------
+let last = performance.now(), autofire = true, fireTimer = 0;
+function frame(now) {
+  let dt = (now - last) / 1000; last = now; if (dt > 0.05) dt = 0.05;
+  if (autofire) { fireTimer -= dt; if (fireTimer <= 0) { fireShot(); fireTimer = 0.75; } }
+  stepShots(dt); step(dt); draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---- UI wiring -----------------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+function buildSliders(host, specs, target, onChange) {
+  host.innerHTML = "";
+  for (const [key, label, min, max, st, fmt] of specs) {
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `<label>${label}</label><input type="range" min="${min}" max="${max}" step="${st}"><output></output>`;
+    const inp = row.querySelector("input"), out = row.querySelector("output");
+    inp.dataset.key = key;
+    const sync = () => { inp.value = target()[key]; out.textContent = fmt(+inp.value); };
+    inp.addEventListener("input", () => { target()[key] = +inp.value; out.textContent = fmt(+inp.value); onChange(); });
+    row._sync = sync; sync();
+    host.appendChild(row);
+  }
+}
+function syncAll(host) { host.querySelectorAll(".row").forEach(r => r._sync && r._sync()); }
+
+function updateJson() { $("json").textContent = JSON.stringify(cfg, null, 1); }
+
+buildSliders($("sliders"), SLIDERS, () => cfg, updateJson);
+buildSliders($("ringSliders"), RING_SLIDERS, () => cfg.ring, updateJson);
+
+// presets
+for (const name of Object.keys(PRESETS)) {
+  const b = document.createElement("button"); b.textContent = name.replace("_", " ");
+  b.dataset.preset = name; if (name === cfg.preset) b.classList.add("on");
+  b.addEventListener("click", () => applyPreset(name));
+  $("presets").appendChild(b);
+}
+function applyPreset(name) {
+  const p = PRESETS[name];
+  for (const k in p) { if (k === "ring") Object.assign(cfg.ring, p.ring); else cfg[k] = p[k]; }
+  cfg.preset = name;
+  $("presets").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.preset === name));
+  $("ringSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", (x.dataset.ring === "on") === cfg.ring.on));
+  $("colorSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.color === cfg.colorMode));
+  syncAll($("sliders")); syncAll($("ringSliders")); updateJson();
+}
+
+// color source
+for (const m of COLOR_MODES) {
+  const b = document.createElement("button"); b.textContent = m; b.dataset.color = m;
+  if (m === cfg.colorMode) b.classList.add("on");
+  b.addEventListener("click", () => { cfg.colorMode = m;
+    $("colorSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); updateJson(); });
+  $("colorSeg").appendChild(b);
+}
+
+// segmented toggles
+$("targetSeg").addEventListener("click", e => { const t = e.target.dataset.target; if (!t) return;
+  targetKind = t; $("targetSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.target === t)); });
+$("ringSeg").addEventListener("click", e => { const r = e.target.dataset.ring; if (!r) return;
+  cfg.ring.on = r === "on"; $("ringSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.ring === r)); updateJson(); });
+
+$("autofire").addEventListener("click", () => { autofire = !autofire; $("autofire").classList.toggle("on", autofire); });
+$("fire").addEventListener("click", fireShot);
+c.addEventListener("click", e => { const r = c.getBoundingClientRect();
+  burst(e.clientX - r.left, e.clientY - r.top, rand(0, TAU)); });
+addEventListener("keydown", e => { if (e.code === "Space") { e.preventDefault(); fireShot(); } });
+
+$("save").addEventListener("click", async () => {
+  try {
+    const r = await fetch("/save/impact-particles", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(cfg, null, 2) });
+    $("saveMsg").textContent = r.ok ? "saved → /tmp/impact-particles.json" : "save failed (run tune-server.py)";
+  } catch { $("saveMsg").textContent = "save failed (run tune-server.py)"; }
+});
+
+updateJson();
+</script>
+</body>
+</html>

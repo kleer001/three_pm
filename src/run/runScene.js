@@ -17,6 +17,7 @@ import { applyHeroUpgrades } from "../meta/save.js";
 import { BALANCE, THEME } from "./balance.js";
 import { track, newRunId } from "./telemetry.js";
 import { createCombat } from "./combatKit.js";
+import { createShake } from "./shake.js";
 import { createSoftBody } from "./softBody.js";
 import { createShop } from "./shop.js";
 import { createEnemyAI } from "./enemyAI.js";
@@ -154,9 +155,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
   });
 
   const cam = { x: 0, y: 0 };
-  let shake = 0; // px magnitude; decays each frame and jitters the render camera
-  const SHAKE_MAX = 16, SHAKE_DECAY = 70;
-  const addShake = (mag) => { shake = Math.min(SHAKE_MAX, Math.max(shake, mag)); };
+  const shake = createShake(); // trauma+noise + directional kick; renderer reads shake.offset()
   const enemies = [];
   const projectiles = []; // all in-flight shots, hero + enemy, tagged by faction
   const blasts = [];      // transient AoE rings (nova/bomb detonations), visual only
@@ -166,6 +165,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
   const floaters = [];    // rising damage numbers, one per landed hit, visual only
   const debris = [];      // spent slingshot pellets resting where they landed, visual only
   const dustPuffs = [];   // Dash's dust-trail puffs (slow + chip)
+  const impactFx = [];    // projectile-hit spark burst + ring pop, visual only
   const voidFalling = []; // bodies/balls sinking into a reality break: drifting, shrinking, soon gone
   // Holes are NOT placed at the start — they TEAR OPEN as the descent proceeds (voidReveal):
   // gen craters become latent walkable ground here and reveal (wobble → fade → open) as the
@@ -264,13 +264,14 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
   // verbatim). Inject the world-coupled bits: wall-collided knockback, the wall/expiry
   // test, the crush-line deployable cull, and the loot/loss-on-death hook.
   const combat = createCombat({
-    enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters, debris, dustPuffs,
+    enemies, heroTargets, projectiles, blasts, fields, deployables, swings, floaters, debris, dustPuffs, impactFx,
     knockback,
     projectileBlocked: (x, y) => !isWalkable(level, Math.floor(x / TS), Math.floor(y / TS)),
     inVoid: voidPull.inVoid,
     cullDeployable: (d) => d.y < cam.y + MARGIN, // left behind once the crush line passes it
     sfx: sfx.play,
-    shake: addShake,
+    addShake: shake.addShake,
+    addKick: shake.addKick,
     onDeath: (t, attacker) =>
       t === hero ? loseRun(attacker.def ? attacker.def.name : null)
                  // friendly fire kills count as deaths but pay the player nothing — an enemy's
@@ -284,7 +285,15 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
   function hurtMember(m, amount, srcName) {
     if (m.fadeT > 0) return; // intangible while materializing in
     const dealt = applyDamage(m, amount);
-    if (dealt > 0) { combat.spawnHitNumber(m, dealt); combat.creditCharge(m, dealt, true); sfx.play("hurt"); }
+    if (dealt > 0) {
+      combat.spawnHitNumber(m, dealt); combat.creditCharge(m, dealt, true); sfx.play("hurt");
+      // Screen shake by source: chargers slam, the void rumbles, everything else is a kick away
+      // from the attacker (nearest enemy, since contact/lunge don't carry a position).
+      if (srcName === "void tentacle") shake.addShake("rumble");
+      else { const src = combat.nearestEnemyTo(m.x, m.y);
+        shake.addKick(srcName === "Brute" || srcName === "Behemoth" ? "slam" : "kick",
+          src ? m.x - src.e.x : 0, src ? m.y - src.e.y : 0); }
+    }
     if (m.dead && m !== hero) sfx.play("scream"); // head death screams via loseRun instead
     if (m === hero && hero.dead) loseRun(srcName);
   }
@@ -333,7 +342,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
     // Timed buffs tick on UNSCALED time: Slow Jam scales the whole sim (bullet-time), BPM
     // Boost speeds the head. The head moves on rawDt so bullet-time makes it nimble.
     const rawDt = dt;
-    shake = Math.max(0, shake - SHAKE_DECAY * rawDt);
+    shake.step(rawDt);
     let timeScale = 1, bpm = 1;
     for (const b of activeBuffs) { b.t -= rawDt; if (b.kind === "time") timeScale = Math.min(timeScale, b.mult); else if (b.kind === "speed") bpm *= b.mult; }
     for (let i = activeBuffs.length - 1; i >= 0; i--) {
@@ -399,6 +408,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
     combat.stepFields(dt);
     combat.stepDeployables(dt);
     combat.stepDustPuffs(dt);
+    combat.stepImpacts(dt);
     for (const b of blasts) b.t += dt;
     for (const s of swings) s.t += dt;
     for (const f of floaters) f.t += dt;
@@ -437,6 +447,7 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
     // The descent only moves down, so anything scrolled above the camera can never return — cull to bound the arrays.
     for (let i = debris.length - 1; i >= 0; i--) if (debris[i].y < cam.y) debris.splice(i, 1);
     for (let i = dustPuffs.length - 1; i >= 0; i--) if (dustPuffs[i].t >= dustPuffs[i].life || dustPuffs[i].y < cam.y) dustPuffs.splice(i, 1);
+    for (let i = impactFx.length - 1; i >= 0; i--) if (impactFx[i].t >= impactFx[i].life || impactFx[i].y < cam.y) impactFx.splice(i, 1);
     followerTrain.reapDead(); // permadeath: drop dead followers + their shot-target slot
 
     // Stay inside the moving window; being pinned against a wall at the crush line is fatal,
@@ -461,10 +472,10 @@ export function createRunScene(ctx, input, seed, party, saveBlob, bgId, opts = {
   // scalars it reads (shake/paused/voidClock/heldLine).
   const { render } = createRunRenderer({
     ctx, input, level, cam, hero, weapon, followers, enemies, shop,
-    pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, voidFalling,
+    pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, impactFx, voidFalling,
     voidTentacles,
     runState, bgId,
-    getShake: () => shake, getPaused: () => paused, getVoidClock: () => voidClock, getHeldLine: () => heldLine,
+    getShakeOffset: shake.offset, getPaused: () => paused, getVoidClock: () => voidClock, getHeldLine: () => heldLine,
     getTearProgress: voidReveal.getTearProgress, getVoidOrig: voidReveal.getVoidOrig,
     dissolveStyle,
     ts: TS, viewW: VIEW_W, viewH: VIEW_H,

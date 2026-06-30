@@ -82,6 +82,24 @@ never `file://` — ES modules and some browsers reject `file://`), and launch a
 browser window to it (`firefox <url> &`). Close the loop yourself: open the page,
 don't ask the user to find the files. This applies to every image-gen task.
 
+## Throw-away sandbox pages
+
+Scratch web pages — tuning sandboxes, effect/variation previews, A/B comparisons —
+live under `art-test/` (e.g. `tentacle-timing.html`, `void-sandbox.html`,
+`impact-particles.html`). The dependency is one-directional: a sandbox may read from
+the game, but `src/` and `index.html` must never depend on a sandbox. Pull in what
+you need rather than rebuilding it — `import` modules/constants from `src/` (kept in
+sync, less code) when iterating, or copy the relevant pieces over. Serve over local
+HTTP and launch the browser yourself (never `file://`). Tuning pages that hand a
+result back POST it to `tune-server.py`'s `/save/<name>` → `/tmp/<name>.json`.
+
+**An animated sandbox you'll want to record must be a self-contained standalone** —
+a single HTML file with no live `import` from `src/`, so the whole page reopens and
+screen-records into a movie later without the rest of the repo. Reach that by
+*snapshotting*: copy the game pieces it currently uses inline (don't rewrite from
+scratch). Develop against `src/` imports if that's faster, then inline-and-freeze
+when it's time to capture.
+
 ## Code style
 
 - `camelCase` for functions/vars, `PascalCase` for classes (standard JS).

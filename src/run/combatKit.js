@@ -28,7 +28,10 @@ export function createCombat(env) {
   // Sound hook: real in the run, omitted in the party-select preview (a null object so the
   // shared combat code stays one path — no `?.` at every fire/hit site).
   const sfx = env.sfx || (() => {});
-  const shake = env.shake || (() => {}); // camera kick on big pulses; same preview null-object
+  // Screen-shake hooks: real in the run, omitted in the party-select preview (null objects so the
+  // shared combat code stays one path). addShake(kind) = omnidirectional, addKick(kind, dx, dy) = directional.
+  const addShake = env.addShake || (() => {});
+  const addKick = env.addKick || (() => {});
 
   // A landed hit's HP loss, surfaced as a rising number at the target (spec: honest hits).
   function spawnHitNumber(t, dealt) { floaters.push({ x: t.x, y: t.y, value: Math.round(dealt), t: 0 }); }
@@ -52,6 +55,42 @@ export function createCombat(env) {
     if (t.dead) env.onDeath(t, attacker);
   }
 
+  // Projectile-impact spark burst: a cone of shot-colored specks along the hit direction plus
+  // one expanding ring, pushed into the visual-only env.impactFx pool (stepImpacts advances them,
+  // the renderer fades them). Recipe lives in THEME.impact; tuned in art-test/impact-particles.html.
+  const IMPACT = THEME.impact;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  function spawnImpact(x, y, vx, vy, faction) {
+    const fx = env.impactFx; if (!fx) return; // preview has no pool → no-op
+    const color = faction === "player" ? THEME.pellet : THEME.enemyShot.color;
+    const dir = Math.atan2(vy, vx), half = (IMPACT.spreadDeg * Math.PI / 180) / 2;
+    for (let i = 0; i < IMPACT.count; i++) {
+      const a = IMPACT.spreadDeg >= 359 ? rnd(0, Math.PI * 2) : dir + rnd(-half, half);
+      const sp = IMPACT.speed * (1 + rnd(-IMPACT.speedJit, IMPACT.speedJit));
+      const r = IMPACT.size * (1 + rnd(-IMPACT.sizeJit, IMPACT.sizeJit));
+      fx.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r, t: 0,
+                life: IMPACT.life * (1 + rnd(-IMPACT.lifeJit, IMPACT.lifeJit)), color });
+    }
+    fx.push({ ring: true, x, y, t: 0, life: IMPACT.ring.life, r0: IMPACT.ring.r0, r1: IMPACT.ring.r1,
+              width: IMPACT.ring.width, color });
+  }
+  // A shot landing: a tap when it bites an enemy, a directional kick (along the shot) when a hero
+  // takes it. Enemy-on-enemy friendly fire stays a tap.
+  function shakeForHit(t, p) {
+    if (t.faction === "player") addKick("kick", p.vx, p.vy);
+    else addShake("tap");
+  }
+  function stepImpacts(dt) {
+    const fx = env.impactFx; if (!fx) return;
+    const decay = Math.exp(-IMPACT.drag * dt);
+    for (const p of fx) {
+      p.t += dt;
+      if (p.ring) continue;
+      p.vx *= decay; p.vy = p.vy * decay + IMPACT.gravity * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+    }
+  }
+
   // Area blast at (cx,cy): hit every enemy overlapping the radius, knocked outward from the
   // center. Shared by nova, bomb detonation, field ticks, and melee. An optional `aim`
   // ({x,y,cosHalf}) restricts hits to an arc (melee swings); omit it for a full circle.
@@ -69,7 +108,7 @@ export function createCombat(env) {
   function detonate(p) {
     blast(p.x, p.y, p.radius, p.attacker, p.damage, p.knockback, p.freeze);
     blasts.push({ x: p.x, y: p.y, r: p.radius, t: 0 });
-    sfx("explode"); shake(10);
+    sfx("explode"); addShake("boom");
   }
 
   // Nearest living enemy to a point, with its distance — the shared auto-aim pick.
@@ -118,7 +157,7 @@ export function createCombat(env) {
       if (near && near.d <= w.radius) {
         blast(attacker.x, attacker.y, w.radius, attacker, w.damage, w.knockback, w.freeze);
         blasts.push({ x: attacker.x, y: attacker.y, r: w.radius, t: 0 });
-        sfx("nova"); shake(6);
+        sfx("nova"); addShake("pulse");
         fired = true;
       }
     } else if (w.shape === "field") {
@@ -180,7 +219,7 @@ export function createCombat(env) {
     const dmg = { ...sig.damage, base: sig.damage.base + attacker.damageTaken * sig.takenScale };
     blast(attacker.x, attacker.y, sig.radius, attacker, dmg, sig.knockback, sig.freeze);
     blasts.push({ x: attacker.x, y: attacker.y, r: sig.radius, t: 0 });
-    sfx("explode"); shake(12);
+    sfx("explode"); addShake("pulse"); // The Drop release (per the screen-shake kind mapping)
     attacker.charge = 0; attacker.damageTaken = 0;
   }
 
@@ -272,8 +311,10 @@ export function createCombat(env) {
         }
         if (p.fuse != null) { applyHit(p.attacker, t, p.impact || p.damage, 0, p.vx, p.vy, false); p.planted = true; p.vx = 0; p.vy = 0; break; }
         if (p.shape === "bomb") { detonate(p); p.dead = true; break; }
-        if (p.pierce) { if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze); p.hits.add(t); } continue; }
+        if (p.pierce) { if (!p.hits.has(t)) { applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze); spawnImpact(p.x, p.y, p.vx, p.vy, p.faction); shakeForHit(t, p); p.hits.add(t); } continue; }
         applyHit(p.attacker, t, p.damage, p.knockback, p.vx, p.vy, p.freeze);
+        spawnImpact(p.x, p.y, p.vx, p.vy, p.faction);
+        shakeForHit(t, p);
         dropDebris(p); p.dead = true; break;
       }
     }
@@ -331,6 +372,6 @@ export function createCombat(env) {
   return {
     applyHit, blast, detonate, nearestEnemyTo, meleeSwing, fireShot, fireWeapon,
     creditCharge, spawnHitNumber, deployTurret, confuseBurst, releaseCharge, fireSignature, tickHeal, tickCharge, tickWake,
-    stepProjectiles, stepFields, stepDeployables, stepDustPuffs,
+    stepProjectiles, stepFields, stepDeployables, stepDustPuffs, stepImpacts,
   };
 }

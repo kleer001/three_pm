@@ -221,6 +221,19 @@ export const BALANCE = {
   // it drifts in, decelerating (drag) and shrinking (shrink, both per-second e-fold rates)
   // until it's a single pixel (minR), then it's swallowed. Walls still block normally.
   voidFall: { drag: 4, shrink: 3.2, minR: 0.5 },
+  // Impact screen-shake recipes by kind (authored in art-test/screen-shake.html, applied via
+  // src/run/shake.js). trauma/exponent/maxOffset/maxAngle/frequency/recovery = trauma+noise;
+  // kickMag/stiffness/damping = directional spring kick. See shake.js for the model.
+  // Magnitudes (maxOffset/maxAngle/kickMag) are calibrated 2× over the static sandbox values so
+  // they read against the live auto-scrolling scene; the trauma/frequency/spring params are unchanged.
+  shake: {
+    tap:    { trauma: 0.35, exponent: 2,   maxOffset: 16, maxAngle: 0.6, frequency: 30, recovery: 3,   kickMag: 0,  stiffness: 200, damping: 16 },
+    pulse:  { trauma: 0.4,  exponent: 1.5, maxOffset: 18, maxAngle: 4,   frequency: 24, recovery: 1,   kickMag: 0,  stiffness: 200, damping: 16 },
+    boom:   { trauma: 0.7,  exponent: 2,   maxOffset: 34, maxAngle: 6.2, frequency: 16, recovery: 0.9, kickMag: 0,  stiffness: 200, damping: 16 },
+    kick:   { trauma: 0.15, exponent: 2,   maxOffset: 10, maxAngle: 1,   frequency: 28, recovery: 2.5, kickMag: 16, stiffness: 220, damping: 14 },
+    slam:   { trauma: 0.5,  exponent: 2,   maxOffset: 32, maxAngle: 6,   frequency: 28, recovery: 1,   kickMag: 36, stiffness: 130, damping: 12 },
+    rumble: { trauma: 0.35, exponent: 2.5, maxOffset: 32, maxAngle: 4,   frequency: 7,  recovery: 0.5, kickMag: 0,  stiffness: 200, damping: 16 },
+  },
   // A reality break tugs nearby corpses in: a dead body within rangeTiles of a hole
   // accelerates toward the nearest one (accel px/s²), then is swallowed into the void-fall.
   // accel ≈ 2·(rangeTiles·tile)/t² for a ~t-second pull from the far edge.
@@ -333,6 +346,12 @@ export const THEME = {
   blast: { ring: "rgba(255,240,200,0.85)", dur: 0.28 }, // expanding ring for nova/bomb detonations
   beam: { width: 16 }, // max stroke width of a piercing shot drawn as a beam (thin→thick→fade over its life)
   melee: { swing: "rgba(255,255,255,0.7)", dur: 0.15 }, // quick wedge flash for melee swings
+  // Projectile-impact spark burst (tuned in art-test/impact-particles.html): a tight cone of
+  // shot-colored specks along the hit direction + one quick ring pop. Color is the shooter's
+  // shot color (pellet for your fire, enemyShot green for theirs).
+  impact: { count: 8, speed: 305, speedJit: 0.35, spreadDeg: 160, size: 1.3, sizeJit: 0.8,
+    endScale: 0, life: 0.18, lifeJit: 0.1, gravity: 0, drag: 8.5, fadePow: 0.9,
+    ring: { r0: 0, r1: 26, life: 0.21, width: 1 } },
   field: { fill: "rgba(155,89,182,0.16)", ring: "rgba(155,89,182,0.45)" }, // lingering zone disc
   freeze: { fill: "rgba(150,205,255,0.55)", ring: "rgba(190,230,255,0.9)", ringPad: 2 },
   slow: { fill: "rgba(140,150,255,0.20)" },                                    // Chill Zone debuff tint

@@ -107,13 +107,14 @@ let tileAtlas = null; // { sheet, ground, mats:{name:[16 frames]}, order:[names]
 
 export function createRunRenderer({
   ctx, input, level, cam, hero, weapon, followers, enemies, shop,
-  pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, voidFalling,
+  pickups, projectiles, blasts, swings, fields, deployables, floaters, debris, dustPuffs, impactFx, voidFalling,
   voidTentacles,
-  runState, bgId, getShake, getPaused, getVoidClock, getHeldLine, ts, viewW, viewH,
+  runState, bgId, getShakeOffset, getPaused, getVoidClock, getHeldLine, ts, viewW, viewH,
   getTearProgress = () => 0, getVoidOrig = () => 0,
   dissolveStyle = DEFAULT_DISSOLVE_STYLE,
 }) {
   const TS = ts, VIEW_W = viewW, VIEW_H = viewH;
+  const SHAKE_CULL_MARGIN = 4; // extra tiles drawn around the view so shake (offset+rotation) never bares an edge
   const mapH = level.h * TS;
   const TILE_COLOR = THEME.tile;
   const LOOT = BALANCE.loot;
@@ -242,14 +243,17 @@ export function createRunRenderer({
 
   function render() {
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
-    // Screen shake biases the camera by a random jitter for the world draw, undone before
-    // the HUD so only the world shakes. Everything world-space reads cam.x/cam.y together.
-    const shake = getShake();
-    const shx = shake > 0 ? (Math.random() * 2 - 1) * shake : 0;
-    const shy = shake > 0 ? (Math.random() * 2 - 1) * shake : 0;
-    cam.x += shx; cam.y += shy;
-    const x0 = Math.max(0, Math.floor(cam.x / TS)), x1 = Math.min(level.w - 1, Math.ceil((cam.x + VIEW_W) / TS));
-    const y0 = Math.max(0, Math.floor(cam.y / TS)), y1 = Math.min(level.h - 1, Math.ceil((cam.y + VIEW_H) / TS));
+    // Screen shake transforms the whole world layer (translate + rotate about screen center),
+    // restored before the HUD so only the world shakes. cam.x/cam.y stay unshaken — world-space
+    // draws read them as usual and the shake rides on top via the canvas transform.
+    const sh = getShakeOffset();
+    ctx.save();
+    ctx.translate(VIEW_W / 2 + sh.dx, VIEW_H / 2 + sh.dy);
+    ctx.rotate(sh.angle);
+    ctx.translate(-VIEW_W / 2, -VIEW_H / 2);
+    const SH_M = SHAKE_CULL_MARGIN; // overscan tiles so the rotated/offset world never bares an edge
+    const x0 = Math.max(0, Math.floor(cam.x / TS) - SH_M), x1 = Math.min(level.w - 1, Math.ceil((cam.x + VIEW_W) / TS) + SH_M);
+    const y0 = Math.max(0, Math.floor(cam.y / TS) - SH_M), y1 = Math.min(level.h - 1, Math.ceil((cam.y + VIEW_H) / TS) + SH_M);
     // A tearing cell needs no separate telegraph: the void's block dissolve (below) crumbles its
     // surface in from the first frame of the transition.
     if (tileAtlas) {
@@ -333,6 +337,19 @@ export function createRunRenderer({
       disc(ctx, p.x - cam.x, p.y - cam.y, p.r * (0.5 + k), THEME.dust);
       ctx.globalAlpha = 1;
     }
+
+    for (const p of impactFx) {
+      const k = p.t / p.life;
+      if (p.ring) {
+        ctx.globalAlpha = Math.pow(1 - k, 1.4);
+        ctx.strokeStyle = p.color; ctx.lineWidth = p.width;
+        ctx.beginPath(); ctx.arc(p.x - cam.x, p.y - cam.y, p.r0 + (p.r1 - p.r0) * k, 0, Math.PI * 2); ctx.stroke();
+      } else {
+        ctx.globalAlpha = Math.pow(1 - k, THEME.impact.fadePow);
+        disc(ctx, p.x - cam.x, p.y - cam.y, Math.max(0.1, p.r * (1 + (THEME.impact.endScale - 1) * k)), p.color);
+      }
+    }
+    ctx.globalAlpha = 1;
 
     for (const e of enemies)
       if (e.dead) disc(ctx, e.x - cam.x, e.y - cam.y, e.r, THEME.corpse);
@@ -448,7 +465,7 @@ export function createRunRenderer({
     ctx.globalAlpha = 1;
     ctx.textAlign = "left";
 
-    cam.x -= shx; cam.y -= shy; // end screen shake: HUD draws in untouched screen space
+    ctx.restore(); // end screen shake: HUD draws in untouched screen space
 
     ctx.font = THEME.hud.font;
     const depth = Math.round((cam.y / (mapH - VIEW_H)) * 100);
