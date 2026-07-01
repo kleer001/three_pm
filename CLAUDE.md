@@ -32,6 +32,11 @@ win. Plain HTML, CSS, and ES modules — no build system, bundler, or dependenci
   in a machine-level cache outside the repo so the game stays dependency-free; the
   script points at the system Chrome. If a machine has neither, fall back to a manual
   playtest and say so rather than claiming an unverified visual fix works.
+- **Onion-skin motion a still can't show** (shake, particles, dissolves): simulate the
+  effect frame-by-frame and composite every frame at low alpha — the smear is the motion
+  (spread = magnitude, spacing = frequency, collapse-to-center = decay). `art-test/onion-skin.html`
+  + `tools/onion-verify.mjs` is the OLD-vs-NEW example; copy the effect's real math verbatim
+  from `src/` so the A/B stays faithful.
 - **Package for itch.io:** `./package.sh` → `dist/three_pm.zip` (index.html at
   the zip root; `tools/` and `docs/` excluded).
 - **GitHub Pages:** auto-served from `main` at <https://kleer001.github.io/three_pm/>.
