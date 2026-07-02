@@ -100,7 +100,8 @@ const CSS = `
 #ui-overlay .uvp .mpanel{width:440px;border:1px solid var(--uv);background:#0a0b08;padding:16px 18px}
 #ui-overlay .uvp .mpanel h3{font-family:"Anton";font-size:21px;text-transform:uppercase;color:#fff}
 #ui-overlay .uvp .mpanel .cr{font-family:"Space Mono";font-size:11px;color:var(--uv);float:right;margin-top:5px}
-#ui-overlay .uvp .urow{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border-top:1px solid #16180f;padding:8px 0}
+#ui-overlay .uvp .urow{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border-top:1px solid #16180f;padding:8px 10px;margin:0 -10px}
+#ui-overlay .uvp .urow.sel{background:rgba(204,255,0,.08);box-shadow:inset 2px 0 0 var(--uv)}
 #ui-overlay .uvp .urow .un{font-weight:600;font-size:13px;text-transform:uppercase}
 #ui-overlay .uvp .urow .ub{font-size:10px;color:var(--dim)}
 #ui-overlay .uvp .urow .pip{font-family:"Space Mono";font-size:11px;color:var(--cyan);margin-right:10px}
@@ -128,7 +129,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   let gridSel = Math.max(0, roster.findIndex((c) => c.id === party[0]));
   let zone = "grid";               // 'grid' | 'start' | 'bg'
   let bgIndex = -1;                // -1 = Automatic, else index into VOID_BACKGROUNDS
-  let modal = null, confirmed = false, armed = false;
+  let modal = null, modalSel = 0, confirmed = false, armed = false;
 
   const root = document.createElement("div");
   root.className = "uvp";
@@ -219,13 +220,13 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   function modalHTML() {
     if (!modal) return "";
     const h = roster.find((c) => c.id === modal), tree = UPGRADES[h.id] || {};
-    const rows = Object.entries(tree).map(([id, def]) => {
+    const rows = Object.entries(tree).map(([id, def], i) => {
       const rank = upgradeRank(blob, h.id, id), cost = nextCost(blob, h.id, id);
       const pips = "●".repeat(rank) + "○".repeat(def.maxRank - rank), can = cost !== null && blob.credits >= cost;
       const btn = cost === null ? `<span class="buy no">MAX</span>` : `<span class="buy${can ? "" : " no"}" data-buy="${id}">${cost} cr</span>`;
-      return `<div class="urow"><div><div class="un">${def.name}</div><div class="ub">${def.blurb}</div></div><div><span class="pip">${pips}</span>${btn}</div></div>`;
+      return `<div class="urow${i === modalSel ? " sel" : ""}" data-row="${i}"><div><div class="un">${def.name}</div><div class="ub">${def.blurb}</div></div><div><span class="pip">${pips}</span>${btn}</div></div>`;
     }).join("");
-    return `<div class="modal" data-closebg><div class="mpanel"><span class="cr">${blob.credits} cr</span><h3>${h.name}</h3>${rows}<div class="mclose" data-closemodal>U / Esc / click out to close</div></div></div>`;
+    return `<div class="modal" data-closebg><div class="mpanel"><span class="cr">${blob.credits} cr</span><h3>${h.name}</h3>${rows}<div class="mclose" data-closemodal>↑↓ move · ENTER buy · U/Esc close</div></div></div>`;
   }
 
   function render() {
@@ -252,7 +253,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     else if (at < 0 && canEnlist(c)) { party.push(c.id); sfx.play("uiSelect"); }
     render();
   }
-  function buy(id) { blob = save(purchaseUpgrade(blob, modal, id)); sfx.play("uiSelect"); render(); }
+  function buy(id) { modalSel = Object.keys(UPGRADES[modal] || {}).indexOf(id); blob = save(purchaseUpgrade(blob, modal, id)); sfx.play("uiSelect"); render(); }
   function startWalk() {
     if (!party.length) return;
     chosenBg = resolveBg();
@@ -268,7 +269,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   });
   root.addEventListener("click", (e) => {
     if (e.target.closest("[data-start]")) return startWalk();
-    if (e.target.closest("[data-upg]")) { modal = roster[gridSel].id; sfx.play("uiSelect"); return render(); }
+    if (e.target.closest("[data-upg]")) { modal = roster[gridSel].id; modalSel = 0; sfx.play("uiSelect"); return render(); }
     if (e.target.closest("[data-buy]")) return buy(e.target.closest("[data-buy]").dataset.buy);
     if (e.target.closest("[data-closemodal]")) { modal = null; sfx.play("uiBack"); return render(); }
     const bg = e.target.closest("[data-bg]"); if (bg) { bgIndex = +bg.dataset.bg; zone = "bg"; sfx.play("uiMove"); return render(); }
@@ -280,8 +281,13 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   const N = VOID_BACKGROUNDS.length;
   const onKey = (e) => {
     if (!armed) return;
-    if (modal) { if (e.code === "Escape" || e.code === "KeyU") { modal = null; render(); }
-      else { const n = ["Digit1","Digit2","Digit3","Digit4"].indexOf(e.code); const ids = Object.keys(UPGRADES[modal] || {}); if (n >= 0 && ids[n]) buy(ids[n]); }
+    if (modal) {
+      const ids = Object.keys(UPGRADES[modal] || {});
+      if (e.code === "Escape" || e.code === "KeyU") { modal = null; sfx.play("uiBack"); render(); }
+      else if (e.code === "ArrowDown" || e.code === "ArrowRight") { modalSel = Math.min(ids.length - 1, modalSel + 1); sfx.play("uiMove"); render(); }
+      else if (e.code === "ArrowUp" || e.code === "ArrowLeft") { modalSel = Math.max(0, modalSel - 1); sfx.play("uiMove"); render(); }
+      else if (e.code === "Enter" || e.code === "Space") { if (ids[modalSel]) buy(ids[modalSel]); }
+      else { const n = ["Digit1","Digit2","Digit3","Digit4"].indexOf(e.code); if (n >= 0 && ids[n]) buy(ids[n]); }
       return; }
     if (e.code === "Enter") return startWalk();
     if (e.code === "KeyA") { bgIndex = -1; zone = "bg"; return render(); }
@@ -300,7 +306,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
         if (cur > 0) { gridSel = list[cur - 1]; render(); }
         else if (cur < 0) { gridSel = list[list.length - 1]; render(); }  // at the first hero → stay
       } else if (e.code === "Space") act(gridSel);
-      else if (e.code === "KeyU" && unlocked(roster[gridSel]) && UPGRADES[roster[gridSel].id]) { modal = roster[gridSel].id; render(); }
+      else if (e.code === "KeyU" && unlocked(roster[gridSel]) && UPGRADES[roster[gridSel].id]) { modal = roster[gridSel].id; modalSel = 0; render(); }
     } else if (zone === "start") {
       if (back) { zone = "grid"; gridSel = list[list.length - 1]; render(); }
       else if (fwd) { zone = "bg"; render(); }
