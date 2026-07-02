@@ -89,6 +89,8 @@ const CSS = `
 #ui-overlay .uvp .start.focus{outline:2px solid #fff;outline-offset:2px}
 #ui-overlay .uvp .upgbtn{margin-left:auto;font-family:"Anton";font-size:14px;text-transform:uppercase;letter-spacing:.03em;color:var(--cyan);background:#07130f;border:1px solid var(--cyan);padding:5px 13px;white-space:nowrap;box-shadow:0 0 14px rgba(0,229,255,.3);cursor:pointer}
 #ui-overlay .uvp .upgbtn.off{color:#3a4048;border-color:#22262c;box-shadow:none;cursor:default}
+@keyframes upgpulse{0%,100%{box-shadow:0 0 12px rgba(0,229,255,.35)}50%{box-shadow:0 0 22px rgba(0,229,255,.95)}}
+#ui-overlay .uvp .upgbtn.pulse{animation:upgpulse 1.1s ease-in-out infinite}
 #ui-overlay .uvp .bgrow{display:flex;align-items:center;padding:0 20px;overflow:hidden}
 #ui-overlay .uvp .bgs{display:flex;gap:14px;align-items:center}
 #ui-overlay .uvp .bgs b{font-family:"Space Mono";font-size:10px;letter-spacing:.12em;color:#33372a;text-transform:uppercase;white-space:nowrap;cursor:pointer}
@@ -97,17 +99,23 @@ const CSS = `
 #ui-overlay .uvp .bgs b.auto.on{color:#050505;background:var(--uv);border-color:var(--uv)}
 #ui-overlay .uvp .bgrow.focus .bgs b.on{outline:2px solid #fff;outline-offset:2px}
 #ui-overlay .uvp .modal{position:absolute;inset:0;background:rgba(2,3,1,.82);display:flex;align-items:center;justify-content:center;z-index:10}
-#ui-overlay .uvp .mpanel{width:440px;border:1px solid var(--uv);background:#0a0b08;padding:16px 18px}
-#ui-overlay .uvp .mpanel h3{font-family:"Anton";font-size:21px;text-transform:uppercase;color:#fff}
-#ui-overlay .uvp .mpanel .cr{font-family:"Space Mono";font-size:11px;color:var(--uv);float:right;margin-top:5px}
-#ui-overlay .uvp .urow{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border-top:1px solid #16180f;padding:8px 10px;margin:0 -10px}
+#ui-overlay .uvp .mpanel{width:308px;border:1px solid var(--uv);background:#0a0b08;padding:12px 13px}
+#ui-overlay .uvp .mhead{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+#ui-overlay .uvp .mav{width:34px;height:34px;border-radius:3px;overflow:hidden;border:1px solid var(--line);flex:0 0 auto}
+#ui-overlay .uvp .mav img{width:100%;height:100%;object-fit:cover;object-position:center 22%}
+#ui-overlay .uvp .mpanel h3{font-family:"Anton";font-size:18px;text-transform:uppercase;color:#fff;line-height:1}
+#ui-overlay .uvp .mhead .cr{font-family:"Space Mono";font-size:14px;color:var(--uv);margin-left:auto}
+#ui-overlay .uvp .mstats{display:flex;gap:11px;margin-bottom:6px;font-family:"Space Mono";font-size:9px;letter-spacing:.06em;color:var(--dim)}
+#ui-overlay .uvp .mstats b{color:#fff;font-family:"Anton";font-size:12px;margin-left:3px}
+#ui-overlay .uvp .mstats .up b{color:var(--uv);text-shadow:0 0 8px rgba(204,255,0,.6)}
+#ui-overlay .uvp .urow{display:flex;align-items:baseline;gap:7px;border-top:1px solid #16180f;padding:5px 8px;margin:0 -8px;cursor:pointer}
 #ui-overlay .uvp .urow.sel{background:rgba(204,255,0,.08);box-shadow:inset 2px 0 0 var(--uv)}
-#ui-overlay .uvp .urow .un{font-weight:600;font-size:13px;text-transform:uppercase}
-#ui-overlay .uvp .urow .ub{font-size:10px;color:var(--dim)}
-#ui-overlay .uvp .urow .pip{font-family:"Space Mono";font-size:11px;color:var(--cyan);margin-right:10px}
-#ui-overlay .uvp .urow .buy{font-family:"Space Mono";font-size:11px;color:#050505;background:var(--uv);padding:4px 10px;cursor:pointer}
+#ui-overlay .uvp .urow .un{font-weight:700;font-size:12px;text-transform:uppercase;white-space:nowrap}
+#ui-overlay .uvp .urow .ub{font-size:10px;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ui-overlay .uvp .urow .pip{font-family:"Space Mono";font-size:10px;color:var(--cyan);letter-spacing:-1px}
+#ui-overlay .uvp .urow .buy{font-family:"Space Mono";font-size:11px;color:#050505;background:var(--uv);padding:2px 7px;cursor:pointer;min-width:24px;text-align:center}
 #ui-overlay .uvp .urow .buy.no{background:#2a2d22;color:#6f7566;cursor:default}
-#ui-overlay .uvp .mclose{margin-top:12px;font-family:"Space Mono";font-size:10px;color:var(--dim);cursor:pointer;text-align:center}
+#ui-overlay .uvp .mclose{margin-top:9px;font-family:"Space Mono";font-size:9px;color:var(--dim);cursor:pointer;text-align:center}
 `;
 
 export function createPartySelectScene(ctx, input, seed, blob) {
@@ -205,7 +213,8 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     }).join("");
     const cls = "start" + (party.length ? "" : " off") + (zone === "start" ? " focus" : "");
     const selH = roster[gridSel], canUpg = unlocked(selH) && UPGRADES[selH.id];
-    const upgBtn = `<div class="upgbtn${canUpg ? "" : " off"}"${canUpg ? " data-upg" : ""}>⬆ UPGRADE · ${blob.credits} CR</div>`;
+    const affordable = canUpg && Object.keys(UPGRADES[selH.id]).some((id) => { const c = nextCost(blob, selH.id, id); return c !== null && blob.credits >= c; });
+    const upgBtn = `<div class="upgbtn${canUpg ? "" : " off"}${affordable ? " pulse" : ""}"${canUpg ? " data-upg" : ""}>⬆ UPGRADE · ${blob.credits} CR</div>`;
     return `<span class="clab">CONGA ▸ HEAD→TAIL</span>${chips}${upgBtn}<div class="${cls}" data-start>▶ START THE WALK [${party.length}]</div>`;
   }
 
@@ -220,13 +229,22 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   function modalHTML() {
     if (!modal) return "";
     const h = roster.find((c) => c.id === modal), tree = UPGRADES[h.id] || {};
+    const owned = blob.heroUpgrades[h.id] || {};
+    // Effective stats = base + purchased deltas, so buying a rank visibly raises the number.
+    const eff = { ...h.stats };
+    for (const upId in owned) { const ap = (tree[upId] && tree[upId].apply) || {}; for (const k in ap) eff[k] += ap[k] * owned[upId]; }
+    const statRow = STATS.map(([lab, k]) => `<span class="${eff[k] > h.stats[k] ? "up" : ""}">${lab}<b>${eff[k]}</b></span>`).join("");
     const rows = Object.entries(tree).map(([id, def], i) => {
       const rank = upgradeRank(blob, h.id, id), cost = nextCost(blob, h.id, id);
       const pips = "●".repeat(rank) + "○".repeat(def.maxRank - rank), can = cost !== null && blob.credits >= cost;
-      const btn = cost === null ? `<span class="buy no">MAX</span>` : `<span class="buy${can ? "" : " no"}" data-buy="${id}">${cost} cr</span>`;
-      return `<div class="urow${i === modalSel ? " sel" : ""}" data-row="${i}"><div><div class="un">${def.name}</div><div class="ub">${def.blurb}</div></div><div><span class="pip">${pips}</span>${btn}</div></div>`;
+      const btn = cost === null ? `<span class="buy no">MAX</span>` : `<span class="buy${can ? "" : " no"}" data-buy="${id}">${cost}</span>`;
+      const blurb = def.blurb.replace(/\s*\/\s*rank/i, "");
+      return `<div class="urow${i === modalSel ? " sel" : ""}" data-row="${i}"><span class="un">${def.name}</span><span class="ub">${blurb}</span><span class="pip">${pips}</span>${btn}</div>`;
     }).join("");
-    return `<div class="modal" data-closebg><div class="mpanel"><span class="cr">${blob.credits} cr</span><h3>${h.name}</h3>${rows}<div class="mclose" data-closemodal>↑↓ move · ENTER buy · U/Esc close</div></div></div>`;
+    return `<div class="modal" data-closebg><div class="mpanel">
+      <div class="mhead"><div class="mav" style="background:${h.color}"><img src="${bust(h.id)}" alt="" onerror="this.remove()"></div><h3>${h.name}</h3><span class="cr">${blob.credits}</span></div>
+      <div class="mstats">${statRow}</div>${rows}
+      <div class="mclose" data-closemodal>↑↓ move · ENTER buy · U/Esc close</div></div></div>`;
   }
 
   function render() {
