@@ -59,7 +59,6 @@ const CSS = `
 #ui-overlay .uvp .doss .sigbox small{font-family:"Space Mono";font-size:8px;letter-spacing:.2em;color:var(--dim);display:block}
 #ui-overlay .uvp .doss .sigbox b{font-family:"Anton";font-size:18px;text-transform:uppercase;color:var(--mag);text-shadow:0 0 16px rgba(255,45,149,.5)}
 #ui-overlay .uvp .doss .status{margin-top:8px;font-family:"Space Mono";font-size:8.5px;letter-spacing:.14em;text-transform:uppercase}
-#ui-overlay .uvp .doss .upg{margin-top:5px;font-family:"Space Mono";font-size:8.5px;letter-spacing:.16em;color:var(--cyan);cursor:pointer;text-transform:uppercase}
 #ui-overlay .uvp .doss .dstats{margin-top:auto;display:flex;flex-direction:column;gap:5px;padding-top:8px}
 #ui-overlay .uvp .doss .ds{display:grid;grid-template-columns:26px 1fr 14px;gap:7px;align-items:center}
 #ui-overlay .uvp .doss .ds i{font-family:"Space Mono";font-style:normal;font-size:8.5px;color:var(--dim)}
@@ -85,9 +84,11 @@ const CSS = `
 #ui-overlay .uvp .chip .d{width:7px;height:7px;border-radius:50%}
 #ui-overlay .uvp .chip b{font-family:"Oswald";font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.02em}
 #ui-overlay .uvp .arr{color:#2a2d22;margin:0 1px}
-#ui-overlay .uvp .start{margin-left:auto;font-family:"Anton";font-size:14px;text-transform:uppercase;letter-spacing:.03em;color:#050505;background:var(--uv);padding:6px 14px;white-space:nowrap;box-shadow:0 0 18px rgba(204,255,0,.4);cursor:pointer}
+#ui-overlay .uvp .start{margin-left:8px;font-family:"Anton";font-size:14px;text-transform:uppercase;letter-spacing:.03em;color:#050505;background:var(--uv);padding:6px 14px;white-space:nowrap;box-shadow:0 0 18px rgba(204,255,0,.4);cursor:pointer}
 #ui-overlay .uvp .start.off{background:#2a2d22;color:#6f7566;box-shadow:none;cursor:default}
 #ui-overlay .uvp .start.focus{outline:2px solid #fff;outline-offset:2px}
+#ui-overlay .uvp .upgbtn{margin-left:auto;font-family:"Anton";font-size:14px;text-transform:uppercase;letter-spacing:.03em;color:var(--cyan);background:#07130f;border:1px solid var(--cyan);padding:5px 13px;white-space:nowrap;box-shadow:0 0 14px rgba(0,229,255,.3);cursor:pointer}
+#ui-overlay .uvp .upgbtn.off{color:#3a4048;border-color:#22262c;box-shadow:none;cursor:default}
 #ui-overlay .uvp .bgrow{display:flex;align-items:center;padding:0 20px;overflow:hidden}
 #ui-overlay .uvp .bgs{display:flex;gap:14px;align-items:center}
 #ui-overlay .uvp .bgs b{font-family:"Space Mono";font-size:10px;letter-spacing:.12em;color:#33372a;text-transform:uppercase;white-space:nowrap;cursor:pointer}
@@ -181,11 +182,10 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     else if (slot === 0) { status = "on the walk · head"; scol = "var(--uv)"; }
     else if (slot > 0) { status = `on the walk · slot ${slot + 1} — SPACE to lead`; scol = "var(--uv)"; }
     else { status = "reserve — SPACE to enlist"; scol = "var(--cyan)"; }
-    const upg = (unlocked(h) && UPGRADES[h.id]) ? `<div class="upg" data-upg>▸ UPGRADES (${blob.credits} CR)</div>` : "";
     return `<div class="tag">SELECTED · UNIT ${String(gridSel + 1).padStart(2, "0")}${slot >= 0 ? " · SLOT " + (slot + 1) : ""}</div>
       <h2>${h.name}</h2><div class="gn" style="color:${h.color}">${h.genre}</div>
       <div class="sigbox"><small>SIGNATURE</small><b>${sName(h)}</b></div>
-      <div class="status" style="color:${scol}">${status}</div>${upg}
+      <div class="status" style="color:${scol}">${status}</div>
       <div class="dstats">${bars}</div>
       <img class="bodyshot" src="${body(h.id)}" alt="" onerror="this.remove()">`;
   }
@@ -203,7 +203,9 @@ export function createPartySelectScene(ctx, input, seed, blob) {
       return `<div class="chip"><span class="sn">${o + 1}</span><span class="d" style="background:${x.color};box-shadow:0 0 8px ${x.color}"></span><b>${x.name}</b></div>${arr}`;
     }).join("");
     const cls = "start" + (party.length ? "" : " off") + (zone === "start" ? " focus" : "");
-    return `<span class="clab">CONGA ▸ HEAD→TAIL</span>${chips}<div class="${cls}" data-start>▶ START THE WALK [${party.length}]</div>`;
+    const selH = roster[gridSel], canUpg = unlocked(selH) && UPGRADES[selH.id];
+    const upgBtn = `<div class="upgbtn${canUpg ? "" : " off"}"${canUpg ? " data-upg" : ""}>⬆ UPGRADE · ${blob.credits} CR</div>`;
+    return `<span class="clab">CONGA ▸ HEAD→TAIL</span>${chips}${upgBtn}<div class="${cls}" data-start>▶ START THE WALK [${party.length}]</div>`;
   }
 
   function bgHTML() {
