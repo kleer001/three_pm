@@ -356,9 +356,9 @@ export const THEME = {
   // Projectile-impact spark burst (tuned in art-test/impact-particles.html): a tight cone of
   // shot-colored specks along the hit direction + one quick ring pop. Color is the shooter's
   // shot color (pellet for your fire, enemyShot green for theirs).
-  impact: { count: 13, speed: 305, speedJit: 0.35, spreadDeg: 160, size: 2.6, sizeJit: 0.8,
-    endScale: 0, life: 0.30, lifeJit: 0.1, gravity: 0, drag: 8.5, fadePow: 0.9,
-    ring: { r0: 0, r1: 30, life: 0.24, width: 2 } },
+  impact: { count: 14, speed: 280, speedJit: 0.4, spreadDeg: 160, size: 1.6, sizeJit: 0.6,
+    endScale: 0.55, life: 0.34, lifeJit: 0.15, gravity: 0, drag: 5, fadePow: 1,
+    ring: { r0: 0, r1: 36, life: 0.3, width: 3 } },
   field: { fill: "rgba(155,89,182,0.16)", ring: "rgba(155,89,182,0.45)" }, // lingering zone disc
   freeze: { fill: "rgba(150,205,255,0.55)", ring: "rgba(190,230,255,0.9)", ringPad: 2 },
   slow: { fill: "rgba(140,150,255,0.20)" },                                    // Chill Zone debuff tint
