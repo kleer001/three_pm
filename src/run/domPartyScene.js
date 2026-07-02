@@ -105,9 +105,13 @@ const CSS = `
 #ui-overlay .uvp .mav img{width:100%;height:100%;object-fit:cover;object-position:center 22%}
 #ui-overlay .uvp .mpanel h3{font-family:"Anton";font-size:18px;text-transform:uppercase;color:#fff;line-height:1}
 #ui-overlay .uvp .mhead .cr{font-family:"Space Mono";font-size:14px;color:var(--uv);margin-left:auto}
-#ui-overlay .uvp .mstats{display:flex;gap:11px;margin-bottom:6px;font-family:"Space Mono";font-size:9px;letter-spacing:.06em;color:var(--dim)}
-#ui-overlay .uvp .mstats b{color:#fff;font-family:"Anton";font-size:12px;margin-left:3px}
-#ui-overlay .uvp .mstats .up b{color:var(--uv);text-shadow:0 0 8px rgba(204,255,0,.6)}
+#ui-overlay .uvp .mstats{display:flex;gap:8px;margin-bottom:8px;align-items:flex-end}
+#ui-overlay .uvp .mstats .st{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px}
+#ui-overlay .uvp .mstats .st i{width:100%;height:20px;background:#15170f;display:flex;align-items:flex-end}
+#ui-overlay .uvp .mstats .st i span{width:100%;display:block}
+#ui-overlay .uvp .mstats .st em{font-family:"Space Mono";font-style:normal;font-size:8px;letter-spacing:.06em;color:var(--dim)}
+#ui-overlay .uvp .mstats .st b{font-family:"Anton";font-size:12px;color:#fff;line-height:1}
+#ui-overlay .uvp .mstats .st.up b{color:var(--uv);text-shadow:0 0 8px rgba(204,255,0,.6)}
 #ui-overlay .uvp .urow{display:flex;align-items:baseline;gap:7px;border-top:1px solid #16180f;padding:5px 8px;margin:0 -8px;cursor:pointer}
 #ui-overlay .uvp .urow.sel{background:rgba(204,255,0,.08);box-shadow:inset 2px 0 0 var(--uv)}
 #ui-overlay .uvp .urow .un{font-weight:700;font-size:12px;text-transform:uppercase;white-space:nowrap}
@@ -233,7 +237,10 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     // Effective stats = base + purchased deltas, so buying a rank visibly raises the number.
     const eff = { ...h.stats };
     for (const upId in owned) { const ap = (tree[upId] && tree[upId].apply) || {}; for (const k in ap) eff[k] += ap[k] * owned[upId]; }
-    const statRow = STATS.map(([lab, k]) => `<span class="${eff[k] > h.stats[k] ? "up" : ""}">${lab}<b>${eff[k]}</b></span>`).join("");
+    const statRow = STATS.map(([lab, k]) => {
+      const up = eff[k] > h.stats[k], fill = Math.min(100, eff[k] / 10 * 100);
+      return `<div class="st${up ? " up" : ""}"><i><span style="height:${fill}%;background:${up ? "var(--uv)" : h.color}"></span></i><em>${lab}</em><b>${eff[k]}</b></div>`;
+    }).join("");
     const rows = Object.entries(tree).map(([id, def], i) => {
       const rank = upgradeRank(blob, h.id, id), cost = nextCost(blob, h.id, id);
       const pips = "●".repeat(rank) + "○".repeat(def.maxRank - rank), can = cost !== null && blob.credits >= cost;
