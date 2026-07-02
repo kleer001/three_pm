@@ -89,6 +89,7 @@ const CSS = `
 #ui-overlay .uvp .start.focus{outline:2px solid #fff;outline-offset:2px}
 #ui-overlay .uvp .upgbtn{margin-left:auto;font-family:"Anton";font-size:14px;text-transform:uppercase;letter-spacing:.03em;color:var(--cyan);background:#07130f;border:1px solid var(--cyan);padding:5px 13px;white-space:nowrap;box-shadow:0 0 14px rgba(0,229,255,.3);cursor:pointer}
 #ui-overlay .uvp .upgbtn.off{color:#3a4048;border-color:#22262c;box-shadow:none;cursor:default}
+#ui-overlay .uvp .upgbtn.focus{outline:2px solid #fff;outline-offset:2px}
 @keyframes upgpulse{0%,100%{box-shadow:0 0 12px rgba(0,229,255,.35)}50%{box-shadow:0 0 22px rgba(0,229,255,.95)}}
 #ui-overlay .uvp .upgbtn.pulse{animation:upgpulse 1.1s ease-in-out infinite}
 #ui-overlay .uvp .bgrow{display:flex;align-items:center;padding:0 20px;overflow:hidden}
@@ -139,7 +140,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
 
   let party = blob.campaign.crew.slice();
   let gridSel = Math.max(0, roster.findIndex((c) => c.id === party[0]));
-  let zone = "grid";               // 'grid' | 'start' | 'bg'
+  let zone = "grid";               // 'grid' | 'upg' | 'start' | 'bg'
   let bgIndex = -1;                // -1 = Automatic, else index into VOID_BACKGROUNDS
   let modal = null, modalSel = 0, confirmed = false, armed = false;
 
@@ -218,7 +219,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     const cls = "start" + (party.length ? "" : " off") + (zone === "start" ? " focus" : "");
     const selH = roster[gridSel], canUpg = unlocked(selH) && UPGRADES[selH.id];
     const affordable = canUpg && Object.keys(UPGRADES[selH.id]).some((id) => { const c = nextCost(blob, selH.id, id); return c !== null && blob.credits >= c; });
-    const upgBtn = `<div class="upgbtn${canUpg ? "" : " off"}${affordable ? " pulse" : ""}"${canUpg ? " data-upg" : ""}>⬆ UPGRADE · ${blob.credits} CR</div>`;
+    const upgBtn = `<div class="upgbtn${canUpg ? "" : " off"}${affordable ? " pulse" : ""}${zone === "upg" ? " focus" : ""}"${canUpg ? " data-upg" : ""}>⬆ UPGRADE · ${blob.credits} CR</div>`;
     return `<span class="clab">CONGA ▸ HEAD→TAIL</span>${chips}${upgBtn}<div class="${cls}" data-start>▶ START THE WALK [${party.length}]</div>`;
   }
 
@@ -317,7 +318,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     if (e.code === "Enter") return startWalk();
     if (e.code === "KeyA") { bgIndex = -1; zone = "bg"; return render(); }
     // Selectable cards (crew + reserves) form a linear list; arrows step over locked/fallen
-    // cards and fall through to Start, then the void feed.
+    // cards and fall through to Upgrade, Start, then the void feed.
     const list = roster.map((_, i) => i).filter(navigable);
     const fwd = e.code === "ArrowRight" || e.code === "ArrowDown";
     const back = e.code === "ArrowLeft" || e.code === "ArrowUp";
@@ -326,14 +327,18 @@ export function createPartySelectScene(ctx, input, seed, blob) {
       if (fwd) {
         if (cur < 0) { gridSel = list[0]; render(); }                    // from a hovered locked card
         else if (cur < list.length - 1) { gridSel = list[cur + 1]; render(); }
-        else { zone = "start"; render(); }                               // past the last hero → Start
+        else { zone = "upg"; render(); }                                 // past the last hero → Upgrade
       } else if (back) {
         if (cur > 0) { gridSel = list[cur - 1]; render(); }
         else if (cur < 0) { gridSel = list[list.length - 1]; render(); }  // at the first hero → stay
       } else if (e.code === "Space") act(gridSel);
       else if (e.code === "KeyU" && unlocked(roster[gridSel]) && UPGRADES[roster[gridSel].id]) { modal = roster[gridSel].id; modalSel = 0; render(); }
-    } else if (zone === "start") {
+    } else if (zone === "upg") {
       if (back) { zone = "grid"; gridSel = list[list.length - 1]; render(); }
+      else if (fwd) { zone = "start"; render(); }
+      else if (e.code === "Space") { const selH = roster[gridSel]; if (unlocked(selH) && UPGRADES[selH.id]) { modal = selH.id; modalSel = 0; sfx.play("uiSelect"); render(); } }
+    } else if (zone === "start") {
+      if (back) { zone = "upg"; render(); }
       else if (fwd) { zone = "bg"; render(); }
       else if (e.code === "Space") startWalk();
     } else if (zone === "bg") {
