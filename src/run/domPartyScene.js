@@ -134,6 +134,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
   const isIn = (id) => party.includes(id);
   const canEnlist = (c) => unlocked(c) && !isDead(c.id) && !isIn(c.id);
   const navigable = (i) => isIn(roster[i].id) || canEnlist(roster[i]); // focusable cards: crew + reserves (locked/fallen are skipped)
+  const canOpenUpg = (h) => unlocked(h) && !!UPGRADES[h.id] && blob.credits > 0; // greyed/non-opening with nothing to spend
   const wName = (h) => BALANCE.weapons[h.weaponId].name;
   const sName = (h) => (BALANCE.signatures[h.signatureId] || {}).name || "—";
   const accent = (h, sel) => (sel ? "#ccff00" : h.color);
@@ -217,9 +218,9 @@ export function createPartySelectScene(ctx, input, seed, blob) {
       return `<div class="chip"><span class="sn">${o + 1}</span><span class="d" style="background:${x.color};box-shadow:0 0 8px ${x.color}"></span><b>${x.name}</b></div>${arr}`;
     }).join("");
     const cls = "start" + (party.length ? "" : " off") + (zone === "start" ? " focus" : "");
-    const selH = roster[gridSel], canUpg = unlocked(selH) && UPGRADES[selH.id];
-    const affordable = canUpg && Object.keys(UPGRADES[selH.id]).some((id) => { const c = nextCost(blob, selH.id, id); return c !== null && blob.credits >= c; });
-    const upgBtn = `<div class="upgbtn${canUpg ? "" : " off"}${affordable ? " pulse" : ""}${zone === "upg" ? " focus" : ""}"${canUpg ? " data-upg" : ""}>⬆ UPGRADE · ${blob.credits} CR</div>`;
+    const selH = roster[gridSel], openable = canOpenUpg(selH);
+    const affordable = openable && Object.keys(UPGRADES[selH.id]).some((id) => { const c = nextCost(blob, selH.id, id); return c !== null && blob.credits >= c; });
+    const upgBtn = `<div class="upgbtn${openable ? "" : " off"}${affordable ? " pulse" : ""}${zone === "upg" ? " focus" : ""}"${openable ? " data-upg" : ""}>⬆ UPGRADE · ${blob.credits} CR</div>`;
     return `<span class="clab">CONGA ▸ HEAD→TAIL</span>${chips}${upgBtn}<div class="${cls}" data-start>▶ START THE WALK [${party.length}]</div>`;
   }
 
@@ -332,11 +333,11 @@ export function createPartySelectScene(ctx, input, seed, blob) {
         if (cur > 0) { gridSel = list[cur - 1]; render(); }
         else if (cur < 0) { gridSel = list[list.length - 1]; render(); }  // at the first hero → stay
       } else if (e.code === "Space") act(gridSel);
-      else if (e.code === "KeyU" && unlocked(roster[gridSel]) && UPGRADES[roster[gridSel].id]) { modal = roster[gridSel].id; modalSel = 0; render(); }
+      else if (e.code === "KeyU" && canOpenUpg(roster[gridSel])) { modal = roster[gridSel].id; modalSel = 0; render(); }
     } else if (zone === "upg") {
       if (back) { zone = "grid"; gridSel = list[list.length - 1]; render(); }
       else if (fwd) { zone = "start"; render(); }
-      else if (e.code === "Space" || e.code === "Enter") { const selH = roster[gridSel]; if (unlocked(selH) && UPGRADES[selH.id]) { modal = selH.id; modalSel = 0; sfx.play("uiSelect"); render(); } }
+      else if (e.code === "Space" || e.code === "Enter") { const selH = roster[gridSel]; if (canOpenUpg(selH)) { modal = selH.id; modalSel = 0; sfx.play("uiSelect"); render(); } }
     } else if (zone === "start") {
       if (back) { zone = "upg"; render(); }
       else if (fwd) { zone = "bg"; render(); }
