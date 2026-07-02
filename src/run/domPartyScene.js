@@ -315,7 +315,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
       else if (e.code === "Enter" || e.code === "Space") { if (ids[modalSel]) buy(ids[modalSel]); }
       else { const n = ["Digit1","Digit2","Digit3","Digit4"].indexOf(e.code); if (n >= 0 && ids[n]) buy(ids[n]); }
       return; }
-    if (e.code === "Enter") return startWalk();
+    if (e.code === "Enter" && zone !== "upg") return startWalk();
     if (e.code === "KeyA") { bgIndex = -1; zone = "bg"; return render(); }
     // Selectable cards (crew + reserves) form a linear list; arrows step over locked/fallen
     // cards and fall through to Upgrade, Start, then the void feed.
@@ -336,7 +336,7 @@ export function createPartySelectScene(ctx, input, seed, blob) {
     } else if (zone === "upg") {
       if (back) { zone = "grid"; gridSel = list[list.length - 1]; render(); }
       else if (fwd) { zone = "start"; render(); }
-      else if (e.code === "Space") { const selH = roster[gridSel]; if (unlocked(selH) && UPGRADES[selH.id]) { modal = selH.id; modalSel = 0; sfx.play("uiSelect"); render(); } }
+      else if (e.code === "Space" || e.code === "Enter") { const selH = roster[gridSel]; if (unlocked(selH) && UPGRADES[selH.id]) { modal = selH.id; modalSel = 0; sfx.play("uiSelect"); render(); } }
     } else if (zone === "start") {
       if (back) { zone = "upg"; render(); }
       else if (fwd) { zone = "bg"; render(); }
